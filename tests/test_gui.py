@@ -39,3 +39,38 @@ def test_gui_pages_render() -> None:
         assert "Changan Hub" in app.log_widget.get("1.0", "end") or app.log_q.qsize() >= 0
     finally:
         app.root.destroy()
+
+
+def _inside_window(widget, root, pad: int = 4) -> bool:
+    if not widget.winfo_ismapped():
+        return False
+    top = widget.winfo_rooty()
+    bottom = top + widget.winfo_height()
+    win_top = root.winfo_rooty()
+    win_bottom = win_top + root.winfo_height()
+    return widget.winfo_height() > 8 and top >= win_top - pad and bottom <= win_bottom + pad
+
+
+def test_install_button_visible_at_laptop_size() -> None:
+    from hub.gui import HubApp
+
+    app = HubApp()
+    try:
+        app.root.geometry("960x640")
+        app.root.update_idletasks()
+        app.root.update()
+        app.show("install", "Установка APK")
+        app.root.update_idletasks()
+        app.root.update()
+        assert app.install_btn.winfo_ismapped()
+        assert _inside_window(app.install_btn, app.root)
+        app.show("overlay", "Правая панель")
+        app.root.update()
+        assert app.overlay_install_btn.winfo_ismapped()
+        assert _inside_window(app.overlay_install_btn, app.root)
+        app.show("apps", "Приложения ГУ")
+        app.root.update()
+        assert app.launch_btn.winfo_ismapped()
+        assert _inside_window(app.launch_btn, app.root)
+    finally:
+        app.root.destroy()

@@ -201,6 +201,26 @@ class HubApp:
         ttk.Button(qrow, text="Сбросить очередь", command=self.clear_queue).pack(side=tk.RIGHT)
         self.root.after(400, self._tick_loader)
 
+        log_frame = tk.Frame(main, bg=PANEL)
+        log_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(8, 12))
+        log_top = tk.Frame(log_frame, bg=PANEL)
+        log_top.pack(fill=tk.X, padx=8, pady=(6, 0))
+        tk.Label(log_top, text="Журнал → папка logs на флешке (hub.log)", bg=PANEL, fg=MUTED).pack(side=tk.LEFT)
+        ttk.Button(log_top, text="Копировать", command=self.copy_log).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(log_top, text="Открыть файл", command=self.open_log_file).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(log_top, text="Очистить экран", command=self.clear_log_view).pack(side=tk.RIGHT, padx=4)
+        self.log_widget = tk.Text(
+            log_frame,
+            height=7,
+            bg="#0A101C",
+            fg=TEXT,
+            insertbackground=TEXT,
+            font=FONT_MONO,
+            relief=tk.FLAT,
+            wrap=tk.WORD,
+        )
+        self.log_widget.pack(fill=tk.X, padx=8, pady=8)
+
         self.stack = ttk.Frame(main)
         self.stack.pack(fill=tk.BOTH, expand=True, padx=20)
         self.pages: dict[str, ttk.Frame] = {}
@@ -212,26 +232,6 @@ class HubApp:
         self.pages["tools"] = self._page_tools()
         for frame in self.pages.values():
             frame.place(relx=0, rely=0, relwidth=1, relheight=1)
-
-        log_frame = tk.Frame(main, bg=PANEL)
-        log_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=(8, 16))
-        log_top = tk.Frame(log_frame, bg=PANEL)
-        log_top.pack(fill=tk.X, padx=8, pady=(6, 0))
-        tk.Label(log_top, text="Журнал → папка logs на флешке (hub.log)", bg=PANEL, fg=MUTED).pack(side=tk.LEFT)
-        ttk.Button(log_top, text="Копировать", command=self.copy_log).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(log_top, text="Открыть файл", command=self.open_log_file).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(log_top, text="Очистить экран", command=self.clear_log_view).pack(side=tk.RIGHT, padx=4)
-        self.log_widget = tk.Text(
-            log_frame,
-            height=14,
-            bg="#0A101C",
-            fg=TEXT,
-            insertbackground=TEXT,
-            font=FONT_MONO,
-            relief=tk.FLAT,
-            wrap=tk.WORD,
-        )
-        self.log_widget.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         self.show("connect", "Подключение")
 
     def _card(self, parent: tk.Widget, title: str, body: str) -> tk.Frame:
@@ -281,49 +281,53 @@ class HubApp:
             "adb install на Feiyu зависает — Hub его больше не вызывает. "
             "Смотрите лоадер сверху: подпись → копирование → pm install.",
             style="Muted.TLabel",
-        ).pack(anchor="w", pady=(6, 12))
+        ).pack(anchor="w", pady=(6, 8))
         row = ttk.Frame(page)
-        row.pack(anchor="w")
-        ttk.Button(row, text="Выбрать APK…", style="Accent.TButton", command=self.pick_apk).pack(side=tk.LEFT)
-        ttk.Button(row, text="Папка apps/", command=self.open_apps_folder).pack(side=tk.LEFT, padx=8)
-        self.apk_list = tk.Listbox(
-            page, bg=CARD, fg=TEXT, font=FONT, selectbackground=ACCENT, selectforeground=BG, height=12
+        row.pack(fill=tk.X, pady=(0, 8))
+        self.install_btn = ttk.Button(
+            row, text="Установить выбранный", style="Accent.TButton", command=self.install_selected
         )
-        self.apk_list.pack(fill=tk.BOTH, expand=True, pady=12)
-        ttk.Button(page, text="Установить выбранный", command=self.install_selected).pack(anchor="w")
+        self.install_btn.pack(side=tk.LEFT)
+        ttk.Button(row, text="Выбрать APK…", command=self.pick_apk).pack(side=tk.LEFT, padx=8)
+        ttk.Button(row, text="Папка apps/", command=self.open_apps_folder).pack(side=tk.LEFT)
+        self.apk_list = tk.Listbox(
+            page, bg=CARD, fg=TEXT, font=FONT, selectbackground=ACCENT, selectforeground=BG, height=8
+        )
+        self.apk_list.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
+        self.apk_list.bind("<Double-1>", lambda _e: self.install_selected())
+        ttk.Label(
+            page,
+            text="Кнопка всегда сверху списка. Двойной клик по APK тоже ставит его.",
+            style="Muted.TLabel",
+        ).pack(anchor="w")
         self.refresh_apk_list()
         return page
 
     def _page_overlay(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
         ttk.Label(page, text="Правая панель поверх всех окон", style="Title.TLabel").pack(anchor="w")
-        body = (
-            "QuickBar — штатная замена «выпадающего» меню. Узкая колонка справа на 13.2″ "
-            "вертикальном экране Lamore всегда остаётся поверх навигации, видео и настроек.\n\n"
-            "• Тап по иконке запускает приложение\n"
-            "• Удержание добавляет в избранное\n"
-            "• ↔ раскрывает подписи и поиск\n"
-            "• ▸ сворачивает в тонкий край, чтобы не мешать фильму\n"
-            "• Автозапуск после перезагрузки ГУ\n\n"
-            "Пока сверху крутится лоадер — не жмите кнопку повторно. "
-            "Очередь задач значит, что предыдущий шаг ещё не закончился (или завис). "
-            "Иконки в штатном меню Feiyu не будет: ищите зелёную колонку СПРАВА."
-        )
-        tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
-            anchor="w", pady=12
-        )
         row = ttk.Frame(page)
-        row.pack(anchor="w")
-        ttk.Button(row, text="Установить и запустить панель", style="Accent.TButton", command=self.deploy_overlay).pack(
-            side=tk.LEFT
+        row.pack(fill=tk.X, pady=(12, 8))
+        self.overlay_install_btn = ttk.Button(
+            row, text="Установить и запустить панель", style="Accent.TButton", command=self.deploy_overlay
         )
+        self.overlay_install_btn.pack(side=tk.LEFT)
         ttk.Button(row, text="Только запустить", command=self.resume_overlay).pack(side=tk.LEFT, padx=8)
         ttk.Button(row, text="Остановить", command=self.kill_overlay).pack(side=tk.LEFT)
         ttk.Label(
             page,
             text=f"APK: {overlay_apk()}",
             style="Muted.TLabel",
-        ).pack(anchor="w", pady=16)
+        ).pack(anchor="w")
+        body = (
+            "QuickBar — узкая колонка справа на 13.2″ вертикальном экране, поверх навигации и видео.\n"
+            "Тап — запуск, удержание — избранное, ↔ подписи и поиск, ▸ тонкий край. "
+            "Автозапуск после перезагрузки. Пока крутится лоадер — не жмите повторно. "
+            "Иконки в штатном меню Feiyu не будет: ищите зелёную колонку СПРАВА."
+        )
+        tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
+            anchor="w", pady=12
+        )
         return page
 
     def _page_apps(self) -> ttk.Frame:
@@ -334,7 +338,8 @@ class HubApp:
         ttk.Button(row, text="Обновить список", style="Accent.TButton", command=self.refresh_packages).pack(
             side=tk.LEFT
         )
-        ttk.Button(row, text="Запустить выбранное", command=self.launch_selected).pack(side=tk.LEFT, padx=8)
+        self.launch_btn = ttk.Button(row, text="Запустить выбранное", command=self.launch_selected)
+        self.launch_btn.pack(side=tk.LEFT, padx=8)
         self.pkg_filter = tk.StringVar()
         entry = tk.Entry(row, textvariable=self.pkg_filter, bg=CARD, fg=TEXT, insertbackground=TEXT)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
