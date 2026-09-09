@@ -9,10 +9,16 @@ def test_app_py_exists() -> None:
 
 
 def test_run_bat_starts_once() -> None:
-    text = (Path(__file__).resolve().parents[1] / "run.bat").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "run.bat").read_text(encoding="utf-8")
     assert text.lower().count("@echo off") == 1
-    assert "pip install" in text
-    assert "import cryptography" in text
+    assert "ensure_env.py" in text
+    assert "chcp 65001" in text
+    assert "logs\\start.log" in text or "logs\\start.log" in text.replace("/", "\\")
     assert "pythonw.exe" in text
     assert text.lower().count("setlocal") == 1
-
+    assert (root / "ensure_env.py").is_file()
+    env = (root / "ensure_env.py").read_text(encoding="utf-8")
+    assert "cryptography" in env
+    assert "ensurepip" in env
+    assert "start.log" in env
