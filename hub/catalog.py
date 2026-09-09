@@ -24,12 +24,12 @@ class CatalogApp:
 CATALOG: list[CatalogApp] = [
     CatalogApp(
         id="quickbar",
-        name="IT-m (правая панель)",
+        name="QuickBar (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
         package="com.changanhub.quickbar",
         kind="dock",
         source="bundled",
-        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: IT-m · com.changanhub.quickbar.",
+        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickbar.",
     ),
     CatalogApp(
         id="files",

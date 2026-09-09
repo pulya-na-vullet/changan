@@ -87,7 +87,7 @@ public class OverlayService extends Service {
     private LinearLayout appList;
     private LinearLayout tools;
     private EditText search;
-    private ImageView titleLogo;
+    private TextView titleView;
     private boolean collapsed;
     private boolean wide;
     private boolean usbMode;
@@ -183,7 +183,7 @@ public class OverlayService extends Service {
         super.onCreate();
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         collapsed = p.getBoolean(KEY_COLLAPSED, false);
-        wide = p.getBoolean(KEY_WIDE, true);
+        wide = true;
         startInForeground();
         registerLifeReceiver();
         scheduleWatchdog(this);
@@ -395,7 +395,7 @@ public class OverlayService extends Service {
             params.gravity = Gravity.END | Gravity.TOP;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         } else {
-            params.width = dp(wide ? 380 : 96);
+            params.width = dp(380);
             params.height = screenH;
             params.gravity = Gravity.END | Gravity.TOP;
         }
@@ -430,14 +430,16 @@ public class OverlayService extends Service {
         panel.setBackground(panelBackground());
         panel.setPadding(dp(6), dp(10 * HEIGHT_SCALE), dp(6), dp(10 * HEIGHT_SCALE));
 
-        titleLogo = new ImageView(this);
-        titleLogo.setImageResource(R.drawable.logo_itm);
-        titleLogo.setAdjustViewBounds(true);
-        titleLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
-        logoLp.bottomMargin = dp(8);
-        panel.addView(titleLogo, logoLp);
+        titleView = new TextView(this);
+        titleView.setText(R.string.app_name);
+        titleView.setTextColor(Color.parseColor("#3DDC97"));
+        titleView.setTextSize(18);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleLp.bottomMargin = dp(8);
+        panel.addView(titleView, titleLp);
 
         tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -446,12 +448,6 @@ public class OverlayService extends Service {
             @Override
             public void onClick(View v) {
                 setCollapsed(true);
-            }
-        }));
-        tools.addView(toolIcon(R.drawable.ic_grid, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                expandToIcons();
             }
         }));
         tools.addView(toolIcon(R.drawable.ic_menu, new View.OnClickListener() {
@@ -542,7 +538,7 @@ public class OverlayService extends Service {
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     float dx = event.getRawX() - startX;
                     if (collapsed && dx < -dp(20)) {
-                        expandToIcons();
+                        expandToFull();
                         return true;
                     }
                     if (!collapsed && dx > dp(28)) {
@@ -561,14 +557,14 @@ public class OverlayService extends Service {
             return;
         }
         int chrome = collapsed ? View.GONE : View.VISIBLE;
-        if (titleLogo != null) {
-            titleLogo.setVisibility(chrome);
+        if (titleView != null) {
+            titleView.setVisibility(chrome);
         }
         if (tools != null) {
             tools.setVisibility(chrome);
         }
         if (search != null) {
-            search.setVisibility((collapsed || !wide) ? View.GONE : View.VISIBLE);
+            search.setVisibility(collapsed ? View.GONE : View.VISIBLE);
             search.setHint(usbMode ? "apk" : "поиск");
         }
         if (usbToggle instanceof ImageView) {
@@ -620,15 +616,6 @@ public class OverlayService extends Service {
 
     private void setCollapsed(boolean value) {
         collapsed = value;
-        persist();
-        applySize();
-        renderApps();
-    }
-
-    private void expandToIcons() {
-        usbMode = false;
-        wide = false;
-        collapsed = false;
         persist();
         applySize();
         renderApps();
@@ -769,25 +756,6 @@ public class OverlayService extends Service {
         wrap.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, height));
 
-        ImageView logo = new ImageView(this);
-        logo.setImageResource(R.drawable.logo_itm);
-        logo.setAdjustViewBounds(true);
-        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(40));
-        logoLp.setMargins(dp(2), dp(8), dp(2), dp(8));
-        wrap.addView(logo, logoLp);
-
-        wrap.addView(collapseZone(R.drawable.ic_grid, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                expandToIcons();
-            }
-        }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        wrap.addView(collapseDivider(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
-
         wrap.addView(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -822,12 +790,14 @@ public class OverlayService extends Service {
     private View recentZone() {
         LinearLayout zone = new LinearLayout(this);
         zone.setOrientation(LinearLayout.VERTICAL);
-        zone.setGravity(Gravity.CENTER);
+        zone.setGravity(Gravity.CENTER_HORIZONTAL);
         List<String> recent = recentPackages();
+        // Equal gap to the edges and between icons (space-evenly).
+        zone.addView(evenSpacer());
         for (int i = 0; i < RECENT_MAX; i++) {
             ImageView image = new ImageView(this);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(64), dp(64));
-            lp.setMargins(0, dp(6), 0, dp(6));
+            lp.gravity = Gravity.CENTER_HORIZONTAL;
             if (i < recent.size()) {
                 final String pkg = recent.get(i);
                 image.setImageDrawable(iconFor(pkg));
@@ -843,8 +813,16 @@ public class OverlayService extends Service {
                 image.setAlpha(0.4f);
             }
             zone.addView(image, lp);
+            zone.addView(evenSpacer());
         }
         return zone;
+    }
+
+    private View evenSpacer() {
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        return spacer;
     }
 
     private void renderUsb() {
@@ -956,7 +934,7 @@ public class OverlayService extends Service {
 
         ImageView icon = new ImageView(this);
         icon.setImageDrawable(item.icon);
-        int iconW = wide ? dp(ICON_DP) : dp(Math.min(72, ICON_DP));
+        int iconW = dp(ICON_DP);
         LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(iconW, dp(ICON_DP));
         row.addView(icon, ip);
 
