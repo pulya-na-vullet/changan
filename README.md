@@ -31,6 +31,14 @@ https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/changa
 
 Распакуйте архив и запустите `app.py`.
 
+## Журнал
+
+Каждый клик и каждая команда ADB пишутся в файл:
+
+`%APPDATA%\ChanganHub\logs\hub-ГГГГ-ММ-ДД.log`
+
+В окне Hub внизу — живой журнал, кнопки **Копировать** / **Открыть файл**. Если индикатор красный при живом `adb devices`, смотрите этот файл: раньше Hub зависал на пароле shell и молча игнорировал установку.
+
 ## Быстрый старт на Windows
 
 1. Python 3.11+ и `adb` (platform-tools) уже должны быть в PATH.

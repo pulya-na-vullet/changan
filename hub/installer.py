@@ -56,7 +56,9 @@ def install_apk(adb: Adb, apk: Path, already_signed: bool = False) -> InstallRep
 
     report.add("Пробую adb install…")
     streamed = adb.install_stream(signed)
-    report.add(streamed.text or streamed.stderr)
+    report.add(f"adb install code={streamed.code}")
+    report.add(f"stdout: {streamed.stdout.strip() or '(пусто)'}")
+    report.add(f"stderr: {streamed.stderr.strip() or '(пусто)'}")
     if _ok_install(streamed):
         report.ok = True
         report.method = "adb install"
@@ -68,7 +70,9 @@ def install_apk(adb: Adb, apk: Path, already_signed: bool = False) -> InstallRep
     for folder in REMOTE_CANDIDATES:
         remote = f"{folder}/{signed.name.replace(' ', '_')}"
         pushed = adb.push(signed, remote)
-        report.add(f"push → {remote}: {pushed.text or pushed.stderr or pushed.code}")
+        report.add(
+            f"push → {remote} code={pushed.code} stdout={pushed.stdout.strip()!r} stderr={pushed.stderr.strip()!r}"
+        )
         if pushed.ok and "error" not in (pushed.stdout + pushed.stderr).lower():
             remote_apk = remote
             break
@@ -79,7 +83,9 @@ def install_apk(adb: Adb, apk: Path, already_signed: bool = False) -> InstallRep
     for flag in ("-r -t -g", "-r -t", "-t", "-r"):
         cmd = f"pm install {flag} {remote_apk}".replace("  ", " ")
         result = adb.shell(cmd, timeout=180)
-        report.add(f"{cmd}: {result.text or result.stderr}")
+        report.add(f"{cmd} code={result.code}")
+        report.add(f"stdout: {result.stdout.strip() or '(пусто)'}")
+        report.add(f"stderr: {result.stderr.strip() or '(пусто)'}")
         if _ok_install(result):
             report.ok = True
             report.method = f"pm install {flag}"

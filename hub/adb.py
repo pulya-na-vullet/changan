@@ -9,6 +9,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 SHELL_PASSWORD = "adb36987"
 ENGINEERING_CODE = "*#*#888"
@@ -20,6 +21,8 @@ LAUNCHER_PACKAGES = (
     "com.changan.launcher",
     "com.tinnove.launcher",
 )
+
+LogFn = Callable[[list[str], str, str, int, int], None]
 
 
 @dataclass
@@ -57,7 +60,6 @@ def _adb_candidates() -> list[Path]:
     for item in extra:
         if item and item.exists():
             found.append(item)
-    # unique preserve order
     uniq: list[Path] = []
     seen: set[str] = set()
     for item in found:
@@ -68,9 +70,27 @@ def _adb_candidates() -> list[Path]:
     return uniq
 
 
+def _run_kwargs() -> dict:
+    kwargs: dict = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return kwargs
+
+
 class Adb:
-    def __init__(self, binary: str | Path | None = None, serial: str | None = None) -> None:
+    def __init__(
+        self,
+        binary: str | Path | None = None,
+        serial: str | None = None,
+        on_log: LogFn | None = None,
+    ) -> None:
         self.serial = serial
+        self.on_log = on_log
         if binary:
             self.binary = Path(binary)
         else:
@@ -90,23 +110,35 @@ class Adb:
 
     def raw(self, args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
         argv = self.prefix() + args
+        started = time.monotonic()
         try:
             proc = subprocess.run(
                 argv,
                 input=input_text,
-                capture_output=True,
-                text=True,
                 timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
+                **_run_kwargs(),
             )
         except FileNotFoundError as exc:
             raise AdbError(f"Не удалось запустить adb: {exc}") from exc
         except subprocess.TimeoutExpired as exc:
-            return CommandResult(False, "", f"timeout: {exc}", 124, argv)
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-        return CommandResult(proc.returncode == 0, stdout, stderr, proc.returncode, argv)
+            elapsed = int((time.monotonic() - started) * 1000)
+            stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+            stderr = f"timeout after {timeout}s"
+            result = CommandResult(False, stdout, stderr, 124, argv)
+            if self.on_log:
+                self.on_log(argv, result.stdout, result.stderr, result.code, elapsed)
+            return result
+        elapsed = int((time.monotonic() - started) * 1000)
+        result = CommandResult(
+            proc.returncode == 0,
+            proc.stdout or "",
+            proc.stderr or "",
+            proc.returncode,
+            argv,
+        )
+        if self.on_log:
+            self.on_log(argv, result.stdout, result.stderr, result.code, elapsed)
+        return result
 
     def start_server(self) -> CommandResult:
         return self.raw(["start-server"], timeout=20)
@@ -115,7 +147,7 @@ class Adb:
         return self.raw(["kill-server"], timeout=20)
 
     def devices(self) -> list[dict[str, str]]:
-        result = self.raw(["devices", "-l"])
+        result = self.raw(["devices", "-l"], timeout=15)
         rows: list[dict[str, str]] = []
         for line in result.stdout.splitlines():
             line = line.strip()
@@ -139,7 +171,7 @@ class Adb:
                     "Устройство unauthorized. На ГУ подтвердите отладку по USB, если появится запрос."
                 )
             return None
-        if self.serial:
+        if self.serial and any(d["serial"] == self.serial for d in ready):
             return self.serial
         self.serial = ready[0]["serial"]
         return self.serial
@@ -157,37 +189,34 @@ class Adb:
         lower = text.lower()
         return "verify password" in lower or "please input" in lower
 
-    def shell(self, command: str, timeout: int = 60) -> CommandResult:
-        """Run a shell command, answering the Changan adbd password prompt."""
-        first = self.raw(["shell", command], timeout=timeout)
-        blob = first.stdout + first.stderr
-        if first.ok and not self.needs_password(blob):
-            return first
-        # Interactive password: feed password then the command.
-        argv = self.prefix() + ["shell"]
-        try:
-            proc = subprocess.run(
-                argv,
-                input=f"{SHELL_PASSWORD}\n{command}\nexit\n",
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-            )
-        except subprocess.TimeoutExpired as exc:
-            return CommandResult(False, "", f"timeout: {exc}", 124, argv)
+    def _strip_password_banner(self, text: str) -> str:
+        lines = []
+        for line in text.splitlines():
+            low = line.lower()
+            if "verify password" in low or "please input" in low:
+                continue
+            lines.append(line)
+        return "\n".join(lines)
+
+    def shell(self, command: str, timeout: int = 30) -> CommandResult:
+        """Always send the Feiyu shell password first so getprop/pm never hang."""
         self.last_password_used = True
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-        ok = proc.returncode == 0 and "error" not in (stdout + stderr).lower()
-        # pm install prints Success with return code 0
-        if "Success" in stdout:
+        payload = f"{SHELL_PASSWORD}\n{command}\nexit\n"
+        result = self.raw(["shell"], timeout=timeout, input_text=payload)
+        stdout = self._strip_password_banner(result.stdout)
+        stderr = self._strip_password_banner(result.stderr)
+        blob = (stdout + "\n" + stderr).lower()
+        ok = result.code == 0
+        if "success" in blob:
             ok = True
-        return CommandResult(ok, stdout, stderr, proc.returncode, argv)
+        if "not auth" in blob or "install failed" in blob or "failure [" in blob:
+            ok = False
+        return CommandResult(ok, stdout, stderr, result.code, result.argv)
 
     def getprop(self, name: str) -> str:
-        return self.shell(f"getprop {name}").stdout.strip()
+        result = self.shell(f"getprop {name}", timeout=12)
+        lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+        return lines[-1] if lines else ""
 
     def props(self) -> dict[str, str]:
         keys = {
@@ -201,29 +230,32 @@ class Adb:
             "language": "persist.sys.language",
             "locale": "ro.product.locale",
         }
-        return {label: self.getprop(prop) for label, prop in keys.items()}
+        script = " ; ".join(f"echo PROP_{label}=$(getprop {prop})" for label, prop in keys.items())
+        result = self.shell(script, timeout=20)
+        parsed = {label: "" for label in keys}
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("PROP_"):
+                continue
+            name, _, value = line.partition("=")
+            label = name.replace("PROP_", "", 1)
+            if label in parsed:
+                parsed[label] = value.strip()
+        return parsed
 
     def push(self, local: Path, remote: str, timeout: int = 180) -> CommandResult:
-        result = self.raw(["push", str(local), remote], timeout=timeout)
-        if result.ok and not self.needs_password(result.stdout + result.stderr):
-            return result
-        # Some builds prompt before push
-        argv = self.prefix() + ["push", str(local), remote]
-        proc = subprocess.run(
-            argv,
-            input=f"{SHELL_PASSWORD}\n",
-            capture_output=True,
-            text=True,
+        return self.raw(
+            ["push", str(local), remote],
             timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return CommandResult(
-            proc.returncode == 0, proc.stdout or "", proc.stderr or "", proc.returncode, argv
+            input_text=f"{SHELL_PASSWORD}\n",
         )
 
     def install_stream(self, apk: Path, timeout: int = 180) -> CommandResult:
-        return self.raw(["install", "-r", "-t", "-g", "--no-streaming", str(apk)], timeout=timeout)
+        return self.raw(
+            ["install", "-r", "-t", "-g", "--no-streaming", str(apk)],
+            timeout=timeout,
+            input_text=f"{SHELL_PASSWORD}\n",
+        )
 
     def screenshot(self, dest: Path) -> CommandResult:
         remote = "/sdcard/Download/changan_hub_shot.png"
@@ -236,7 +268,7 @@ class Adb:
         return pulled
 
     def packages(self) -> list[str]:
-        result = self.shell("pm list packages")
+        result = self.shell("pm list packages", timeout=25)
         names = []
         for line in result.stdout.splitlines():
             line = line.strip()
@@ -244,10 +276,15 @@ class Adb:
                 names.append(line.split(":", 1)[1])
         return sorted(names)
 
+    def package_path(self, package: str) -> str:
+        result = self.shell(f"pm path {package}", timeout=15)
+        for line in result.stdout.splitlines():
+            if line.startswith("package:"):
+                return line.split(":", 1)[1].strip()
+        return ""
+
     def launch(self, package: str) -> CommandResult:
-        return self.shell(
-            f"monkey -p {package} -c android.intent.category.LAUNCHER 1"
-        )
+        return self.shell(f"monkey -p {package} -c android.intent.category.LAUNCHER 1")
 
     def clear_launcher_cache(self) -> list[CommandResult]:
         results = []
@@ -255,6 +292,8 @@ class Adb:
         for pkg in LAUNCHER_PACKAGES:
             if pkg in installed:
                 results.append(self.shell(f"pm clear {pkg}"))
+        if not results:
+            results.append(CommandResult(True, "лаунчер из списка не найден", "", 0, []))
         return results
 
     def try_root(self) -> CommandResult:

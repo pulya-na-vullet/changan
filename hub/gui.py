@@ -14,6 +14,7 @@ from typing import Callable
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
 from hub.catalog import CATALOG
 from hub.installer import install_apk
+from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, start_overlay, stop_overlay
 from hub.paths import bundled_apps
 from hub.signer import certificate_info, ensure_keystore
@@ -74,24 +75,35 @@ class HubApp:
         _bind_theme(self.root)
 
         self.log_q: queue.Queue[str] = queue.Queue()
+        self.journal = Journal()
+        self.journal.subscribe(self.log_q.put)
         self.adb: Adb | None = None
         self.status = tk.StringVar(value="ГУ не подключена")
         self.page = tk.StringVar(value="connect")
         self.busy = False
+        self.busy_title = ""
 
         try:
-            self.adb = Adb()
+            self.adb = Adb(on_log=self.journal.adb)
+            self.journal.write("INFO", "adb", f"бинарник: {self.adb.binary}")
         except AdbError as exc:
             self.status.set(str(exc))
+            self.journal.error("adb", exc)
 
         self._build()
-        self.root.after(200, self._pump_log)
-        self.log("Changan Hub готов. Это ваш автомобиль — установка идёт через официальный ADB.")
+        self.root.after(150, self._pump_log)
+        self.journal.write("INFO", "app", "Changan Hub запущен. Установка идёт через официальный ADB.")
         try:
             info = certificate_info()
-            self.log(f"Локальный сертификат serial=0x{info['serial_hex']} ({info['path']})")
+            self.journal.write(
+                "INFO",
+                "cert",
+                f"локальный сертификат serial=0x{info['serial_hex']}",
+                path=info["path"],
+            )
         except Exception as exc:  # noqa: BLE001
-            self.log(f"Не удалось подготовить сертификат: {exc}")
+            self.journal.error("cert", exc)
+        self.root.after(400, self.refresh_connection)
 
     def _build(self) -> None:
         shell = ttk.Frame(self.root)
@@ -116,9 +128,12 @@ class HubApp:
             ("tools", "Сервис"),
         ]
         for key, label in pages:
-            ttk.Button(nav, text=label, style="Nav.TButton", command=lambda k=key: self.show(k)).pack(
-                fill=tk.X, padx=12, pady=3
-            )
+            ttk.Button(
+                nav,
+                text=label,
+                style="Nav.TButton",
+                command=lambda k=key, t=label: self.show(k, t),
+            ).pack(fill=tk.X, padx=12, pady=3)
 
         ttk.Button(nav, text="Проверить ADB", command=self.refresh_connection).pack(
             side=tk.BOTTOM, fill=tk.X, padx=12, pady=12
@@ -147,11 +162,16 @@ class HubApp:
             frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         log_frame = tk.Frame(main, bg=PANEL)
-        log_frame.pack(fill=tk.X, padx=20, pady=(8, 16))
-        tk.Label(log_frame, text="Журнал", bg=PANEL, fg=MUTED).pack(anchor="w", padx=8, pady=(6, 0))
+        log_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=(8, 16))
+        log_top = tk.Frame(log_frame, bg=PANEL)
+        log_top.pack(fill=tk.X, padx=8, pady=(6, 0))
+        tk.Label(log_top, text="Журнал (всё пишется в файл)", bg=PANEL, fg=MUTED).pack(side=tk.LEFT)
+        ttk.Button(log_top, text="Копировать", command=self.copy_log).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(log_top, text="Открыть файл", command=self.open_log_file).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(log_top, text="Очистить экран", command=self.clear_log_view).pack(side=tk.RIGHT, padx=4)
         self.log_widget = tk.Text(
             log_frame,
-            height=10,
+            height=14,
             bg="#0A101C",
             fg=TEXT,
             insertbackground=TEXT,
@@ -159,8 +179,8 @@ class HubApp:
             relief=tk.FLAT,
             wrap=tk.WORD,
         )
-        self.log_widget.pack(fill=tk.X, padx=8, pady=8)
-        self.show("connect")
+        self.log_widget.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.show("connect", "Подключение")
 
     def _card(self, parent: tk.Widget, title: str, body: str) -> tk.Frame:
         card = tk.Frame(parent, bg=CARD, padx=16, pady=14)
@@ -296,6 +316,7 @@ class HubApp:
             ("Очистить кэш лаунчера", self.clear_launcher),
             ("Перезагрузить ГУ", self.reboot_hu),
             ("Показать сертификат", self.show_cert),
+            ("Открыть журнал", self.open_log_file),
         ]
         for i, (label, fn) in enumerate(actions):
             ttk.Button(grid, text=label, command=fn).grid(row=i // 2, column=i % 2, sticky="ew", padx=6, pady=6)
@@ -306,12 +327,16 @@ class HubApp:
         ).pack(anchor="w", pady=12)
         return page
 
-    def show(self, name: str) -> None:
+    def show(self, name: str, title: str | None = None) -> None:
+        self.journal.action("раздел", title or name)
         self.page.set(name)
         self.pages[name].tkraise()
 
     def log(self, message: str) -> None:
-        self.log_q.put(message)
+        self.journal.write("INFO", "ui", message)
+
+    def _ui(self, fn: Callable[[], None]) -> None:
+        self.root.after(0, fn)
 
     def _pump_log(self) -> None:
         while True:
@@ -321,7 +346,30 @@ class HubApp:
                 break
             self.log_widget.insert(tk.END, line.rstrip() + "\n")
             self.log_widget.see(tk.END)
-        self.root.after(200, self._pump_log)
+        self.root.after(120, self._pump_log)
+
+    def copy_log(self) -> None:
+        self.journal.action("копировать журнал")
+        text = self.log_widget.get("1.0", tk.END)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.journal.write("INFO", "ui", "журнал скопирован в буфер")
+
+    def clear_log_view(self) -> None:
+        self.journal.action("очистить экран журнала")
+        self.log_widget.delete("1.0", tk.END)
+        self.journal.write("INFO", "ui", f"файл журнала не тронут: {self.journal.path}")
+
+    def open_log_file(self) -> None:
+        self.journal.action("открыть файл журнала", str(self.journal.path))
+        path = self.journal.path
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            else:
+                subprocess.run(["xdg-open", str(path)], check=False)
+        except Exception as exc:  # noqa: BLE001
+            self.journal.error("log-open", exc)
 
     def _set_dot(self, on: bool) -> None:
         self.dot.delete("all")
@@ -330,27 +378,40 @@ class HubApp:
     def _need_adb(self) -> Adb | None:
         if not self.adb:
             try:
-                self.adb = Adb()
+                self.adb = Adb(on_log=self.journal.adb)
+                self.journal.write("INFO", "adb", f"бинарник: {self.adb.binary}")
             except AdbError as exc:
-                messagebox.showerror("ADB", str(exc))
+                self.journal.error("adb", exc)
+                self._ui(lambda: messagebox.showerror("ADB", str(exc)))
                 return None
+        else:
+            self.adb.on_log = self.journal.adb
         return self.adb
 
     def _work(self, title: str, fn: Callable[[], None]) -> None:
+        self.journal.action("кнопка", title)
         if self.busy:
+            self.journal.write(
+                "WARN",
+                "ui",
+                f"клик «{title}» проигнорирован: ещё выполняется «{self.busy_title}»",
+            )
             return
         self.busy = True
-        self.log(f"— {title}")
+        self.busy_title = title
+        self.journal.write("INFO", "job", f"старт: {title}")
 
         def runner() -> None:
             try:
                 fn()
+                self.journal.write("INFO", "job", f"готово: {title}")
             except Exception as exc:  # noqa: BLE001
-                self.log(f"Ошибка: {exc}")
+                self.journal.error(title, exc)
             finally:
                 self.busy = False
+                self.busy_title = ""
 
-        threading.Thread(target=runner, daemon=True).start()
+        threading.Thread(target=runner, daemon=True, name=f"hub-{title}").start()
 
     def refresh_connection(self) -> None:
         def go() -> None:
@@ -377,28 +438,51 @@ class HubApp:
     def _refresh_now(self, adb: Adb) -> None:
         devices = adb.devices()
         if not devices:
-            self.status.set("Устройств нет. Включите ADB на ГУ и проверьте кабель.")
-            self.root.after(0, lambda: self._set_dot(False))
-            self.info_box.configure(text="adb devices пуст.\nКабель data? ADB в инженерном меню? Драйвер Windows?")
-            self.log("adb devices: пусто")
+            self._ui(lambda: self.status.set("Устройств нет. Включите ADB на ГУ и проверьте кабель."))
+            self._ui(lambda: self._set_dot(False))
+            self._ui(
+                lambda: self.info_box.configure(
+                    text="adb devices пуст.\nКабель data? ADB в инженерном меню? Драйвер Windows?"
+                )
+            )
+            self.journal.write("WARN", "connect", "adb devices пуст")
             return
         lines = ["Найденные устройства:"]
         for dev in devices:
             lines.append(f"  {dev['raw']}")
-            self.log(dev["raw"])
+            self.journal.write("INFO", "connect", dev["raw"])
         ready = [d for d in devices if d["state"] == "device"]
         if not ready:
-            self.status.set("ГУ видна, но не в состоянии device")
-            self.root.after(0, lambda: self._set_dot(False))
-            self.info_box.configure(text="\n".join(lines))
+            self._ui(lambda: self.status.set("ГУ видна, но не в состоянии device"))
+            self._ui(lambda: self._set_dot(False))
+            text = "\n".join(lines)
+            self._ui(lambda t=text: self.info_box.configure(text=t))
             return
         adb.serial = ready[0]["serial"]
-        props = adb.props()
-        self.status.set(f"Подключено · {props.get('model') or adb.serial} · Android {props.get('android')}")
-        self.root.after(0, lambda: self._set_dot(True))
-        pretty = "\n".join(f"{k:12} {v}" for k, v in props.items())
-        self.info_box.configure(text="\n".join(lines) + "\n\n" + pretty)
-        self.log("Свойства ГУ получены")
+        # Green immediately — never wait for getprop (it used to hang on the shell password).
+        self._ui(lambda: self.status.set(f"Подключено · {adb.serial}"))
+        self._ui(lambda: self._set_dot(True))
+        self.journal.write("INFO", "connect", f"индикатор зелёный, serial={adb.serial}")
+        try:
+            props = adb.props()
+        except Exception as exc:  # noqa: BLE001
+            self.journal.error("props", exc)
+            props = {}
+        model = props.get("model") or ""
+        android = props.get("android") or ""
+        pretty = "\n".join(lines)
+        if any(props.values()):
+            pretty += "\n\n" + "\n".join(f"{k:12} {v}" for k, v in props.items())
+            self._ui(
+                lambda m=model, a=android, s=adb.serial: self.status.set(
+                    f"Подключено · {m or s}" + (f" · Android {a}" if a else "")
+                )
+            )
+            self.journal.write("INFO", "connect", "свойства ГУ получены", **props)
+        else:
+            pretty += "\n\ngetprop не ответил, но ADB device есть — ставить приложения можно."
+            self.journal.write("WARN", "connect", "свойства ГУ пустые, продолжаем по serial")
+        self._ui(lambda t=pretty: self.info_box.configure(text=t))
 
     def refresh_apk_list(self) -> None:
         self.apk_list.delete(0, tk.END)
@@ -422,9 +506,12 @@ class HubApp:
             self.log(str(exc))
 
     def pick_apk(self) -> None:
+        self.journal.action("выбрать APK")
         path = filedialog.askopenfilename(filetypes=[("APK", "*.apk")])
         if not path:
+            self.journal.write("INFO", "ui", "выбор APK отменён")
             return
+        self.journal.write("INFO", "ui", f"выбран APK {path}")
         self.apk_list.insert(0, path)
         self.apk_list.selection_clear(0, tk.END)
         self.apk_list.selection_set(0)

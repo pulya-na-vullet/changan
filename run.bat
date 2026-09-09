@@ -7,6 +7,21 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+@echo off
+setlocal
+cd /d "%~dp0"
+where python >nul 2>&1
+if errorlevel 1 (
+  echo Python не найден. Установите Python 3.11+ и отметьте "Add python.exe to PATH".
+  pause
+  exit /b 1
+)
+if not exist .venv (
+  python -m venv .venv
+)
+call .venv\Scripts\activate.bat
 python -m pip install -r requirements.txt
 python app.py
+if errorlevel 1 pause
+
 if errorlevel 1 pause

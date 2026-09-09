@@ -268,7 +268,7 @@ def _sign_v1(src: Path, dst: Path, keystore: Keystore) -> None:
 def certificate_info(store: Keystore | None = None) -> dict[str, str]:
     store = store or ensure_keystore()
     cert = load_certificate(store.certificate)
-    after = getattr(cert, "not_valid_after_utc", cert.not_valid_after)
+    after = cert.not_valid_after_utc if hasattr(cert, "not_valid_after_utc") else cert.not_valid_after
     after_s = after.isoformat() if hasattr(after, "isoformat") else str(after)
     return {
         "serial_hex": format(cert.serial_number, "x"),

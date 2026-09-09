@@ -55,10 +55,21 @@ def install_overlay(adb: Adb) -> list[str]:
     apk = overlay_apk()
     if not apk.exists():
         return [f"QuickBar.apk не найден: {apk}. Соберите его через scripts/build_apk.py"]
+    lines = [f"Файл панели: {apk} ({apk.stat().st_size} байт)"]
     report = install_apk(adb, apk, already_signed=False)
-    lines = list(report.log)
+    lines.extend(report.log)
+    installed = adb.package_path(PACKAGE)
+    if installed:
+        lines.append(f"Проверка: пакет {PACKAGE} стоит по пути {installed}")
+        report.ok = True
+    else:
+        lines.append(f"Проверка: пакета {PACKAGE} на ГУ нет (pm path пустой).")
     if report.ok:
         lines += start_overlay(adb)
-        lines.append("Правая панель должна появиться поверх всех окон.")
-        lines.append("Сверните её жестом вправо, разверните тапом по ▸. Удержание иконки — в избранное.")
+        again = adb.package_path(PACKAGE)
+        lines.append(f"После запуска панели pm path: {again or 'пусто'}")
+        lines.append("Правая панель должна появиться справа поверх всех окон.")
+        lines.append("Если её нет — перезагрузите ГУ (громкость «−» 10–20 сек) и нажмите «Только запустить».")
+    else:
+        lines.append("Установка панели не подтверждена. Весь вывод ADB выше — для отладки.")
     return lines
