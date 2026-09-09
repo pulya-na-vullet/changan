@@ -64,6 +64,8 @@ def test_install_button_visible_at_laptop_size() -> None:
         app.root.update()
         assert app.install_btn.winfo_ismapped()
         assert _inside_window(app.install_btn, app.root)
+        assert app.usb_btn.winfo_ismapped()
+        assert _inside_window(app.usb_btn, app.root)
         app.show("overlay", "Правая панель")
         app.root.update()
         assert app.overlay_install_btn.winfo_ismapped()

@@ -19,6 +19,7 @@ from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, start_overlay, stop_overlay
 from hub.paths import bundled_apps
 from hub.signer import certificate_info, ensure_keystore
+from hub.usb import list_usb_apks, removable_roots
 
 BG = "#0B1220"
 PANEL = "#121A2B"
@@ -280,7 +281,8 @@ class HubApp:
             text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + pm install. "
             "adb install на Feiyu зависает — Hub его больше не вызывает. "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка, не зависание. "
-            "Смотрите лоадер сверху: подпись → копирование → pm install.",
+            "Смотрите лоадер сверху: подпись → копирование → pm install. "
+            "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(6, 8))
         row = ttk.Frame(page)
@@ -290,7 +292,9 @@ class HubApp:
         )
         self.install_btn.pack(side=tk.LEFT)
         ttk.Button(row, text="Выбрать APK…", command=self.pick_apk).pack(side=tk.LEFT, padx=8)
-        ttk.Button(row, text="Папка apps/", command=self.open_apps_folder).pack(side=tk.LEFT)
+        self.usb_btn = ttk.Button(row, text="Открыть флешку", command=self.open_usb_stick)
+        self.usb_btn.pack(side=tk.LEFT)
+        ttk.Button(row, text="Папка apps/", command=self.open_apps_folder).pack(side=tk.LEFT, padx=8)
         self.apk_list = tk.Listbox(
             page, bg=CARD, fg=TEXT, font=FONT, selectbackground=ACCENT, selectforeground=BG, height=8
         )
@@ -323,7 +327,8 @@ class HubApp:
         body = (
             "QuickBar — колонка справа на 13.2″ вертикальном экране, поверх навигации и видео. "
             "Высота иконок и свёрнутой полоски ×3. Тап — запуск, удержание — избранное, "
-            "↔ подписи и поиск, ▸ тонкий край.\n"
+            "↔ подписи и поиск, ▸ тонкий край. Список: сначала сторонние, ниже системные. "
+            "У сторонних — кнопка «удалить». «флешка» — APK с USB в разъёме ГУ.\n"
             "После выключения/включения машины панель поднимается сама: BOOT, ACC, "
             "питание, экран и таймер каждые 30 с. Hub ещё добавляет пакет в белый список "
             "deviceidle, чтобы Feiyu не замораживал процесс. Пока крутится лоадер — не жмите "
@@ -691,6 +696,32 @@ class HubApp:
             self.journal.write("INFO", "ui", "выбор APK отменён")
             return
         self.journal.write("INFO", "ui", f"выбран APK {path}")
+        self.apk_list.insert(0, path)
+        self.apk_list.selection_clear(0, tk.END)
+        self.apk_list.selection_set(0)
+
+    def open_usb_stick(self) -> None:
+        self.journal.action("открыть флешку")
+        apks = list_usb_apks()
+        roots = removable_roots()
+        if apks:
+            self.apk_list.delete(0, tk.END)
+            for item in apks:
+                self.apk_list.insert(tk.END, str(item))
+            self.apk_list.selection_clear(0, tk.END)
+            self.apk_list.selection_set(0)
+            self.log(f"Флешка: {len(apks)} APK. Hub переподпишет выбранный под белый список ГУ.")
+            return
+        initial = str(roots[0]) if roots else None
+        path = filedialog.askopenfilename(
+            title="APK на флешке",
+            filetypes=[("APK", "*.apk")],
+            initialdir=initial,
+        )
+        if not path:
+            self.journal.write("INFO", "ui", "флешка: APK не выбран")
+            return
+        self.journal.write("INFO", "ui", f"флешка APK {path}")
         self.apk_list.insert(0, path)
         self.apk_list.selection_clear(0, tk.END)
         self.apk_list.selection_set(0)

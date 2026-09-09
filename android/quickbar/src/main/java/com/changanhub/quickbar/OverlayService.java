@@ -37,6 +37,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -55,6 +56,7 @@ public class OverlayService extends Service {
     public static final String ACTION_TOGGLE = "com.changanhub.quickbar.TOGGLE";
     public static final String ACTION_REFRESH = "com.changanhub.quickbar.REFRESH";
     public static final String ACTION_KEEPALIVE = "com.changanhub.quickbar.KEEPALIVE";
+    public static final String ACTION_PAUSE = "com.changanhub.quickbar.PAUSE";
 
     /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
     public static final int HEIGHT_SCALE = 3;
@@ -79,6 +81,9 @@ public class OverlayService extends Service {
     private TextView title;
     private boolean collapsed;
     private boolean wide;
+    private boolean usbMode;
+    private long overlayPausedUntil;
+    private View usbToggle;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<AppItem> apps = new ArrayList<>();
     private String query = "";
@@ -87,10 +92,10 @@ public class OverlayService extends Service {
     private final Runnable attachWatch = new Runnable() {
         @Override
         public void run() {
-            if (root == null) {
-                attachOverlay();
-            }
-            handler.postDelayed(this, 15_000);
+        if (SystemClock.elapsedRealtime() >= overlayPausedUntil && root == null) {
+            attachOverlay();
+        }
+        handler.postDelayed(this, 15_000);
         }
     };
 
@@ -100,6 +105,10 @@ public class OverlayService extends Service {
 
     public static void keepAlive(Context context) {
         launch(context, ACTION_KEEPALIVE);
+    }
+
+    public static void pauseForDialog(Context context) {
+        launch(context, ACTION_PAUSE);
     }
 
     private static void launch(Context context, String action) {
@@ -185,7 +194,14 @@ public class OverlayService extends Service {
         if (root == null) {
             attachOverlay();
         }
-        if (ACTION_KEEPALIVE.equals(action)) {
+        if (ACTION_PAUSE.equals(action)) {
+            overlayPausedUntil = SystemClock.elapsedRealtime() + 90_000L;
+            setCollapsed(true);
+            return START_STICKY;
+        }
+        if (ACTION_KEEPALIVE.equals(action)
+                || (ACTION_SHOW.equals(action)
+                        && SystemClock.elapsedRealtime() < overlayPausedUntil)) {
             return START_STICKY;
         }
         if (ACTION_TOGGLE.equals(action)) {
@@ -370,7 +386,7 @@ public class OverlayService extends Service {
             params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         } else {
-            params.width = dp(wide ? 320 : 96);
+            params.width = dp(wide ? 380 : 96);
             params.height = screenH;
             params.gravity = Gravity.END | Gravity.TOP;
         }
@@ -433,9 +449,27 @@ public class OverlayService extends Service {
         tools.addView(toolButton("↻", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                reloadApps();
+                if (usbMode) {
+                    renderApps();
+                } else {
+                    reloadApps();
+                }
             }
         }));
+        usbToggle = toolButton("флешка", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                usbMode = !usbMode;
+                if (usbMode) {
+                    wide = true;
+                    persist();
+                    applySize();
+                }
+                refreshChrome();
+                renderApps();
+            }
+        });
+        tools.addView(usbToggle);
         panel.addView(tools);
 
         search = new EditText(this);
@@ -516,7 +550,14 @@ public class OverlayService extends Service {
             search.setVisibility((collapsed || !wide) ? View.GONE : View.VISIBLE);
         }
         if (title != null) {
-            title.setText(collapsed ? "▸" : (wide ? "QuickBar" : "QB"));
+            title.setText(collapsed ? "▸" : (usbMode ? "USB" : (wide ? "QuickBar" : "QB")));
+        }
+        if (usbToggle instanceof TextView) {
+            ((TextView) usbToggle).setText(usbMode ? "прилож." : "флешка");
+            usbToggle.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+        }
+        if (search != null) {
+            search.setHint(usbMode ? "поиск apk" : "поиск");
         }
         if (collapsed) {
             root.setPadding(dp(2), dp(8 * HEIGHT_SCALE), dp(2), dp(8 * HEIGHT_SCALE));
@@ -534,6 +575,25 @@ public class OverlayService extends Service {
         t.setPadding(dp(4), dp(10 * HEIGHT_SCALE), dp(4), dp(10 * HEIGHT_SCALE));
         t.setMinHeight(dp(48 * HEIGHT_SCALE / 2));
         t.setOnClickListener(click);
+        return t;
+    }
+
+    private View actionButton(String label, int color, View.OnClickListener click) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(Color.parseColor("#0B1220"));
+        t.setTextSize(11);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(8), dp(10), dp(8), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(10));
+        t.setBackground(bg);
+        t.setOnClickListener(click);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(6), 0, 0, 0);
+        t.setLayoutParams(lp);
         return t;
     }
 
@@ -602,7 +662,8 @@ public class OverlayService extends Service {
             }
             try {
                 ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
-                item.system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+                item.system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                        || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
             } catch (Exception ignored) {
             }
             items.add(item);
@@ -611,13 +672,13 @@ public class OverlayService extends Service {
         Collections.sort(items, new Comparator<AppItem>() {
             @Override
             public int compare(AppItem a, AppItem b) {
+                if (a.system != b.system) {
+                    return a.system ? 1 : -1;
+                }
                 boolean fa = fav.contains(a.pkg);
                 boolean fb = fav.contains(b.pkg);
                 if (fa != fb) {
                     return fa ? -1 : 1;
-                }
-                if (a.system != b.system) {
-                    return a.system ? 1 : -1;
                 }
                 return a.label.compareToIgnoreCase(b.label);
             }
@@ -646,13 +707,27 @@ public class OverlayService extends Service {
             appList.addView(tick);
             return;
         }
+        if (usbMode) {
+            renderUsb();
+            return;
+        }
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         Set<String> fav = favorites();
         int shown = 0;
+        boolean userHeader = false;
+        boolean systemHeader = false;
         for (final AppItem item : apps) {
             if (q.length() > 0 && !item.label.toLowerCase(Locale.ROOT).contains(q)
                     && !item.pkg.toLowerCase(Locale.ROOT).contains(q)) {
                 continue;
+            }
+            if (!item.system && !userHeader) {
+                appList.addView(sectionHeader("Сторонние"));
+                userHeader = true;
+            }
+            if (item.system && !systemHeader) {
+                appList.addView(sectionHeader("Системные"));
+                systemHeader = true;
             }
             appList.addView(row(item, fav.contains(item.pkg)));
             shown++;
@@ -664,6 +739,105 @@ public class OverlayService extends Service {
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
+        }
+    }
+
+    private void renderUsb() {
+        TextView hint = new TextView(this);
+        hint.setText("APK с флешки в USB ГУ. Подпись — та же, что в Hub, иначе окно 提示 -118.");
+        hint.setTextColor(Color.parseColor("#9AA7B8"));
+        hint.setTextSize(11);
+        hint.setPadding(dp(4), 0, dp(4), dp(8));
+        appList.addView(hint);
+        List<File> apks = UsbStorage.apkFiles(this);
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        int shown = 0;
+        for (int i = 0; i < apks.size(); i++) {
+            final File apk = apks.get(i);
+            String name = apk.getName();
+            if (q.length() > 0 && !name.toLowerCase(Locale.ROOT).contains(q)
+                    && !apk.getAbsolutePath().toLowerCase(Locale.ROOT).contains(q)) {
+                continue;
+            }
+            appList.addView(apkRow(apk));
+            shown++;
+        }
+        if (shown == 0) {
+            TextView empty = new TextView(this);
+            empty.setText(apks.isEmpty()
+                    ? "флешка не найдена или на ней нет APK.\nВставьте USB в разъём ГУ."
+                    : "нет APK по поиску");
+            empty.setTextColor(Color.parseColor("#9AA7B8"));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
+            appList.addView(empty);
+        }
+    }
+
+    private View sectionHeader(String text) {
+        TextView header = new TextView(this);
+        header.setText(text);
+        header.setTextColor(Color.parseColor("#3DDC97"));
+        header.setTextSize(13);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(dp(4), dp(14), dp(4), dp(6));
+        return header;
+    }
+
+    private View apkRow(final File apk) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(4), dp(ROW_PAD_V_DP / 2), dp(4), dp(ROW_PAD_V_DP / 2));
+        TextView name = new TextView(this);
+        name.setText(apk.getName());
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(14);
+        name.setMaxLines(2);
+        TextView meta = new TextView(this);
+        meta.setText(apk.getParent() + " · " + (apk.length() / 1024) + " КБ");
+        meta.setTextColor(Color.parseColor("#9AA7B8"));
+        meta.setTextSize(10);
+        meta.setMaxLines(2);
+        row.addView(name);
+        row.addView(meta);
+        if (wide) {
+            row.addView(actionButton("поставить", Color.parseColor("#3DDC97"), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    installFromUsb(apk);
+                }
+            }));
+        }
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                installFromUsb(apk);
+            }
+        });
+        return row;
+    }
+
+    private void installFromUsb(File apk) {
+        pauseForDialog(this);
+        setCollapsed(true);
+        try {
+            PackageActions.install(this, apk);
+        } catch (Exception e) {
+            usbMode = true;
+            setCollapsed(false);
+            if (title != null) {
+                title.setText("ошибка USB");
+            }
+        }
+    }
+
+    private void uninstallUserApp(String pkg) {
+        pauseForDialog(this);
+        setCollapsed(true);
+        try {
+            PackageActions.uninstall(this, pkg);
+        } catch (Exception ignored) {
+            setCollapsed(false);
         }
     }
 
@@ -700,6 +874,15 @@ public class OverlayService extends Service {
             textCol.addView(name);
             textCol.addView(mark);
             row.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+
+        if (!item.system) {
+            row.addView(actionButton(wide ? "удалить" : "×", Color.parseColor("#FF6B6B"), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    uninstallUserApp(item.pkg);
+                }
+            }));
         }
 
         row.setOnClickListener(new View.OnClickListener() {

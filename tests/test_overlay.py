@@ -56,6 +56,8 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
+    assert "REQUEST_INSTALL_PACKAGES" in mf
+    assert "InstallResultReceiver" in mf
     boot = Path("android/quickbar/src/main/java/com/changanhub/quickbar/BootReceiver.java").read_text(
         encoding="utf-8"
     )
@@ -64,3 +66,24 @@ def test_manifest_survives_acc_cycle() -> None:
     )
     assert "scheduleBootRetries" in boot
     assert "keepAlive" in wd
+
+
+def test_quickbar_groups_and_usb_install() -> None:
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert 'sectionHeader("Сторонние")' in src
+    assert 'sectionHeader("Системные")' in src
+    assert '"удалить"' in src
+    assert '"флешка"' in src
+    assert "UsbStorage.apkFiles" in src
+    assert "PackageActions.uninstall" in src
+    assert "PackageActions.install" in src
+    assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/UsbStorage.java")).is_file()
+    assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java")).is_file()
+
+
+def test_grant_overlay_allows_sideload() -> None:
+    joined = "\n".join(PERSIST_SHELL)
+    assert "REQUEST_INSTALL_PACKAGES" in joined
+    assert "install_non_market_apps" in joined

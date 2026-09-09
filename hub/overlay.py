@@ -23,6 +23,9 @@ PERSIST_SHELL = (
     f"dumpsys deviceidle whitelist +{PACKAGE}",
     f"cmd deviceidle whitelist +{PACKAGE}",
     f"am set-inactive {PACKAGE} false",
+    f"appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
+    f"cmd appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
+    "settings put secure install_non_market_apps 1",
 )
 
 
