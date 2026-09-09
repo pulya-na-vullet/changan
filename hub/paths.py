@@ -1,19 +1,14 @@
-"""Filesystem helpers for Changan Hub."""
+"""Filesystem helpers. Everything portable lives next to app.py (flash drive)."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def app_data() -> Path:
-    if os.name == "nt":
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    path = base / "ChanganHub"
+    path = ROOT / "data"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -25,6 +20,6 @@ def bundled_apps() -> Path:
 
 
 def logs_dir() -> Path:
-    path = app_data() / "logs"
+    path = ROOT / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path

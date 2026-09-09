@@ -82,6 +82,9 @@ class HubApp:
         self.page = tk.StringVar(value="connect")
         self.busy = False
         self.busy_title = ""
+        self.jobs: queue.Queue[tuple[str, Callable[[], None]]] = queue.Queue()
+        self._worker = threading.Thread(target=self._job_loop, daemon=True, name="hub-worker")
+        self._worker.start()
 
         try:
             self.adb = Adb(on_log=self.journal.adb)
@@ -165,7 +168,7 @@ class HubApp:
         log_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=(8, 16))
         log_top = tk.Frame(log_frame, bg=PANEL)
         log_top.pack(fill=tk.X, padx=8, pady=(6, 0))
-        tk.Label(log_top, text="Журнал (всё пишется в файл)", bg=PANEL, fg=MUTED).pack(side=tk.LEFT)
+        tk.Label(log_top, text="Журнал → папка logs на флешке (hub.log)", bg=PANEL, fg=MUTED).pack(side=tk.LEFT)
         ttk.Button(log_top, text="Копировать", command=self.copy_log).pack(side=tk.RIGHT, padx=4)
         ttk.Button(log_top, text="Открыть файл", command=self.open_log_file).pack(side=tk.RIGHT, padx=4)
         ttk.Button(log_top, text="Очистить экран", command=self.clear_log_view).pack(side=tk.RIGHT, padx=4)
@@ -390,18 +393,19 @@ class HubApp:
 
     def _work(self, title: str, fn: Callable[[], None]) -> None:
         self.journal.action("кнопка", title)
-        if self.busy:
-            self.journal.write(
-                "WARN",
-                "ui",
-                f"клик «{title}» проигнорирован: ещё выполняется «{self.busy_title}»",
-            )
-            return
-        self.busy = True
-        self.busy_title = title
-        self.journal.write("INFO", "job", f"старт: {title}")
+        pending = self.jobs.qsize() + (1 if self.busy else 0)
+        if pending:
+            self.journal.write("INFO", "job", f"в очереди: {title} (перед этим ещё {pending})")
+        else:
+            self.journal.write("INFO", "job", f"старт: {title}")
+        self.jobs.put((title, fn))
 
-        def runner() -> None:
+    def _job_loop(self) -> None:
+        while True:
+            title, fn = self.jobs.get()
+            self.busy = True
+            self.busy_title = title
+            self.journal.write("INFO", "job", f"выполняется: {title}")
             try:
                 fn()
                 self.journal.write("INFO", "job", f"готово: {title}")
@@ -410,8 +414,6 @@ class HubApp:
             finally:
                 self.busy = False
                 self.busy_title = ""
-
-        threading.Thread(target=runner, daemon=True, name=f"hub-{title}").start()
 
     def refresh_connection(self) -> None:
         def go() -> None:
@@ -459,30 +461,14 @@ class HubApp:
             self._ui(lambda t=text: self.info_box.configure(text=t))
             return
         adb.serial = ready[0]["serial"]
-        # Green immediately — never wait for getprop (it used to hang on the shell password).
         self._ui(lambda: self.status.set(f"Подключено · {adb.serial}"))
         self._ui(lambda: self._set_dot(True))
-        self.journal.write("INFO", "connect", f"индикатор зелёный, serial={adb.serial}")
-        try:
-            props = adb.props()
-        except Exception as exc:  # noqa: BLE001
-            self.journal.error("props", exc)
-            props = {}
-        model = props.get("model") or ""
-        android = props.get("android") or ""
-        pretty = "\n".join(lines)
-        if any(props.values()):
-            pretty += "\n\n" + "\n".join(f"{k:12} {v}" for k, v in props.items())
-            self._ui(
-                lambda m=model, a=android, s=adb.serial: self.status.set(
-                    f"Подключено · {m or s}" + (f" · Android {a}" if a else "")
-                )
-            )
-            self.journal.write("INFO", "connect", "свойства ГУ получены", **props)
-        else:
-            pretty += "\n\ngetprop не ответил, но ADB device есть — ставить приложения можно."
-            self.journal.write("WARN", "connect", "свойства ГУ пустые, продолжаем по serial")
+        pretty = "\n".join(lines) + (
+            "\n\nADB device есть. Свойства ГУ специально не спрашиваем — "
+            "getprop на Feiyu часто вешает shell. Ставьте панель сразу."
+        )
         self._ui(lambda t=pretty: self.info_box.configure(text=t))
+        self.journal.write("INFO", "connect", f"индикатор зелёный, serial={adb.serial}")
 
     def refresh_apk_list(self) -> None:
         self.apk_list.delete(0, tk.END)

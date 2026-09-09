@@ -10,6 +10,7 @@ hub/certs/
 screenshots/
 .idea/
 .vscode/
-*.log
+logs/*.log
+data/
 *.idsig
 apps/QuickBar-v1.apk

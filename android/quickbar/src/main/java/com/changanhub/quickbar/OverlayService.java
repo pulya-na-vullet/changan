@@ -89,11 +89,9 @@ public class OverlayService extends Service {
         super.onCreate();
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         collapsed = p.getBoolean(KEY_COLLAPSED, false);
-        wide = p.getBoolean(KEY_WIDE, false);
+        wide = p.getBoolean(KEY_WIDE, true);
         startInForeground();
-        if (canDraw()) {
-            attachOverlay();
-        }
+        attachOverlay();
     }
 
     @Override
@@ -102,9 +100,6 @@ public class OverlayService extends Service {
         String action = intent != null ? intent.getAction() : ACTION_SHOW;
         if (ACTION_HIDE.equals(action)) {
             detachOverlay();
-            return START_STICKY;
-        }
-        if (!canDraw()) {
             return START_STICKY;
         }
         if (root == null) {
@@ -181,35 +176,49 @@ public class OverlayService extends Service {
         }
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         root = buildView();
-        params = buildParams();
-        applySize();
-        try {
-            windowManager.addView(root, params);
-            reloadApps();
-        } catch (Exception ignored) {
-            root = null;
-        }
-    }
-
-    private void detachOverlay() {
-        if (root != null && windowManager != null) {
+        int[] types = overlayTypes();
+        Exception last = null;
+        for (int i = 0; i < types.length; i++) {
+            params = buildParams(types[i]);
             try {
-                windowManager.removeView(root);
-            } catch (Exception ignored) {
+                windowManager.addView(root, params);
+                applySize();
+                reloadApps();
+                return;
+            } catch (Exception e) {
+                last = e;
+                try {
+                    windowManager.removeView(root);
+                } catch (Exception ignored) {
+                }
             }
         }
         root = null;
+        if (last != null) {
+            last.printStackTrace();
+        }
     }
 
-    private WindowManager.LayoutParams buildParams() {
-        int type;
+    private int[] overlayTypes() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-        } else {
-            type = WindowManager.LayoutParams.TYPE_PHONE;
+            return new int[] {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.TYPE_PHONE,
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
+                    WindowManager.LayoutParams.TYPE_TOAST
+            };
         }
+        return new int[] {
+                WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
+                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.TYPE_TOAST
+        };
+    }
+
+    private WindowManager.LayoutParams buildParams(int type) {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                dp(72),
+                dp(96),
                 WindowManager.LayoutParams.MATCH_PARENT,
                 type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -224,17 +233,31 @@ public class OverlayService extends Service {
         return lp;
     }
 
+    private void detachOverlay() {
+        if (root != null && windowManager != null) {
+            try {
+                windowManager.removeView(root);
+            } catch (Exception ignored) {
+            }
+        }
+        root = null;
+    }
+
+    private WindowManager.LayoutParams buildParams() {
+        return buildParams(overlayTypes()[0]);
+    }
+
     private void applySize() {
         if (params == null || windowManager == null || root == null) {
             return;
         }
         if (collapsed) {
-            params.width = dp(28);
-            params.height = dp(160);
+            params.width = dp(56);
+            params.height = dp(220);
             params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         } else {
-            params.width = dp(wide ? 280 : 84);
+            params.width = dp(wide ? 320 : 96);
             params.height = WindowManager.LayoutParams.MATCH_PARENT;
             params.gravity = Gravity.END | Gravity.TOP;
         }

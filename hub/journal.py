@@ -16,11 +16,12 @@ Listener = Callable[[str], None]
 
 class Journal:
     def __init__(self) -> None:
-        self.path = logs_dir() / f"hub-{datetime.now().strftime('%Y-%m-%d')}.log"
+        self.path = logs_dir() / "hub.log"
+        self.dated = logs_dir() / f"hub-{datetime.now().strftime('%Y-%m-%d')}.log"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._listeners: list[Listener] = []
-        self.write("INFO", "journal", f"файл журнала: {self.path}")
+        self.write("INFO", "journal", f"журнал на флешке: {self.path}")
 
     def subscribe(self, fn: Listener) -> None:
         self._listeners.append(fn)
@@ -35,9 +36,10 @@ class Journal:
                 dumped = str(extra)
             line += " " + dumped
         with self._lock:
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
-                handle.flush()
+            for target in (self.path, self.dated):
+                with target.open("a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+                    handle.flush()
         for fn in list(self._listeners):
             try:
                 fn(line)

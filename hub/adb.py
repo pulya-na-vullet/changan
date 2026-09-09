@@ -71,15 +71,12 @@ def _adb_candidates() -> list[Path]:
 
 
 def _run_kwargs() -> dict:
-    kwargs: dict = {
+    return {
         "capture_output": True,
         "text": True,
         "encoding": "utf-8",
         "errors": "replace",
     }
-    if os.name == "nt":
-        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return kwargs
 
 
 class Adb:
@@ -198,23 +195,43 @@ class Adb:
             lines.append(line)
         return "\n".join(lines)
 
-    def shell(self, command: str, timeout: int = 30) -> CommandResult:
-        """Always send the Feiyu shell password first so getprop/pm never hang."""
+    def shell(self, command: str, timeout: int = 12) -> CommandResult:
+        """Run a remote command the way Feiyu actually accepts it.
+
+        Interactive ``adb shell`` (no command) hangs on this HU until timeout.
+        Working form from the community: pipe the password into
+        ``adb shell <command>``.
+        """
         self.last_password_used = True
-        payload = f"{SHELL_PASSWORD}\n{command}\nexit\n"
-        result = self.raw(["shell"], timeout=timeout, input_text=payload)
-        stdout = self._strip_password_banner(result.stdout)
-        stderr = self._strip_password_banner(result.stderr)
-        blob = (stdout + "\n" + stderr).lower()
-        ok = result.code == 0
-        if "success" in blob:
-            ok = True
-        if "not auth" in blob or "install failed" in blob or "failure [" in blob:
-            ok = False
-        return CommandResult(ok, stdout, stderr, result.code, result.argv)
+        attempts: list[tuple[list[str], str | None]] = [
+            (["shell", command], f"{SHELL_PASSWORD}\n"),
+            (["shell", command], f"{SHELL_PASSWORD}\r\n"),
+            (["shell", command], None),
+            (["exec-out", command], f"{SHELL_PASSWORD}\n"),
+            (["exec-out", command], None),
+        ]
+        last = CommandResult(False, "", "shell not attempted", 1, [])
+        for args, stdin in attempts:
+            last = self.raw(args, timeout=timeout, input_text=stdin)
+            blob = last.stdout + "\n" + last.stderr
+            if last.code == 124:
+                continue
+            if self.needs_password(blob) and not last.stdout.strip():
+                continue
+            stdout = self._strip_password_banner(last.stdout)
+            stderr = self._strip_password_banner(last.stderr)
+            body = (stdout + "\n" + stderr).lower()
+            ok = last.code == 0 or "success" in body or bool(stdout.strip())
+            if "not auth" in body or "install failed" in body or "failure [" in body:
+                ok = False
+            if ok or stdout.strip() or "error" in body:
+                return CommandResult(ok, stdout, stderr, last.code, last.argv)
+        stdout = self._strip_password_banner(last.stdout)
+        stderr = self._strip_password_banner(last.stderr)
+        return CommandResult(False, stdout, stderr, last.code, last.argv)
 
     def getprop(self, name: str) -> str:
-        result = self.shell(f"getprop {name}", timeout=12)
+        result = self.shell(f"getprop {name}", timeout=8)
         lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
         return lines[-1] if lines else ""
 
@@ -225,22 +242,9 @@ class Adb:
             "device": "ro.product.device",
             "android": "ro.build.version.release",
             "sdk": "ro.build.version.sdk",
-            "fingerprint": "ro.build.fingerprint",
             "cpu": "ro.product.cpu.abi",
-            "language": "persist.sys.language",
-            "locale": "ro.product.locale",
         }
-        script = " ; ".join(f"echo PROP_{label}=$(getprop {prop})" for label, prop in keys.items())
-        result = self.shell(script, timeout=20)
-        parsed = {label: "" for label in keys}
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line.startswith("PROP_"):
-                continue
-            name, _, value = line.partition("=")
-            label = name.replace("PROP_", "", 1)
-            if label in parsed:
-                parsed[label] = value.strip()
+        parsed = {label: self.getprop(prop) for label, prop in keys.items()}
         return parsed
 
     def push(self, local: Path, remote: str, timeout: int = 180) -> CommandResult:

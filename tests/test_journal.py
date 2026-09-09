@@ -16,9 +16,8 @@ def test_shell_always_sends_password() -> None:
     adb.raw = fake_raw  # type: ignore[method-assign]
     adb.last_password_used = False
     result = Adb.shell(adb, "getprop ro.product.device")
-    assert sent["args"] == ["shell"]
-    assert sent["input"].startswith(SHELL_PASSWORD)
-    assert "getprop ro.product.device" in sent["input"]
+    assert sent["args"] == ["shell", "getprop ro.product.device"]
+    assert sent["input"] is not None and sent["input"].startswith(SHELL_PASSWORD)
     assert "please input" not in result.stdout.lower()
     assert "spm8666p1_64_car" in result.stdout
 
