@@ -55,6 +55,9 @@ def test_install_falls_back_to_pm(tmp_path: Path) -> None:
     assert report.ok
     assert report.method.startswith("pm install")
     assert fake.pushed
+    installs = [cmd for cmd in fake.shells if cmd.startswith("pm install")]
+    assert len(installs) == 1
+    assert installs[0].startswith("pm install -r -t -g ")
     assert any(cmd.startswith("pm install") for cmd in fake.shells)
 
 
@@ -85,7 +88,8 @@ def test_classify_install_steps() -> None:
 
     assert classify_install_step("Шаг 1/5: подпись APK под Changan…") == "sign"
     assert classify_install_step("push → /sdcard/Download/x.apk") == "push"
-    assert classify_install_step("выполняю pm install -r -t /sdcard/x") == "pm"
+    assert classify_install_step("выполняю pm install -r -t -g /data/local/tmp/x") == "pm"
+    assert classify_install_step("выполняю pm uninstall com.changanhub.quickbar") == "pm"
     assert classify_install_step("запуск: am start -n com.changanhub.quickbar/.MainActivity") == "start"
 
 
@@ -179,4 +183,75 @@ def test_discover_hu_signer_serial(tmp_path: Path) -> None:
     serial = discover_hu_signer_serial(fake, lambda m, p: notes.append(m))
     assert serial == CHANGAN_SERIAL
     assert any("newpipe" in line.lower() for line in notes)
+
+
+def test_install_uninstalls_old_package_then_one_pm(tmp_path: Path) -> None:
+    apk = tmp_path / "QuickBar.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    state = {"installed": True}
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm path com.changanhub.quickbar"):
+            out = "package:/data/app/quickbar/base.apk" if state["installed"] else ""
+            return CommandResult(True, out, "", 0, [])
+        if command.startswith("pm uninstall"):
+            state["installed"] = False
+            return CommandResult(True, "Success", "", 0, [])
+        if command.startswith("pm install"):
+            assert not state["installed"]
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickbar")
+    assert report.ok
+    assert any(cmd.startswith("pm uninstall com.changanhub.quickbar") for cmd in fake.shells)
+    installs = [cmd for cmd in fake.shells if cmd.startswith("pm install")]
+    assert len(installs) == 1
+    assert "-r -t -g" in installs[0]
+
+
+def test_install_retries_after_signature_mismatch(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    state = {"installed": True, "installs": 0}
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm path"):
+            out = "package:/data/app/x.apk" if state["installed"] else ""
+            return CommandResult(True, out, "", 0, [])
+        if command.startswith("pm uninstall"):
+            state["installed"] = False
+            return CommandResult(True, "Success", "", 0, [])
+        if command.startswith("pm install"):
+            state["installs"] += 1
+            if state["installed"]:
+                return CommandResult(
+                    False,
+                    "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quickbar signatures do not match previously installed version; ignoring!]",
+                    "",
+                    1,
+                    [],
+                )
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True)
+    assert report.ok
+    assert state["installs"] == 2
+    assert any("pm uninstall com.changanhub.quickbar" in cmd for cmd in fake.shells)
+    assert any("другой подписью" in line for line in report.log)
 

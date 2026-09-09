@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from hub.overlay import PERSIST_SHELL, PACKAGE, grant_overlay, start_overlay
+from hub.overlay import PACKAGE, PERSIST_SHELL, grant_overlay, remove_overlay, start_overlay
 
 
 class FakeAdb:
@@ -35,6 +35,26 @@ def test_start_overlay_kicks_boot_intents() -> None:
     assert "USER_PRESENT" in joined
     assert "MainActivity" in joined
     assert "start-foreground-service" in joined or "startservice" in joined
+
+
+def test_remove_overlay_uninstalls_package() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith(f"pm path {PACKAGE}"):
+            return CommandResult(True, "package:/data/app/quickbar/base.apk", "", 0, [])
+        if command.startswith("pm uninstall"):
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = remove_overlay(fake)
+    joined = "\n".join(fake.shells + lines)
+    assert f"pm uninstall {PACKAGE}" in joined
+    assert "force-stop" in joined or "останавливаю" in "\n".join(lines)
 
 
 def test_quickbar_is_three_times_taller() -> None:

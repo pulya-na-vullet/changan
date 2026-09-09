@@ -39,6 +39,47 @@ def test_shell_timeout_does_not_retry() -> None:
     assert len(calls) == 1
 
 
+def test_shell_success_empty_stdout_does_not_retry() -> None:
+    adb = object.__new__(Adb)
+    calls: list[tuple] = []
+
+    def fake_raw(args, timeout=45, input_text=None):
+        calls.append((tuple(args), input_text, timeout))
+        from hub.adb import CommandResult
+
+        return CommandResult(
+            True,
+            "",
+            "please input verify password: verify success!",
+            0,
+            args,
+        )
+
+    adb.raw = fake_raw  # type: ignore[method-assign]
+    adb.last_password_used = False
+    result = Adb.shell(adb, "appops set com.changanhub.quickbar SYSTEM_ALERT_WINDOW allow")
+    assert result.ok
+    assert result.code == 0
+    assert len(calls) == 1
+
+
+def test_shell_device_not_found_does_not_retry() -> None:
+    adb = object.__new__(Adb)
+    calls: list[tuple] = []
+
+    def fake_raw(args, timeout=45, input_text=None):
+        calls.append((tuple(args), input_text, timeout))
+        from hub.adb import CommandResult
+
+        return CommandResult(False, "", "adb.exe: device 'AHFPF6643H444A0076' not found", 1, args)
+
+    adb.raw = fake_raw  # type: ignore[method-assign]
+    adb.last_password_used = False
+    result = Adb.shell(adb, "pm path org.schabi.newpipe")
+    assert not result.ok
+    assert len(calls) == 1
+
+
 def test_journal_writes_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("hub.journal.logs_dir", lambda: tmp_path)
     journal = Journal()

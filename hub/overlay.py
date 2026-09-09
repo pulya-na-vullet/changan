@@ -15,18 +15,12 @@ SERVICE = f"{PACKAGE}/.OverlayService"
 # deviceidle + background appops stop the HU from freezing the process.
 PERSIST_SHELL = (
     f"appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
-    f"cmd appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
     f"appops set {PACKAGE} RUN_IN_BACKGROUND allow",
-    f"cmd appops set {PACKAGE} RUN_IN_BACKGROUND allow",
     f"appops set {PACKAGE} RUN_ANY_IN_BACKGROUND allow",
-    f"cmd appops set {PACKAGE} RUN_ANY_IN_BACKGROUND allow",
     f"dumpsys deviceidle whitelist +{PACKAGE}",
-    f"cmd deviceidle whitelist +{PACKAGE}",
     f"am set-inactive {PACKAGE} false",
     f"appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
-    f"cmd appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
     f"appops set {PACKAGE} GET_USAGE_STATS allow",
-    f"cmd appops set {PACKAGE} GET_USAGE_STATS allow",
     "settings put secure install_non_market_apps 1",
 )
 
@@ -69,6 +63,20 @@ def stop_overlay(adb: Adb) -> list[str]:
     return [f"force-stop code={result.code} {result.text or result.stderr}"]
 
 
+def remove_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
+    from hub.installer import uninstall_package
+
+    lines: list[str] = []
+
+    def step(message: str, percent: int) -> None:
+        lines.append(message)
+        if progress:
+            progress(message, percent)
+
+    uninstall_package(adb, PACKAGE, step)
+    return lines
+
+
 def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     apk = overlay_apk()
     if not apk.exists():
@@ -76,7 +84,7 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     lines = [f"Файл панели: {apk} ({apk.stat().st_size} байт)"]
     if progress:
         progress(lines[0], 5)
-    report = install_apk(adb, apk, already_signed=False, progress=progress)
+    report = install_apk(adb, apk, already_signed=False, progress=progress, package=PACKAGE)
     lines.extend(report.log)
     if not report.ok:
         if any("not auth" in line.lower() or "-118" in line for line in report.log):

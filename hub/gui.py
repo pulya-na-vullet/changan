@@ -16,7 +16,7 @@ from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbE
 from hub.catalog import CATALOG, package_from_row, package_label
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
-from hub.overlay import install_overlay, overlay_apk, start_overlay, stop_overlay
+from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
 from hub.paths import bundled_apps
 from hub.signer import certificate_info, ensure_keystore
 from hub.usb import list_usb_apks, removable_roots
@@ -278,10 +278,11 @@ class HubApp:
         ttk.Label(page, text="Установка приложений", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + pm install. "
-            "adb install на Feiyu зависает — Hub его больше не вызывает. "
+            text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
+            "Старую версию Hub снимает сам через ADB (настройки ГУ оверлей часто не удаляют). "
+            "adb install на Feiyu зависает — Hub его не вызывает. "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка, не зависание. "
-            "Смотрите лоадер сверху: подпись → копирование → pm install. "
+            "Смотрите лоадер сверху: подпись → копирование → удаление старой → pm install. "
             "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(6, 8))
@@ -318,7 +319,8 @@ class HubApp:
         )
         self.overlay_install_btn.pack(side=tk.LEFT)
         ttk.Button(row, text="Только запустить", command=self.resume_overlay).pack(side=tk.LEFT, padx=8)
-        ttk.Button(row, text="Остановить", command=self.kill_overlay).pack(side=tk.LEFT)
+        ttk.Button(row, text="Остановить", command=self.kill_overlay).pack(side=tk.LEFT, padx=8)
+        ttk.Button(row, text="Удалить с ГУ", command=self.wipe_overlay).pack(side=tk.LEFT)
         ttk.Label(
             page,
             text=f"APK: {overlay_apk()}",
@@ -331,6 +333,9 @@ class HubApp:
             "Свёрнутый край шире в 2 раза и из двух равных зон: полное меню и 3 последних приложения "
             "(иконки recents с равными отступами до краёв и между собой). "
             "У сторонних — корзина. «флешка» — APK с USB в разъёме ГУ.\n"
+            "При «Установить и запустить» Hub сам снимает старую панель через ADB "
+            "(из настроек Android её часто не удалить — оверлей перехватывает экран) "
+            "и ставит одним способом: push в /data/local/tmp + pm install -r -t -g. "
             "После выключения/включения машины панель поднимается сама: BOOT, ACC, "
             "питание, экран и таймер каждые 30 с. Hub ещё добавляет пакет в белый список "
             "deviceidle, чтобы Feiyu не замораживал процесс. Пока крутится лоадер — не жмите "
@@ -807,6 +812,20 @@ class HubApp:
                 self.log(line)
 
         self._work("Стоп панели", go)
+
+    def wipe_overlay(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial удаление не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in remove_overlay(adb, progress=progress):
+                self.journal.write("INFO", "overlay", line)
+
+        self._work("Удаление панели", go)
 
     def refresh_packages(self) -> None:
         def go() -> None:

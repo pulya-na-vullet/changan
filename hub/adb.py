@@ -215,21 +215,28 @@ class Adb:
         last = CommandResult(False, "", "shell not attempted", 1, [])
         for args, stdin in attempts:
             last = self.raw(args, timeout=timeout, input_text=stdin)
-            blob = last.stdout + "\n" + last.stderr
+            blob = (last.stdout + "\n" + last.stderr).lower()
+            stdout = self._strip_password_banner(last.stdout)
+            stderr = self._strip_password_banner(last.stderr)
             if last.code == 124:
                 # One hang is enough. Retrying 4 stdin variants used to freeze
                 # the UI for timeout×5 (pm install 25s → 125s of a dead queue).
-                stdout = self._strip_password_banner(last.stdout)
-                stderr = self._strip_password_banner(last.stderr)
                 return CommandResult(False, stdout, stderr or last.stderr, 124, last.argv)
-            if self.needs_password(blob) and not last.stdout.strip():
-                continue
-            stdout = self._strip_password_banner(last.stdout)
-            stderr = self._strip_password_banner(last.stderr)
+            if "device" in blob and "not found" in blob:
+                return CommandResult(False, stdout, stderr, last.code, last.argv)
+            # Feiyu prints "please input verify password: verify success!" on
+            # stderr even when the command succeeded with empty stdout (appops).
+            # That used to look like "need password" and we retried until hang.
+            verified = "verify success" in blob
+            asked = self.needs_password(last.stdout + "\n" + last.stderr)
+            if last.code == 0 and (verified or not asked):
+                return CommandResult(True, stdout, stderr, 0, last.argv)
             body = (stdout + "\n" + stderr).lower()
-            ok = last.code == 0 or "success" in body or bool(stdout.strip())
             if "not auth" in body or "install failed" in body or "failure [" in body:
-                ok = False
+                return CommandResult(False, stdout, stderr, last.code, last.argv)
+            if asked and not verified and not stdout.strip():
+                continue
+            ok = last.code == 0 or "success" in body or bool(stdout.strip())
             if ok or stdout.strip() or "error" in body:
                 return CommandResult(ok, stdout, stderr, last.code, last.argv)
         stdout = self._strip_password_banner(last.stdout)
