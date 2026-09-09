@@ -77,8 +77,9 @@ public class OverlayService extends Service {
     private View root;
     private WindowManager.LayoutParams params;
     private LinearLayout appList;
+    private LinearLayout tools;
     private EditText search;
-    private TextView title;
+    private ImageView titleLogo;
     private boolean collapsed;
     private boolean wide;
     private boolean usbMode;
@@ -381,7 +382,7 @@ public class OverlayService extends Service {
         }
         int screenH = displayHeight();
         if (collapsed) {
-            params.width = dp(56);
+            params.width = dp(72);
             params.height = Math.min(dp(COLLAPSED_H_DP), screenH);
             params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
@@ -421,32 +422,37 @@ public class OverlayService extends Service {
         panel.setBackground(panelBackground());
         panel.setPadding(dp(6), dp(10 * HEIGHT_SCALE), dp(6), dp(10 * HEIGHT_SCALE));
 
-        title = new TextView(this);
-        title.setTextColor(Color.parseColor("#3DDC97"));
-        title.setTextSize(12 * HEIGHT_SCALE);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, dp(6 * HEIGHT_SCALE));
-        panel.addView(title);
+        titleLogo = new ImageView(this);
+        titleLogo.setImageResource(R.drawable.logo_itm);
+        titleLogo.setAdjustViewBounds(true);
+        titleLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
+        logoLp.bottomMargin = dp(8);
+        panel.addView(titleLogo, logoLp);
 
-        LinearLayout tools = new LinearLayout(this);
-        tools.setOrientation(LinearLayout.VERTICAL);
-        tools.addView(toolButton("◂", new View.OnClickListener() {
+        tools = new LinearLayout(this);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        tools.setGravity(Gravity.CENTER);
+        tools.addView(toolIcon(R.drawable.ic_collapse, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 setCollapsed(true);
             }
         }));
-        tools.addView(toolButton("↔", new View.OnClickListener() {
+        tools.addView(toolIcon(R.drawable.ic_grid, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                wide = !wide;
-                persist();
-                applySize();
-                renderApps();
+                expandToIcons();
             }
         }));
-        tools.addView(toolButton("↻", new View.OnClickListener() {
+        tools.addView(toolIcon(R.drawable.ic_menu, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                expandToFull();
+            }
+        }));
+        tools.addView(toolIcon(R.drawable.ic_refresh, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (usbMode) {
@@ -456,7 +462,7 @@ public class OverlayService extends Service {
                 }
             }
         }));
-        usbToggle = toolButton("флешка", new View.OnClickListener() {
+        usbToggle = toolIcon(R.drawable.ic_usb, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 usbMode = !usbMode;
@@ -528,7 +534,7 @@ public class OverlayService extends Service {
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     float dx = event.getRawX() - startX;
                     if (collapsed && dx < -dp(20)) {
-                        setCollapsed(false);
+                        expandToIcons();
                         return true;
                     }
                     if (!collapsed && dx > dp(28)) {
@@ -546,55 +552,54 @@ public class OverlayService extends Service {
         if (root == null) {
             return;
         }
+        int chrome = collapsed ? View.GONE : View.VISIBLE;
+        if (titleLogo != null) {
+            titleLogo.setVisibility(chrome);
+        }
+        if (tools != null) {
+            tools.setVisibility(chrome);
+        }
         if (search != null) {
             search.setVisibility((collapsed || !wide) ? View.GONE : View.VISIBLE);
+            search.setHint(usbMode ? "apk" : "поиск");
         }
-        if (title != null) {
-            title.setText(collapsed ? "▸" : (usbMode ? "USB" : (wide ? "QuickBar" : "QB")));
-        }
-        if (usbToggle instanceof TextView) {
-            ((TextView) usbToggle).setText(usbMode ? "прилож." : "флешка");
-            usbToggle.setVisibility(collapsed ? View.GONE : View.VISIBLE);
-        }
-        if (search != null) {
-            search.setHint(usbMode ? "поиск apk" : "поиск");
+        if (usbToggle instanceof ImageView) {
+            ((ImageView) usbToggle).setImageResource(usbMode ? R.drawable.ic_apps : R.drawable.ic_usb);
+            usbToggle.setVisibility(chrome);
         }
         if (collapsed) {
-            root.setPadding(dp(2), dp(8 * HEIGHT_SCALE), dp(2), dp(8 * HEIGHT_SCALE));
+            root.setPadding(dp(2), dp(8), dp(2), dp(8));
         } else {
-            root.setPadding(dp(6), dp(10 * HEIGHT_SCALE), dp(6), dp(10 * HEIGHT_SCALE));
+            root.setPadding(dp(6), dp(10), dp(6), dp(10));
         }
     }
 
-    private View toolButton(String label, View.OnClickListener click) {
-        TextView t = new TextView(this);
-        t.setText(label);
-        t.setTextColor(Color.WHITE);
-        t.setTextSize(16);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(4), dp(10 * HEIGHT_SCALE), dp(4), dp(10 * HEIGHT_SCALE));
-        t.setMinHeight(dp(48 * HEIGHT_SCALE / 2));
-        t.setOnClickListener(click);
-        return t;
+    private ImageView toolIcon(int drawable, View.OnClickListener click) {
+        ImageView image = new ImageView(this);
+        image.setImageResource(drawable);
+        image.setColorFilter(Color.WHITE);
+        int pad = dp(8);
+        image.setPadding(pad, pad, pad, pad);
+        image.setOnClickListener(click);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        image.setLayoutParams(lp);
+        return image;
     }
 
-    private View actionButton(String label, int color, View.OnClickListener click) {
-        TextView t = new TextView(this);
-        t.setText(label);
-        t.setTextColor(Color.parseColor("#0B1220"));
-        t.setTextSize(11);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(8), dp(10), dp(8), dp(10));
+    private View actionIcon(int drawable, int color, View.OnClickListener click) {
+        ImageView image = new ImageView(this);
+        image.setImageResource(drawable);
+        int pad = dp(8);
+        image.setPadding(pad, pad, pad, pad);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(color);
-        bg.setCornerRadius(dp(10));
-        t.setBackground(bg);
-        t.setOnClickListener(click);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bg.setCornerRadius(dp(12));
+        image.setBackground(bg);
+        image.setOnClickListener(click);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(48));
         lp.setMargins(dp(6), 0, 0, 0);
-        t.setLayoutParams(lp);
-        return t;
+        image.setLayoutParams(lp);
+        return image;
     }
 
     private GradientDrawable panelBackground() {
@@ -607,6 +612,24 @@ public class OverlayService extends Service {
 
     private void setCollapsed(boolean value) {
         collapsed = value;
+        persist();
+        applySize();
+        renderApps();
+    }
+
+    private void expandToIcons() {
+        usbMode = false;
+        wide = false;
+        collapsed = false;
+        persist();
+        applySize();
+        renderApps();
+    }
+
+    private void expandToFull() {
+        usbMode = false;
+        wide = true;
+        collapsed = false;
         persist();
         applySize();
         renderApps();
@@ -693,18 +716,7 @@ public class OverlayService extends Service {
         }
         appList.removeAllViews();
         if (collapsed) {
-            TextView tick = new TextView(this);
-            tick.setText("▸\nQ\nB");
-            tick.setTextColor(Color.parseColor("#3DDC97"));
-            tick.setGravity(Gravity.CENTER);
-            tick.setTextSize(12 * HEIGHT_SCALE);
-            tick.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    setCollapsed(false);
-                }
-            });
-            appList.addView(tick);
+            appList.addView(collapsedZones());
             return;
         }
         if (usbMode) {
@@ -740,6 +752,54 @@ public class OverlayService extends Service {
             empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
         }
+    }
+
+    private View collapsedZones() {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        int height = Math.max(dp(420), displayHeight() - dp(32));
+        wrap.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, height));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.logo_itm);
+        logo.setAdjustViewBounds(true);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(40));
+        logoLp.setMargins(dp(2), dp(8), dp(2), dp(8));
+        wrap.addView(logo, logoLp);
+
+        wrap.addView(collapseZone(R.drawable.ic_grid, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                expandToIcons();
+            }
+        }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.parseColor("#663DDC97"));
+        wrap.addView(divider, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
+
+        wrap.addView(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                expandToFull();
+            }
+        }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        return wrap;
+    }
+
+    private View collapseZone(int icon, View.OnClickListener click) {
+        LinearLayout zone = new LinearLayout(this);
+        zone.setOrientation(LinearLayout.VERTICAL);
+        zone.setGravity(Gravity.CENTER);
+        zone.setOnClickListener(click);
+        ImageView image = new ImageView(this);
+        image.setImageResource(icon);
+        zone.addView(image, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        return zone;
     }
 
     private void renderUsb() {
@@ -801,7 +861,7 @@ public class OverlayService extends Service {
         row.addView(name);
         row.addView(meta);
         if (wide) {
-            row.addView(actionButton("поставить", Color.parseColor("#3DDC97"), new View.OnClickListener() {
+            row.addView(actionIcon(R.drawable.ic_install, Color.parseColor("#3DDC97"), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     installFromUsb(apk);
@@ -825,9 +885,6 @@ public class OverlayService extends Service {
         } catch (Exception e) {
             usbMode = true;
             setCollapsed(false);
-            if (title != null) {
-                title.setText("ошибка USB");
-            }
         }
     }
 
@@ -877,7 +934,7 @@ public class OverlayService extends Service {
         }
 
         if (!item.system) {
-            row.addView(actionButton(wide ? "удалить" : "×", Color.parseColor("#FF6B6B"), new View.OnClickListener() {
+            row.addView(actionIcon(R.drawable.ic_delete, Color.parseColor("#FF6B6B"), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     uninstallUserApp(item.pkg);

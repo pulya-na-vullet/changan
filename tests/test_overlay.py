@@ -74,8 +74,12 @@ def test_quickbar_groups_and_usb_install() -> None:
     )
     assert 'sectionHeader("Сторонние")' in src
     assert 'sectionHeader("Системные")' in src
-    assert '"удалить"' in src
-    assert '"флешка"' in src
+    assert "R.drawable.ic_delete" in src
+    assert "R.drawable.ic_usb" in src
+    assert "R.drawable.logo_itm" in src
+    assert "expandToIcons" in src
+    assert "expandToFull" in src
+    assert "collapsedZones" in src
     assert "UsbStorage.apkFiles" in src
     assert "PackageActions.uninstall" in src
     assert "PackageActions.install" in src
@@ -83,7 +87,21 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java")).is_file()
 
 
-def test_grant_overlay_allows_sideload() -> None:
+def test_itm_logo_and_icons_exist() -> None:
+    res = Path("android/quickbar/src/main/res/drawable")
+    for name in (
+        "logo_itm.xml",
+        "ic_grid.xml",
+        "ic_menu.xml",
+        "ic_usb.xml",
+        "ic_delete.xml",
+        "ic_collapse.xml",
+        "ic_refresh.xml",
+        "ic_install.xml",
+    ):
+        assert (res / name).is_file(), name
+    logo = (res / "logo_itm.xml").read_text(encoding="utf-8")
+    assert "IT•m" in logo or "3DDC97" in logo
     joined = "\n".join(PERSIST_SHELL)
     assert "REQUEST_INSTALL_PACKAGES" in joined
     assert "install_non_market_apps" in joined

@@ -81,7 +81,7 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
             lines.append(
                 "Пакет НЕ установлен. Белое окно 提示 «com.changanhub.quickbar is not auth,"
                 "install failed!» — отказ белого списка Feiyu (pm -118), не краш. "
-                "В «Приложения ГУ» пакета не будет. Имя после успеха: QuickBar / "
+                "В «Приложения ГУ» пакета не будет. Имя после успеха: IT-m / "
                 "com.changanhub.quickbar."
             )
         else:
@@ -92,7 +92,7 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         if progress:
             progress("Установка не удалась — пакета в списке не будет.", 100)
         return lines
-    lines.append("Пакет установлен. В списке ГУ: QuickBar · com.changanhub.quickbar")
+    lines.append("Пакет установлен. В списке ГУ: IT-m · com.changanhub.quickbar")
     lines += start_overlay(adb, progress=progress)
     if progress:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)

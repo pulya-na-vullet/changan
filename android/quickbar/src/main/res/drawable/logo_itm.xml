@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="90dp"
+    android:viewportWidth="96"
+    android:viewportHeight="45">
+    <!-- Official IT•m mark (it-m.ru), recolored so IT•m stays readable on the dark overlay. -->
+    <path
+        android:fillColor="#18243A"
+        android:pathData="M8,4h40a9,9 0,0 1,9 9v19a9,9 0,0 1,-9 9H8a9,9 0,0 1,-9 -9V13a9,9 0,0 1,9 -9z" />
+    <path
+        android:fillColor="#3DDC97"
+        android:pathData="M16,13h6v19h-6z" />
+    <path
+        android:fillColor="#3DDC97"
+        android:pathData="M26,13h18v5h-6v14h-6V18h-6z" />
+    <path
+        android:fillColor="#3DDC97"
+        android:pathData="M61,20a3.2,3.2 0,1 1,0 0.01z" />
+    <path
+        android:fillColor="#3DDC97"
+        android:pathData="M68,32V18c0,-3 2.5,-5 6,-5s5,2 6,5c1,-3 3,-5 6.5,-5c4,0 6.5,2.5 6.5,6.5V32h-6V20.5c0,-1.6 -1,-2.5 -2.5,-2.5s-2.5,1 -2.5,2.5V32h-6V20.5c0,-1.6 -1,-2.5 -2.5,-2.5S74,18.9 74,20.5V32z" />
+</vector>
