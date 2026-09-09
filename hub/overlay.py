@@ -59,10 +59,15 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         progress(lines[0], 5)
     report = install_apk(adb, apk, already_signed=False, progress=progress)
     lines.extend(report.log)
-    if report.ok:
-        lines.append("Пакет установлен. Запускаю панель…")
-    else:
-        lines.append("Установщик не подтвердил успех — пробую запустить на случай, если пакет уже есть.")
+    if not report.ok:
+        lines.append(
+            "Пакет НЕ установлен. В «Приложения ГУ» не будет com.changanhub.quickbar, "
+            "на экране машины — тоже. Имя после успеха: QuickBar / com.changanhub.quickbar."
+        )
+        if progress:
+            progress("Установка не удалась — пакета в списке не будет.", 100)
+        return lines
+    lines.append("Пакет установлен. В списке ГУ: QuickBar · com.changanhub.quickbar")
     lines += start_overlay(adb, progress=progress)
     if progress:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)

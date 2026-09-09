@@ -29,7 +29,7 @@ CATALOG: list[CatalogApp] = [
         package="com.changanhub.quickbar",
         kind="dock",
         source="bundled",
-        notes="Ставится одной кнопкой из раздела «Панель».",
+        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickbar.",
     ),
     CatalogApp(
         id="files",
@@ -111,3 +111,28 @@ def by_id(app_id: str) -> CatalogApp | None:
         if item.id == app_id:
             return item
     return None
+
+
+_EXTRA_LABELS = {
+    "net.easyconn": "EasyConnection",
+    "gb.xxy.hr": "HR",
+    "ru.yandex.androidkeyboard": "Яндекс Клавиатура",
+    "ru.kinopoisk": "Кинопоиск",
+    "air.StrelkaHUDFREE": "Стрелка",
+}
+
+
+def package_label(package: str) -> str:
+    for item in CATALOG:
+        if item.package == package:
+            return f"{item.name}  ·  {package}"
+    extra = _EXTRA_LABELS.get(package)
+    if extra:
+        return f"{extra}  ·  {package}"
+    return package
+
+
+def package_from_row(row: str) -> str:
+    if "  ·  " in row:
+        return row.rsplit("  ·  ", 1)[-1].strip()
+    return row.strip()

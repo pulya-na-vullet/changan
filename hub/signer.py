@@ -247,7 +247,14 @@ def _sign_v1(src: Path, dst: Path, keystore: Keystore) -> None:
         pkcs7.PKCS7SignatureBuilder()
         .set_data(sf_bytes)
         .add_signer(cert, key, hashes.SHA256())
-        .sign(serialization.Encoding.DER, [pkcs7.PKCS7Options.DetachedSignature])
+        .sign(
+            serialization.Encoding.DER,
+            [
+                pkcs7.PKCS7Options.DetachedSignature,
+                pkcs7.PKCS7Options.Binary,
+                pkcs7.PKCS7Options.NoCapabilities,
+            ],
+        )
     )
 
     tmp = io.BytesIO()

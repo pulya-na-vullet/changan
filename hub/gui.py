@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
-from hub.catalog import CATALOG
+from hub.catalog import CATALOG, package_from_row, package_label
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, start_overlay, stop_overlay
@@ -323,7 +323,8 @@ class HubApp:
             "QuickBar — узкая колонка справа на 13.2″ вертикальном экране, поверх навигации и видео.\n"
             "Тап — запуск, удержание — избранное, ↔ подписи и поиск, ▸ тонкий край. "
             "Автозапуск после перезагрузки. Пока крутится лоадер — не жмите повторно. "
-            "Иконки в штатном меню Feiyu не будет: ищите зелёную колонку СПРАВА."
+            "Иконки в штатном меню Feiyu не будет. После установки в списке ГУ: "
+            "QuickBar · com.changanhub.quickbar. На экране — зелёная колонка СПРАВА."
         )
         tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
             anchor="w", pady=12
@@ -333,6 +334,13 @@ class HubApp:
     def _page_apps(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
         ttk.Label(page, text="Что уже стоит на ГУ", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            page,
+            text="После установки панели здесь появится строка «QuickBar (правая панель) · "
+            "com.changanhub.quickbar». На экране машины это не иконка в меню, а зелёная колонка справа. "
+            "В фильтре наберите quickbar.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(page)
         row.pack(fill=tk.X, pady=8)
         ttk.Button(row, text="Обновить список", style="Accent.TButton", command=self.refresh_packages).pack(
@@ -743,13 +751,19 @@ class HubApp:
     def refresh_packages(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb or not adb.connected():
-                self.log("Нет ГУ")
+            if not adb or not self._hu_ready(adb):
+                self.log("Нет ГУ — сначала «Подключить»")
                 return
             pkgs = adb.packages()
             self.pkg_all = pkgs
             self.root.after(0, self._apply_pkg_filter)
-            self.log(f"Пакетов: {len(pkgs)}")
+            if "com.changanhub.quickbar" in pkgs:
+                self.log("Панель есть в списке: QuickBar · com.changanhub.quickbar")
+            else:
+                self.log(
+                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickbar) нет — "
+                    "установка не прошла, в меню ГУ его тоже не будет."
+                )
 
         self._work("Список пакетов", go)
 
@@ -757,15 +771,16 @@ class HubApp:
         q = self.pkg_filter.get().lower().strip()
         self.pkg_list.delete(0, tk.END)
         for pkg in self.pkg_all:
-            if q and q not in pkg.lower():
+            row = package_label(pkg)
+            if q and q not in row.lower() and q not in pkg.lower():
                 continue
-            self.pkg_list.insert(tk.END, pkg)
+            self.pkg_list.insert(tk.END, row)
 
     def launch_selected(self) -> None:
         selection = self.pkg_list.curselection()
         if not selection:
             return
-        pkg = self.pkg_list.get(selection[0])
+        pkg = package_from_row(self.pkg_list.get(selection[0]))
 
         def go() -> None:
             adb = self._need_adb()

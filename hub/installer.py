@@ -10,11 +10,11 @@ from hub.adb import Adb, CommandResult
 from hub.signer import sign_apk
 
 REMOTE_CANDIDATES = (
-    "/data/media/0/Download",
-    "/storage/emulated/0/Download",
+    "/data/local/tmp",
     "/sdcard/Download",
-    "/storage/emulated/0",
+    "/storage/emulated/0/Download",
     "/sdcard",
+    "/storage/emulated/0",
 )
 
 Progress = Callable[[str, int], None]
@@ -56,11 +56,13 @@ class InstallReport:
 
 def _ok_install(result: CommandResult) -> bool:
     blob = (result.stdout + "\n" + result.stderr).lower()
-    if "success" in blob:
-        return True
+    if "failure" in blob or "error" in blob or "not auth" in blob:
+        return False
     if result.code == 124:
         return False
-    if result.ok and "error" not in blob and "fail" not in blob and result.stdout.strip():
+    if "success" in blob:
+        return True
+    if result.ok and result.stdout.strip():
         return True
     return False
 
@@ -130,23 +132,16 @@ def install_apk(
             step("Шаг 5/5: пакет установлен.", 100)
             return report
 
-    step("pm install не прошёл. Пробую adb root (часто недоступен)…", 75)
-    root = adb.try_root()
-    step(f"adb root: {root.text or root.stderr}", 78)
-    remount = adb.try_remount()
-    step(f"adb remount: {remount.text or remount.stderr}", 80)
-    if remount.ok:
-        sys_path = "/system/app/ChanganHubSideload/" + signed.name
-        adb.shell("mkdir -p /system/app/ChanganHubSideload", timeout=8)
-        pushed = adb.push(signed, sys_path, timeout=40)
-        step(f"system push: {pushed.text or pushed.stderr}", 90)
-        adb.shell(f"chmod 644 {sys_path}", timeout=8)
-        report.ok = True
-        report.method = "system/app push"
-        step("Файл в /system/app. Перезагрузите ГУ.", 100)
+    blob = " ".join(report.log).lower()
+    if "no_certificates" in blob or "smimecapability" in blob:
+        step(
+            "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
+            "в списке com.changanhub.quickbar не появится.",
+            100,
+        )
         return report
 
-    step("Установка не удалась. Смотрите строки pm install выше.", 100)
+    step("pm install не прошёл. adb root на Feiyu не трогаю — он рвёт USB.", 100)
     return report
 
 

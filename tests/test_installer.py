@@ -83,3 +83,31 @@ def test_classify_install_steps() -> None:
     assert classify_install_step("push → /sdcard/Download/x.apk") == "push"
     assert classify_install_step("выполняю pm install -r -t /sdcard/x") == "pm"
     assert classify_install_step("запуск: am start -n com.changanhub.quickbar/.MainActivity") == "start"
+
+
+def test_install_reports_no_certificates(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def fail_install(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "Failure [INSTALL_PARSE_FAILED_NO_CERTIFICATES: PKCS9 SMIMECapability attribute not supported.]",
+                "",
+                1,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = fail_install  # type: ignore[method-assign]
+    fake.try_root = lambda: (_ for _ in ()).throw(AssertionError("adb root must not be used"))
+    with patch("hub.installer.sign_apk", return_value=apk):
+        report = install_apk(fake, apk, already_signed=True)
+    assert not report.ok
+    assert any("NO_CERTIFICATES" in line or "не установлен" in line.lower() for line in report.log)

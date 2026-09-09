@@ -26,3 +26,6 @@ def test_sign_minimal_apk(tmp_path: Path) -> None:
         assert "META-INF/MANIFEST.MF" in names
         rsa = zf.read("META-INF/CERT.RSA")
         assert len(rsa) > 64
+        # Feiyu PackageManager rejects SMIMECapability (OID 1.2.840.113549.1.9.15).
+        smime_oid = bytes.fromhex("060b2a864886f70d01090f")
+        assert smime_oid not in rsa
