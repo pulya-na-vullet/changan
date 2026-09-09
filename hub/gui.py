@@ -477,7 +477,8 @@ class HubApp:
             self._active_stage = key
         low = message.lower()
         failed = any(word in low for word in ("ошибка", "не удалась", "не удалось", "не найден"))
-        finished = percent >= 100 and not failed
+        # Only tick the whole pipeline if we actually entered an install stage.
+        finished = percent >= 100 and not failed and self._active_stage is not None
         active = self._active_stage
 
         def go() -> None:
@@ -568,6 +569,9 @@ class HubApp:
                 elapsed = int(time.monotonic() - self._busy_t0)
                 self._ui(lambda n=elapsed: self.elapsed_var.set(f"готово за {n} с"))
                 self._show_progress(f"Готово: {title}", 100)
+            except AdbError as exc:
+                self.journal.write("ERROR", title, str(exc))
+                self._show_progress(f"Ошибка: {exc}", 100)
             except Exception as exc:  # noqa: BLE001
                 self.journal.error(title, exc)
                 self._show_progress(f"Ошибка: {title}", 100)

@@ -23,6 +23,11 @@ def test_gui_pages_render() -> None:
         app.root.update()
         assert "push" in app.step_var.get().lower() or "копир" in app.step_var.get().lower()
         assert "●" in app.stage_labels["push"].cget("text")
+        app._reset_stages()
+        app.root.update()
+        app._show_progress("Готово: Подключение", 100)
+        app.root.update()
+        assert "○" in app.stage_labels["push"].cget("text")
         app.busy = True
         app.busy_title = "QuickBar"
         before = app.jobs.qsize()
