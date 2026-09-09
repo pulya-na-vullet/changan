@@ -11,6 +11,20 @@ from hub.paths import bundled_apps
 PACKAGE = "com.changanhub.quickbar"
 SERVICE = f"{PACKAGE}/.OverlayService"
 
+# Keep the panel alive after ACC off→on. Feiyu drops BOOT_COMPLETED;
+# deviceidle + background appops stop the HU from freezing the process.
+PERSIST_SHELL = (
+    f"appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
+    f"cmd appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
+    f"appops set {PACKAGE} RUN_IN_BACKGROUND allow",
+    f"cmd appops set {PACKAGE} RUN_IN_BACKGROUND allow",
+    f"appops set {PACKAGE} RUN_ANY_IN_BACKGROUND allow",
+    f"cmd appops set {PACKAGE} RUN_ANY_IN_BACKGROUND allow",
+    f"dumpsys deviceidle whitelist +{PACKAGE}",
+    f"cmd deviceidle whitelist +{PACKAGE}",
+    f"am set-inactive {PACKAGE} false",
+)
+
 
 def overlay_apk() -> Path:
     return bundled_apps() / "QuickBar.apk"
@@ -18,10 +32,7 @@ def overlay_apk() -> Path:
 
 def grant_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     log = []
-    for cmd in (
-        f"appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
-        f"cmd appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
-    ):
+    for cmd in PERSIST_SHELL:
         if progress:
             progress(f"разрешение: {cmd}", 90)
         result = adb.shell(cmd, timeout=10)
@@ -37,6 +48,9 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         f"am startservice -n {SERVICE}",
         f"am start-foreground-service -n {SERVICE}",
         f"am startservice -n {SERVICE} -a {PACKAGE}.SHOW",
+        f"am broadcast -a android.intent.action.BOOT_COMPLETED -p {PACKAGE}",
+        f"am broadcast -a android.intent.action.USER_PRESENT -p {PACKAGE}",
+        f"am broadcast -a android.intent.action.ACTION_POWER_CONNECTED -p {PACKAGE}",
     ):
         if progress:
             progress(f"запуск: {cmd}", 95)
@@ -80,4 +94,8 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     if progress:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
     lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
+    lines.append(
+        "После выключения машины панель должна подняться сама (ACC/BOOT + watchdog 30 с). "
+        "Иконки выше в 3 раза. Нужна именно эта сборка APK — переустановите панель."
+    )
     return lines

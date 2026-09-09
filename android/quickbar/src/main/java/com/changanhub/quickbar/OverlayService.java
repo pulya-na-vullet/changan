@@ -1,12 +1,15 @@
 package com.changanhub.quickbar;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -20,8 +23,9 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
+import android.os.SystemClock;
 import android.util.DisplayMetrics;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -50,12 +54,22 @@ public class OverlayService extends Service {
     public static final String ACTION_HIDE = "com.changanhub.quickbar.HIDE";
     public static final String ACTION_TOGGLE = "com.changanhub.quickbar.TOGGLE";
     public static final String ACTION_REFRESH = "com.changanhub.quickbar.REFRESH";
+    public static final String ACTION_KEEPALIVE = "com.changanhub.quickbar.KEEPALIVE";
+
+    /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
+    public static final int HEIGHT_SCALE = 3;
+    private static final int ICON_DP = 48 * HEIGHT_SCALE;
+    private static final int COLLAPSED_H_DP = 220 * HEIGHT_SCALE;
+    private static final int ROW_PAD_V_DP = 8 * HEIGHT_SCALE;
 
     private static final String CH = "quickbar";
     private static final String PREFS = "quickbar";
     private static final String KEY_FAV = "favorites";
     private static final String KEY_COLLAPSED = "collapsed";
     private static final String KEY_WIDE = "wide";
+    private static final int WATCHDOG_REQ = 7;
+    private static final long WATCHDOG_MS = 30_000L;
+    private static final int[] BOOT_RETRY_SEC = {3, 10, 30, 60, 120};
 
     private WindowManager windowManager;
     private View root;
@@ -68,15 +82,77 @@ public class OverlayService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<AppItem> apps = new ArrayList<>();
     private String query = "";
+    private BroadcastReceiver lifeReceiver;
+
+    private final Runnable attachWatch = new Runnable() {
+        @Override
+        public void run() {
+            if (root == null) {
+                attachOverlay();
+            }
+            handler.postDelayed(this, 15_000);
+        }
+    };
 
     public static void start(Context context) {
+        launch(context, ACTION_SHOW);
+    }
+
+    public static void keepAlive(Context context) {
+        launch(context, ACTION_KEEPALIVE);
+    }
+
+    private static void launch(Context context, String action) {
         Intent intent = new Intent(context, OverlayService.class);
-        intent.setAction(ACTION_SHOW);
+        intent.setAction(action);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent);
         } else {
             context.startService(intent);
         }
+    }
+
+    public static void scheduleWatchdog(Context context) {
+        Context app = context.getApplicationContext();
+        AlarmManager am = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) {
+            return;
+        }
+        Intent intent = new Intent(app, WatchdogReceiver.class);
+        intent.setAction(ACTION_KEEPALIVE);
+        PendingIntent pi = pending(app, WATCHDOG_REQ, intent);
+        am.setRepeating(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + 10_000L,
+                WATCHDOG_MS,
+                pi);
+    }
+
+    public static void scheduleBootRetries(Context context) {
+        Context app = context.getApplicationContext();
+        AlarmManager am = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) {
+            return;
+        }
+        for (int i = 0; i < BOOT_RETRY_SEC.length; i++) {
+            Intent intent = new Intent(app, WatchdogReceiver.class);
+            intent.setAction(ACTION_SHOW);
+            PendingIntent pi = pending(app, 100 + i, intent);
+            long at = SystemClock.elapsedRealtime() + BOOT_RETRY_SEC[i] * 1000L;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+            } else {
+                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+            }
+        }
+    }
+
+    private static PendingIntent pending(Context context, int requestCode, Intent intent) {
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags);
     }
 
     @Override
@@ -91,12 +167,16 @@ public class OverlayService extends Service {
         collapsed = p.getBoolean(KEY_COLLAPSED, false);
         wide = p.getBoolean(KEY_WIDE, true);
         startInForeground();
+        registerLifeReceiver();
+        scheduleWatchdog(this);
         attachOverlay();
+        handler.postDelayed(attachWatch, 15_000);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startInForeground();
+        scheduleWatchdog(this);
         String action = intent != null ? intent.getAction() : ACTION_SHOW;
         if (ACTION_HIDE.equals(action)) {
             detachOverlay();
@@ -104,6 +184,9 @@ public class OverlayService extends Service {
         }
         if (root == null) {
             attachOverlay();
+        }
+        if (ACTION_KEEPALIVE.equals(action)) {
+            return START_STICKY;
         }
         if (ACTION_TOGGLE.equals(action)) {
             setCollapsed(!collapsed);
@@ -120,22 +203,51 @@ public class OverlayService extends Service {
 
     @Override
     public void onDestroy() {
+        handler.removeCallbacks(attachWatch);
+        unregisterLifeReceiver();
         detachOverlay();
         super.onDestroy();
-        // Car launchers kill overlays; bounce back unless explicitly stopped.
+        scheduleWatchdog(getApplicationContext());
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                start(getApplicationContext());
+                keepAlive(getApplicationContext());
             }
         }, 800);
     }
 
-    private boolean canDraw() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return true;
+    private void registerLifeReceiver() {
+        if (lifeReceiver != null) {
+            return;
         }
-        return Settings.canDrawOverlays(this);
+        lifeReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (root == null) {
+                    attachOverlay();
+                } else {
+                    applySize();
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        filter.addAction(Intent.ACTION_POWER_CONNECTED);
+        filter.addAction(Intent.ACTION_USER_UNLOCKED);
+        filter.addAction(Intent.ACTION_BOOT_COMPLETED);
+        registerReceiver(lifeReceiver, filter);
+    }
+
+    private void unregisterLifeReceiver() {
+        if (lifeReceiver == null) {
+            return;
+        }
+        try {
+            unregisterReceiver(lifeReceiver);
+        } catch (Exception ignored) {
+        }
+        lifeReceiver = null;
     }
 
     private void startInForeground() {
@@ -219,7 +331,7 @@ public class OverlayService extends Service {
     private WindowManager.LayoutParams buildParams(int type) {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 dp(96),
-                WindowManager.LayoutParams.MATCH_PARENT,
+                displayHeight(),
                 type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
@@ -251,14 +363,15 @@ public class OverlayService extends Service {
         if (params == null || windowManager == null || root == null) {
             return;
         }
+        int screenH = displayHeight();
         if (collapsed) {
             params.width = dp(56);
-            params.height = dp(220);
+            params.height = Math.min(dp(COLLAPSED_H_DP), screenH);
             params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         } else {
             params.width = dp(wide ? 320 : 96);
-            params.height = WindowManager.LayoutParams.MATCH_PARENT;
+            params.height = screenH;
             params.gravity = Gravity.END | Gravity.TOP;
         }
         try {
@@ -268,18 +381,36 @@ public class OverlayService extends Service {
         refreshChrome();
     }
 
+    private int displayHeight() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        WindowManager wm = windowManager;
+        if (wm == null) {
+            wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        }
+        if (wm != null) {
+            Display display = wm.getDefaultDisplay();
+            if (display != null) {
+                display.getRealMetrics(metrics);
+                if (metrics.heightPixels > 0) {
+                    return metrics.heightPixels;
+                }
+            }
+        }
+        return getResources().getDisplayMetrics().heightPixels;
+    }
+
     private View buildView() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setBackground(panelBackground());
-        panel.setPadding(dp(6), dp(10), dp(6), dp(10));
+        panel.setPadding(dp(6), dp(10 * HEIGHT_SCALE), dp(6), dp(10 * HEIGHT_SCALE));
 
         title = new TextView(this);
         title.setTextColor(Color.parseColor("#3DDC97"));
-        title.setTextSize(12);
+        title.setTextSize(12 * HEIGHT_SCALE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, dp(6));
+        title.setPadding(0, 0, 0, dp(6 * HEIGHT_SCALE));
         panel.addView(title);
 
         LinearLayout tools = new LinearLayout(this);
@@ -314,7 +445,7 @@ public class OverlayService extends Service {
         search.setTextSize(13);
         search.setSingleLine(true);
         search.setBackgroundColor(Color.parseColor("#3328E07A"));
-        search.setPadding(dp(8), dp(8), dp(8), dp(8));
+        search.setPadding(dp(8), dp(8 * HEIGHT_SCALE), dp(8), dp(8 * HEIGHT_SCALE));
         search.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean hasFocus) {
@@ -388,9 +519,9 @@ public class OverlayService extends Service {
             title.setText(collapsed ? "▸" : (wide ? "QuickBar" : "QB"));
         }
         if (collapsed) {
-            root.setPadding(dp(2), dp(8), dp(2), dp(8));
+            root.setPadding(dp(2), dp(8 * HEIGHT_SCALE), dp(2), dp(8 * HEIGHT_SCALE));
         } else {
-            root.setPadding(dp(6), dp(10), dp(6), dp(10));
+            root.setPadding(dp(6), dp(10 * HEIGHT_SCALE), dp(6), dp(10 * HEIGHT_SCALE));
         }
     }
 
@@ -400,7 +531,8 @@ public class OverlayService extends Service {
         t.setTextColor(Color.WHITE);
         t.setTextSize(16);
         t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(4), dp(10), dp(4), dp(10));
+        t.setPadding(dp(4), dp(10 * HEIGHT_SCALE), dp(4), dp(10 * HEIGHT_SCALE));
+        t.setMinHeight(dp(48 * HEIGHT_SCALE / 2));
         t.setOnClickListener(click);
         return t;
     }
@@ -504,7 +636,7 @@ public class OverlayService extends Service {
             tick.setText("▸\nQ\nB");
             tick.setTextColor(Color.parseColor("#3DDC97"));
             tick.setGravity(Gravity.CENTER);
-            tick.setTextSize(12);
+            tick.setTextSize(12 * HEIGHT_SCALE);
             tick.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -530,7 +662,7 @@ public class OverlayService extends Service {
             empty.setText("нет приложений");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(12), 0, dp(12));
+            empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
         }
     }
@@ -539,7 +671,8 @@ public class OverlayService extends Service {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(4), dp(8), dp(4), dp(8));
+        row.setPadding(dp(4), dp(ROW_PAD_V_DP), dp(4), dp(ROW_PAD_V_DP));
+        row.setMinimumHeight(dp(ICON_DP + ROW_PAD_V_DP));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(favorite ? Color.parseColor("#3328E07A") : Color.TRANSPARENT);
         bg.setCornerRadius(dp(12));
@@ -547,7 +680,8 @@ public class OverlayService extends Service {
 
         ImageView icon = new ImageView(this);
         icon.setImageDrawable(item.icon);
-        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(48), dp(48));
+        int iconW = wide ? dp(ICON_DP) : dp(Math.min(72, ICON_DP));
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(iconW, dp(ICON_DP));
         row.addView(icon, ip);
 
         if (wide) {
