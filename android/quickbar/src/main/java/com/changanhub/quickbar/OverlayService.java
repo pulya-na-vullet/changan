@@ -1,11 +1,14 @@
 package com.changanhub.quickbar;
 
+import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -42,8 +45,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -69,6 +74,9 @@ public class OverlayService extends Service {
     private static final String KEY_FAV = "favorites";
     private static final String KEY_COLLAPSED = "collapsed";
     private static final String KEY_WIDE = "wide";
+    private static final String KEY_RECENT = "recent";
+    private static final int RECENT_MAX = 3;
+    private static final int COLLAPSED_W_DP = 144;
     private static final int WATCHDOG_REQ = 7;
     private static final long WATCHDOG_MS = 30_000L;
     private static final int[] BOOT_RETRY_SEC = {3, 10, 30, 60, 120};
@@ -382,9 +390,9 @@ public class OverlayService extends Service {
         }
         int screenH = displayHeight();
         if (collapsed) {
-            params.width = dp(72);
-            params.height = Math.min(dp(COLLAPSED_H_DP), screenH);
-            params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+            params.width = dp(COLLAPSED_W_DP);
+            params.height = screenH;
+            params.gravity = Gravity.END | Gravity.TOP;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         } else {
             params.width = dp(wide ? 380 : 96);
@@ -777,9 +785,7 @@ public class OverlayService extends Service {
             }
         }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.parseColor("#663DDC97"));
-        wrap.addView(divider, new LinearLayout.LayoutParams(
+        wrap.addView(collapseDivider(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
 
         wrap.addView(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
@@ -788,7 +794,18 @@ public class OverlayService extends Service {
                 expandToFull();
             }
         }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        wrap.addView(collapseDivider(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
+        wrap.addView(recentZone(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         return wrap;
+    }
+
+    private View collapseDivider() {
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.parseColor("#663DDC97"));
+        return divider;
     }
 
     private View collapseZone(int icon, View.OnClickListener click) {
@@ -798,7 +815,35 @@ public class OverlayService extends Service {
         zone.setOnClickListener(click);
         ImageView image = new ImageView(this);
         image.setImageResource(icon);
-        zone.addView(image, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        zone.addView(image, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        return zone;
+    }
+
+    private View recentZone() {
+        LinearLayout zone = new LinearLayout(this);
+        zone.setOrientation(LinearLayout.VERTICAL);
+        zone.setGravity(Gravity.CENTER);
+        List<String> recent = recentPackages();
+        for (int i = 0; i < RECENT_MAX; i++) {
+            ImageView image = new ImageView(this);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(64), dp(64));
+            lp.setMargins(0, dp(6), 0, dp(6));
+            if (i < recent.size()) {
+                final String pkg = recent.get(i);
+                image.setImageDrawable(iconFor(pkg));
+                image.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        launch(pkg);
+                    }
+                });
+            } else {
+                image.setImageResource(R.drawable.ic_apps);
+                image.setColorFilter(Color.parseColor("#9AA7B8"));
+                image.setAlpha(0.4f);
+            }
+            zone.addView(image, lp);
+        }
         return zone;
     }
 
@@ -966,7 +1011,131 @@ public class OverlayService extends Service {
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
+            rememberLaunch(pkg);
         } catch (Exception ignored) {
+        }
+    }
+
+    private void rememberLaunch(String pkg) {
+        if (pkg == null || pkg.equals(getPackageName())) {
+            return;
+        }
+        List<String> rec = storedRecents();
+        rec.remove(pkg);
+        rec.add(0, pkg);
+        while (rec.size() > RECENT_MAX) {
+            rec.remove(rec.size() - 1);
+        }
+        StringBuilder joined = new StringBuilder();
+        for (int i = 0; i < rec.size(); i++) {
+            if (i > 0) {
+                joined.append(',');
+            }
+            joined.append(rec.get(i));
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_RECENT, joined.toString()).apply();
+    }
+
+    private List<String> storedRecents() {
+        List<String> out = new ArrayList<>();
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_RECENT, "");
+        if (raw == null || raw.length() == 0) {
+            return out;
+        }
+        String[] parts = raw.split(",");
+        for (int i = 0; i < parts.length; i++) {
+            if (parts[i].length() > 0) {
+                out.add(parts[i]);
+            }
+        }
+        return out;
+    }
+
+    private List<String> recentPackages() {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        addUsageRecents(out);
+        addTaskRecents(out);
+        List<String> stored = storedRecents();
+        for (int i = 0; i < stored.size(); i++) {
+            addRecent(out, stored.get(i));
+        }
+        List<String> list = new ArrayList<String>();
+        for (String pkg : out) {
+            list.add(pkg);
+            if (list.size() >= RECENT_MAX) {
+                break;
+            }
+        }
+        return list;
+    }
+
+    private void addUsageRecents(LinkedHashSet<String> out) {
+        try {
+            UsageStatsManager usm = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
+            if (usm == null) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            Map<String, UsageStats> map = usm.queryAndAggregateUsageStats(now - 7L * 24 * 3600 * 1000, now);
+            if (map == null || map.isEmpty()) {
+                return;
+            }
+            List<UsageStats> stats = new ArrayList<UsageStats>(map.values());
+            Collections.sort(stats, new Comparator<UsageStats>() {
+                @Override
+                public int compare(UsageStats a, UsageStats b) {
+                    long d = b.getLastTimeUsed() - a.getLastTimeUsed();
+                    return d < 0 ? -1 : (d > 0 ? 1 : 0);
+                }
+            });
+            for (int i = 0; i < stats.size(); i++) {
+                addRecent(out, stats.get(i).getPackageName());
+                if (out.size() >= RECENT_MAX) {
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void addTaskRecents(LinkedHashSet<String> out) {
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am == null) {
+                return;
+            }
+            List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(12);
+            if (tasks == null) {
+                return;
+            }
+            for (int i = 0; i < tasks.size(); i++) {
+                ActivityManager.RunningTaskInfo task = tasks.get(i);
+                if (task.baseActivity != null) {
+                    addRecent(out, task.baseActivity.getPackageName());
+                }
+                if (out.size() >= RECENT_MAX) {
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void addRecent(LinkedHashSet<String> out, String pkg) {
+        if (pkg == null || pkg.equals(getPackageName())) {
+            return;
+        }
+        if (getPackageManager().getLaunchIntentForPackage(pkg) == null) {
+            return;
+        }
+        out.add(pkg);
+    }
+
+    private Drawable iconFor(String pkg) {
+        try {
+            return getPackageManager().getApplicationIcon(pkg);
+        } catch (Exception e) {
+            return getDrawable(android.R.drawable.sym_def_app_icon);
         }
     }
 

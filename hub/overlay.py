@@ -25,6 +25,8 @@ PERSIST_SHELL = (
     f"am set-inactive {PACKAGE} false",
     f"appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
     f"cmd appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
+    f"appops set {PACKAGE} GET_USAGE_STATS allow",
+    f"cmd appops set {PACKAGE} GET_USAGE_STATS allow",
     "settings put secure install_non_market_apps 1",
 )
 

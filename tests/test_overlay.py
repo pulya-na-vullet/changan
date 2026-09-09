@@ -80,6 +80,9 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "expandToIcons" in src
     assert "expandToFull" in src
     assert "collapsedZones" in src
+    assert "recentZone" in src
+    assert "COLLAPSED_W_DP = 144" in src
+    assert "KEY_RECENT" in src
     assert "UsbStorage.apkFiles" in src
     assert "PackageActions.uninstall" in src
     assert "PackageActions.install" in src
@@ -104,4 +107,4 @@ def test_itm_logo_and_icons_exist() -> None:
     assert "IT•m" in logo or "3DDC97" in logo
     joined = "\n".join(PERSIST_SHELL)
     assert "REQUEST_INSTALL_PACKAGES" in joined
-    assert "install_non_market_apps" in joined
+    assert "GET_USAGE_STATS" in joined
