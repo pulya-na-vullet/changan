@@ -277,8 +277,9 @@ class HubApp:
         ttk.Label(page, text="Установка приложений", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="Любой APK будет переподписан под Changan и поставлен через push + pm install. "
+            text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + pm install. "
             "adb install на Feiyu зависает — Hub его больше не вызывает. "
+            "Белое окно 提示 «is not auth, install failed!» — отказ белого списка, не зависание. "
             "Смотрите лоадер сверху: подпись → копирование → pm install.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(6, 8))
@@ -323,7 +324,8 @@ class HubApp:
             "QuickBar — узкая колонка справа на 13.2″ вертикальном экране, поверх навигации и видео.\n"
             "Тап — запуск, удержание — избранное, ↔ подписи и поиск, ▸ тонкий край. "
             "Автозапуск после перезагрузки. Пока крутится лоадер — не жмите повторно. "
-            "Иконки в штатном меню Feiyu не будет. После установки в списке ГУ: "
+            "Окно 提示 «is not auth, install failed!» — ГУ не приняла подпись; Hub чинит это "
+            "подписывая v1+v2. Иконки в штатном меню Feiyu не будет. После установки в списке ГУ: "
             "QuickBar · com.changanhub.quickbar. На экране — зелёная колонка СПРАВА."
         )
         tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
@@ -709,6 +711,15 @@ class HubApp:
 
             report = install_apk(adb, path, progress=progress)
             self.log("Готово" if report.ok else "Не установлено")
+            if not report.ok and any("not auth" in line.lower() or "-118" in line for line in report.log):
+                self._ui(
+                    lambda: messagebox.showerror(
+                        "ГУ отказала в установке",
+                        "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
+                        "Hub подписывает APK v1+v2 с serial 0xddb66eefd98476f3.\n"
+                        "Нажмите «Установить» ещё раз на новой сборке Hub.",
+                    )
+                )
 
         self._work(f"Установка {path.name}", go)
 
@@ -721,8 +732,19 @@ class HubApp:
             def progress(message: str, percent: int) -> None:
                 self._show_progress(message, percent)
 
-            for line in install_overlay(adb, progress=progress):
+            lines = install_overlay(adb, progress=progress)
+            for line in lines:
                 self.journal.write("INFO", "overlay", line)
+            joined = "\n".join(lines).lower()
+            if "not auth" in joined or "-118" in joined:
+                self._ui(
+                    lambda: messagebox.showerror(
+                        "ГУ отказала в установке",
+                        "Окно 提示 «com.changanhub.quickbar is not auth, install failed!» — "
+                        "белый список Feiyu (код -118), не краш установщика.\n"
+                        "Hub подписывает панель v1+v2. Повторите установку этой сборкой.",
+                    )
+                )
 
         self._work("QuickBar", go)
 
@@ -840,8 +862,9 @@ class HubApp:
         messagebox.showinfo(
             "Сертификат",
             "\n".join(f"{k}: {v}" for k, v in info.items())
-            + "\n\nЭто не сертификат Changan, а локальный ключ с тем же serial. "
-            "Разработческий сертификат завода не требуется.",
+            + "\n\nЭто не сертификат Changan, а локальный ключ с тем же serial "
+            "(openssl-совместимый, без CA:TRUE). Разработческий сертификат завода не нужен. "
+            "Если на ГУ всплывает 提示 «is not auth», Hub сам перевыпустит старый ключ из data\\certs."
         )
 
     def run(self) -> None:

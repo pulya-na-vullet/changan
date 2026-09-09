@@ -60,10 +60,18 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     report = install_apk(adb, apk, already_signed=False, progress=progress)
     lines.extend(report.log)
     if not report.ok:
-        lines.append(
-            "Пакет НЕ установлен. В «Приложения ГУ» не будет com.changanhub.quickbar, "
-            "на экране машины — тоже. Имя после успеха: QuickBar / com.changanhub.quickbar."
-        )
+        if any("not auth" in line.lower() or "-118" in line for line in report.log):
+            lines.append(
+                "Пакет НЕ установлен. Белое окно 提示 «com.changanhub.quickbar is not auth,"
+                "install failed!» — отказ белого списка Feiyu (pm -118), не краш. "
+                "В «Приложения ГУ» пакета не будет. Имя после успеха: QuickBar / "
+                "com.changanhub.quickbar."
+            )
+        else:
+            lines.append(
+                "Пакет НЕ установлен. В «Приложения ГУ» не будет com.changanhub.quickbar, "
+                "на экране машины — тоже. Имя после успеха: QuickBar / com.changanhub.quickbar."
+            )
         if progress:
             progress("Установка не удалась — пакета в списке не будет.", 100)
         return lines

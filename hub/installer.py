@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from hub.adb import Adb, CommandResult
-from hub.signer import sign_apk
+from hub.signer import sign_apk_with_method
 
 REMOTE_CANDIDATES = (
     "/data/local/tmp",
@@ -90,9 +90,9 @@ def install_apk(
         signed = apk
         step("Переподпись не нужна.", 15)
     else:
-        step("Шаг 1/5: подпись APK под Changan…", 10)
-        signed = sign_apk(apk)
-        step(f"Подписано: {signed}", 25)
+        step("Шаг 1/5: подпись APK под Changan (v1+v2, serial 0xddb66eefd98476f3)…", 10)
+        signed, method = sign_apk_with_method(apk)
+        step(f"Подписано ({method}): {signed}", 25)
     report.signed_apk = signed
 
     # Feiyu: `adb install` with anything on stdin hangs until timeout (180s).
@@ -137,6 +137,15 @@ def install_apk(
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
             "в списке com.changanhub.quickbar не появится.",
+            100,
+        )
+        return report
+    if "not auth" in blob or "-118" in blob:
+        step(
+            "ГУ показала «is not auth, install failed» (код -118). Это отказ белого "
+            "списка Feiyu, не зависание: пакет разобрали, сертификат не приняли. "
+            "Hub переподписывает v1+v2 с serial 0xddb66eefd98476f3. Если окно 提示 "
+            "осталось — удалите папку data\\certs на флешке и повторите установку.",
             100,
         )
         return report

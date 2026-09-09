@@ -45,7 +45,7 @@ def test_install_falls_back_to_pm(tmp_path: Path) -> None:
         zf.writestr("classes.dex", b"dex")
 
     fake = FakeAdb()
-    with patch("hub.installer.sign_apk", return_value=apk):
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
         report = install_apk(fake, apk, already_signed=True)
 
     assert report.ok
@@ -67,7 +67,7 @@ def test_install_never_calls_adb_install(tmp_path: Path) -> None:
 
     fake.install_stream = boom  # type: ignore[method-assign]
     steps: list[tuple[str, int]] = []
-    with patch("hub.installer.sign_apk", return_value=apk):
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
         report = install_apk(fake, apk, already_signed=True, progress=lambda m, p: steps.append((m, p)))
 
     assert report.ok
@@ -107,7 +107,36 @@ def test_install_reports_no_certificates(tmp_path: Path) -> None:
 
     fake.shell = fail_install  # type: ignore[method-assign]
     fake.try_root = lambda: (_ for _ in ()).throw(AssertionError("adb root must not be used"))
-    with patch("hub.installer.sign_apk", return_value=apk):
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
         report = install_apk(fake, apk, already_signed=True)
     assert not report.ok
     assert any("NO_CERTIFICATES" in line or "не установлен" in line.lower() for line in report.log)
+
+
+def test_install_reports_not_auth(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def fail_install(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "Failure [-118: com.changanhub.quickbar is not auth,install failed!]",
+                "please input verify password: verify success!",
+                1,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = fail_install  # type: ignore[method-assign]
+    fake.try_root = lambda: (_ for _ in ()).throw(AssertionError("adb root must not be used"))
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True)
+    assert not report.ok
+    assert any("-118" in line or "not auth" in line.lower() for line in report.log)
+    assert any("белого" in line.lower() or "списка" in line.lower() for line in report.log)

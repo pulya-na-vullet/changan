@@ -10,7 +10,7 @@ from pathlib import Path
 from hub.adb import Adb, AdbError
 from hub.installer import install_apk
 from hub.overlay import install_overlay, start_overlay, stop_overlay
-from hub.signer import certificate_info, ensure_keystore, sign_apk
+from hub.signer import certificate_info, ensure_keystore, sign_apk_with_method
 
 
 def _adb() -> Adb:
@@ -47,8 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(certificate_info(ensure_keystore()), indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "sign":
-        out = sign_apk(Path(args.apk))
-        print(out)
+        out, method = sign_apk_with_method(Path(args.apk))
+        print(f"{out} ({method})")
         return 0
 
     try:
