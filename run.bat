@@ -8,5 +8,5 @@ if errorlevel 1 (
   exit /b 1
 )
 python -m pip install -r requirements.txt
-python run.py
+python app.py
 if errorlevel 1 pause

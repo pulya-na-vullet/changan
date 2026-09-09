@@ -19,11 +19,23 @@
 | Нужен быстрый доступ поверх всего | QuickBar — правый док на 13.2″ вертикальном экране |
 | USB-A в USB-A Windows не видит машину | Пошаговый мастер + перезапуск adb server + подсказки по драйверу |
 
+## Скачать
+
+Прямая ссылка на ZIP этой ветки:
+
+https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/changan-lamore-hub-2d5b.zip
+
+Зеркало без промежуточной страницы:
+
+https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/changan-lamore-hub-2d5b
+
+Распакуйте архив и запустите `app.py`.
+
 ## Быстрый старт на Windows
 
 1. Python 3.11+ и `adb` (platform-tools) уже должны быть в PATH.
-2. Скачайте этот репозиторий.
-3. Запустите `run.bat` — он поставит `cryptography` и откроет интерфейс.
+2. Скачайте ZIP по ссылке выше и распакуйте.
+3. Запуск: `python app.py` (или двойной клик по `run.bat` — он поставит зависимости и откроет тот же `app.py`).
 4. На ГУ: приложение **Phone** → наберите `*#*#888` → вызов → пароль `369875`.
 5. Второй пункт слева (**USB**) → кнопка **ADB**.
 6. Кабель **data** USB-A ↔ USB-A в штатный разъём под парящей консолью.

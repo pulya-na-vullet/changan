@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Launch Changan Hub."""
+"""Совместимость: python run.py → python app.py."""
 
-from hub.gui import main
+from app import main
 
 if __name__ == "__main__":
     main()
