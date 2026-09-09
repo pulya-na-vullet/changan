@@ -92,3 +92,8 @@ def test_sign_minimal_apk(tmp_path: Path) -> None:
         assert smime_oid not in rsa
         certs = pkcs7.load_der_pkcs7_certificates(rsa)
         assert certs[0].serial_number == CHANGAN_SERIAL
+    from hub.signer import apk_certificate_serials
+    from hub.apk_v2 import v2_certificate_ders
+
+    assert CHANGAN_SERIAL in apk_certificate_serials(signed)
+    assert v2_certificate_ders(data)

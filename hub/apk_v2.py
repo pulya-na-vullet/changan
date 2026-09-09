@@ -148,3 +148,56 @@ def attach_v2(data: bytes, key: RSAPrivateKey, cert: Certificate) -> bytes:
 
 def sign_file(path: Path, key: RSAPrivateKey, cert: Certificate) -> None:
     path.write_bytes(attach_v2(path.read_bytes(), key, cert))
+
+
+def _u32_at(data: bytes, offset: int) -> int:
+    return struct.unpack_from("<I", data, offset)[0]
+
+
+def _take_prefixed(data: bytes, offset: int) -> tuple[bytes, int]:
+    length = _u32_at(data, offset)
+    start = offset + 4
+    end = start + length
+    return data[start:end], end
+
+
+def v2_certificate_ders(data: bytes) -> list[bytes]:
+    """Return X.509 DER certificates from the v2 signing block, if present."""
+    try:
+        eocd = find_eocd(data)
+        cd_off = _cd_offset(data, eocd)
+        start = _signing_block_start(data, cd_off)
+    except ValueError:
+        return []
+    if start is None:
+        return []
+    size = struct.unpack_from("<Q", data, start)[0]
+    pairs = data[start + 8 : start + 8 + size - 8 - 16]
+    offset = 0
+    certs: list[bytes] = []
+    while offset + 12 <= len(pairs):
+        pair_len = struct.unpack_from("<Q", pairs, offset)[0]
+        pair_id = struct.unpack_from("<I", pairs, offset + 8)[0]
+        value = pairs[offset + 12 : offset + 8 + pair_len]
+        offset += 8 + pair_len
+        if pair_id != V2_BLOCK_ID:
+            continue
+        # value = u32p(u32p(signer))
+        try:
+            signers_seq, _ = _take_prefixed(value, 0)
+            inner = 0
+            while inner < len(signers_seq):
+                signer, inner = _take_prefixed(signers_seq, inner)
+                signed_data, pos = _take_prefixed(signer, 0)
+                _sigs, pos = _take_prefixed(signer, pos)
+                _pub, _ = _take_prefixed(signer, pos)
+                digests, sd = _take_prefixed(signed_data, 0)
+                certificates, sd = _take_prefixed(signed_data, sd)
+                cpos = 0
+                while cpos < len(certificates):
+                    der, cpos = _take_prefixed(certificates, cpos)
+                    if der:
+                        certs.append(der)
+        except (struct.error, IndexError, ValueError):
+            continue
+    return certs

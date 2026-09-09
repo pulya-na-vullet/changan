@@ -76,12 +76,14 @@ def _openssl_subject() -> x509.Name:
     return x509.Name([x509.NameAttribute(oid, value) for oid, value in CERT_SUBJECT])
 
 
-def cert_matches_whitelist(cert: x509.Certificate) -> bool:
-    if cert.serial_number != CHANGAN_SERIAL:
+def cert_matches_whitelist(cert: x509.Certificate, serial: int = CHANGAN_SERIAL) -> bool:
+    if cert.serial_number != serial:
         return False
     # openssl x509 -req -signkey emits no extensions; CA:TRUE certs were rejected as -118.
     if list(cert.extensions):
         return False
+    if serial != CHANGAN_SERIAL:
+        return True
     attrs = list(cert.subject)
     if not attrs or attrs[0].oid != NameOID.EMAIL_ADDRESS:
         return False
@@ -92,21 +94,23 @@ def cert_matches_whitelist(cert: x509.Certificate) -> bool:
     return True
 
 
-def ensure_keystore(directory: Path | None = None) -> Keystore:
+def ensure_keystore(directory: Path | None = None, serial: int | None = None) -> Keystore:
+    wanted = serial if serial is not None else CHANGAN_SERIAL
     folder = keystore_dir(directory)
     store = Keystore(
         directory=folder,
         private_key=folder / "changan.key",
         certificate=folder / "changan.crt",
+        serial=wanted,
     )
     if store.exists:
         try:
             cert = load_certificate(store.certificate)
-            if cert_matches_whitelist(cert):
+            if cert_matches_whitelist(cert, wanted):
                 return store
         except Exception:
             pass
-    _generate(store)
+    _generate(store, serial=wanted)
     return store
 
 
@@ -118,7 +122,8 @@ def load_key(path: Path):
     return serialization.load_pem_private_key(path.read_bytes(), password=None)
 
 
-def _generate(store: Keystore) -> None:
+def _generate(store: Keystore, serial: int | None = None) -> None:
+    serial = serial if serial is not None else store.serial
     for leftover in (store.private_key, store.certificate, store.pkcs12):
         leftover.unlink(missing_ok=True)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -131,7 +136,7 @@ def _generate(store: Keystore) -> None:
         .subject_name(subject)
         .issuer_name(subject)
         .public_key(key.public_key())
-        .serial_number(CHANGAN_SERIAL)
+        .serial_number(serial)
         .not_valid_before(now - dt.timedelta(days=1))
         .not_valid_after(now + dt.timedelta(days=18250))
         .sign(key, hashes.SHA256())
@@ -147,13 +152,69 @@ def _generate(store: Keystore) -> None:
     (store.directory / "format").write_text(str(KEYSTORE_FORMAT), encoding="utf-8")
 
 
-def find_apksigner() -> Path | None:
+def sdk_root_from_adb(adb_binary: Path | str | None) -> Path | None:
+    if not adb_binary:
+        return None
+    parent = Path(adb_binary).resolve().parent
+    if parent.name.lower() == "platform-tools":
+        return parent.parent
+    return None
+
+
+def find_java() -> Path | None:
+    found: list[Path] = []
+    which = shutil.which("java")
+    if which:
+        found.append(Path(which))
+    home = os.environ.get("JAVA_HOME", "")
+    if home:
+        for name in ("java", "java.exe"):
+            candidate = Path(home) / "bin" / name
+            if candidate.exists():
+                found.append(candidate)
+    local = os.environ.get("LOCALAPPDATA", "")
+    program = os.environ.get("ProgramFiles", "")
+    program86 = os.environ.get("ProgramFiles(x86)", "")
+    extra_roots = [
+        Path(local) / "Programs" / "Android" / "Android Studio" / "jbr" / "bin" if local else Path(),
+        Path(program) / "Android" / "Android Studio" / "jbr" / "bin" if program else Path(),
+        Path(program86) / "Android" / "Android Studio" / "jbr" / "bin" if program86 else Path(),
+        Path.home() / "AppData" / "Local" / "Programs" / "Android" / "Android Studio" / "jbr" / "bin",
+    ]
+    for folder in extra_roots:
+        if not folder:
+            continue
+        for name in ("java.exe", "java"):
+            candidate = folder / name
+            if candidate.exists():
+                found.append(candidate)
+    java_dir = Path(program) / "Java" if program else Path()
+    if java_dir.is_dir():
+        for folder in sorted(java_dir.glob("jdk*"), reverse=True):
+            for name in ("java.exe", "java"):
+                candidate = folder / "bin" / name
+                if candidate.exists():
+                    found.append(candidate)
+    uniq: list[Path] = []
+    seen: set[str] = set()
+    for item in found:
+        key = str(item)
+        if key not in seen:
+            uniq.append(item)
+            seen.add(key)
+    return uniq[0] if uniq else None
+
+
+def find_apksigner(adb_binary: Path | str | None = None) -> Path | None:
     found: list[Path] = []
     for name in ("apksigner", "apksigner.bat"):
         which = shutil.which(name)
         if which:
             found.append(Path(which))
     roots: list[Path] = []
+    hinted = sdk_root_from_adb(adb_binary)
+    if hinted:
+        roots.append(hinted)
     for key in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         value = os.environ.get(key)
         if value:
@@ -166,10 +227,9 @@ def find_apksigner() -> Path | None:
         Path("/tmp/android-sdk"),
     ]
     adb = shutil.which("adb")
-    if adb:
-        parent = Path(adb).resolve().parent
-        if parent.name.lower() == "platform-tools":
-            roots.append(parent.parent)
+    extra = sdk_root_from_adb(adb)
+    if extra:
+        roots.append(extra)
     for root in roots:
         tools = root / "build-tools"
         if not tools.is_dir():
@@ -180,13 +240,13 @@ def find_apksigner() -> Path | None:
             reverse=True,
         )
         for version in versions:
+            jar = version / "lib" / "apksigner.jar"
+            if jar.exists():
+                found.append(jar)
             for name in ("apksigner", "apksigner.bat"):
                 candidate = version / name
                 if candidate.exists():
                     found.append(candidate)
-            jar = version / "lib" / "apksigner.jar"
-            if jar.exists():
-                found.append(jar)
     uniq: list[Path] = []
     seen: set[str] = set()
     for item in found:
@@ -202,8 +262,11 @@ def sign_apk(
     dst: Path | None = None,
     keystore: Keystore | None = None,
     apksigner: Path | None = None,
+    adb_binary: Path | str | None = None,
 ) -> Path:
-    path, _method = sign_apk_with_method(src, dst=dst, keystore=keystore, apksigner=apksigner)
+    path, _method = sign_apk_with_method(
+        src, dst=dst, keystore=keystore, apksigner=apksigner, adb_binary=adb_binary
+    )
     return path
 
 
@@ -212,19 +275,29 @@ def sign_apk_with_method(
     dst: Path | None = None,
     keystore: Keystore | None = None,
     apksigner: Path | None = None,
+    adb_binary: Path | str | None = None,
 ) -> tuple[Path, str]:
     src = Path(src)
     dst = Path(dst) if dst else src.with_name(src.stem + "-changan.apk")
     keystore = keystore or ensure_keystore()
     dst.parent.mkdir(parents=True, exist_ok=True)
-    tool = Path(apksigner) if apksigner else find_apksigner()
+    tool = Path(apksigner) if apksigner else find_apksigner(adb_binary)
+    fallback = ""
     if tool and tool.exists():
         try:
             _sign_with_apksigner(src, dst, keystore, tool)
             return dst, f"apksigner:{tool.name}"
-        except (OSError, subprocess.CalledProcessError, ValueError):
-            pass
+        except (OSError, subprocess.CalledProcessError, ValueError, FileNotFoundError) as exc:
+            fallback = f"apksigner {tool.name} не запустился ({exc})"
+    elif tool is None:
+        java = find_java()
+        if java is None:
+            fallback = "apksigner/java не найдены рядом с Android SDK"
+        else:
+            fallback = f"apksigner.jar не найден, java={java}"
     _sign_python(src, dst, keystore)
+    if fallback:
+        return dst, f"python-v1v2; {fallback}"
     return dst, "python-v1v2"
 
 
@@ -243,21 +316,30 @@ def _pkcs12(keystore: Keystore, p12: Path) -> None:
     p12.write_bytes(data)
 
 
-def _apksigner_cmd(apksigner: Path) -> list[str]:
+def _apksigner_cmd(apksigner: Path) -> tuple[list[str], dict[str, str]]:
+    env = os.environ.copy()
+    java = find_java()
+    if java:
+        env["JAVA_HOME"] = str(java.resolve().parent.parent)
+        env["PATH"] = str(java.resolve().parent) + os.pathsep + env.get("PATH", "")
     if apksigner.suffix.lower() == ".jar":
-        java = shutil.which("java")
         if not java:
-            raise FileNotFoundError("java")
-        return [java, "-jar", str(apksigner)]
-    return [str(apksigner)]
+            raise FileNotFoundError("java не найден (нужен для apksigner.jar)")
+        return [str(java), "-jar", str(apksigner)], env
+    jar = apksigner.parent / "lib" / "apksigner.jar"
+    if jar.exists() and java:
+        return [str(java), "-jar", str(jar)], env
+    if not java:
+        raise FileNotFoundError("java не найден (apksigner.bat без Java в PATH не стартует)")
+    return [str(apksigner)], env
 
 
 def _sign_with_apksigner(src: Path, dst: Path, keystore: Keystore, apksigner: Path) -> Path:
     p12 = keystore.pkcs12
     if not p12.exists():
         _pkcs12(keystore, p12)
-    cmd = [
-        *_apksigner_cmd(apksigner),
+    cmd, env = _apksigner_cmd(apksigner)
+    cmd += [
         "sign",
         "--v1-signing-enabled",
         "true",
@@ -282,7 +364,11 @@ def _sign_with_apksigner(src: Path, dst: Path, keystore: Keystore, apksigner: Pa
         "--out",
         str(dst),
     ]
-    subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env, text=True)
+    if proc.returncode != 0:
+        detail = (proc.stderr or "").strip().splitlines()
+        tail = detail[-1] if detail else f"code {proc.returncode}"
+        raise subprocess.CalledProcessError(proc.returncode, cmd, tail)
     return dst
 
 
@@ -389,3 +475,31 @@ def certificate_info(store: Keystore | None = None) -> dict[str, str]:
         "path": str(store.certificate),
         "format": "openssl-v2",
     }
+
+
+def apk_certificate_serials(apk: Path) -> list[int]:
+    """Serial numbers of v1 PKCS7 and v2 signing certificates in an APK."""
+    from hub.apk_v2 import v2_certificate_ders
+
+    serials: list[int] = []
+    data = Path(apk).read_bytes()
+    with zipfile.ZipFile(apk) as zf:
+        for name in zf.namelist():
+            upper = name.upper()
+            if not (upper.startswith("META-INF/") and upper.endswith((".RSA", ".DSA", ".EC"))):
+                continue
+            try:
+                for cert in pkcs7.load_der_pkcs7_certificates(zf.read(name)):
+                    serials.append(cert.serial_number)
+            except ValueError:
+                continue
+    for der in v2_certificate_ders(data):
+        try:
+            serials.append(x509.load_der_x509_certificate(der).serial_number)
+        except ValueError:
+            continue
+    uniq: list[int] = []
+    for item in serials:
+        if item not in uniq:
+            uniq.append(item)
+    return uniq

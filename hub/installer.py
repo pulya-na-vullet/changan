@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from hub.adb import Adb, CommandResult
-from hub.signer import sign_apk_with_method
+from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 REMOTE_CANDIDATES = (
     "/data/local/tmp",
@@ -15,6 +15,19 @@ REMOTE_CANDIDATES = (
     "/storage/emulated/0/Download",
     "/sdcard",
     "/storage/emulated/0",
+)
+
+# Already-installed third-party apps on this HU — their signing serial is the
+# real whitelist, which may differ from the CS75PLUS cookbook value.
+PROBE_PACKAGES = (
+    "org.schabi.newpipe",
+    "net.easyconn",
+    "gb.xxy.hr",
+    "ru.hackchan.launcher",
+    "ru.hackchan.settings",
+    "air.StrelkaHUDFREE",
+    "ru.yandex.yandexnavi",
+    "com.yandex.browser.lite",
 )
 
 Progress = Callable[[str, int], None]
@@ -90,9 +103,30 @@ def install_apk(
         signed = apk
         step("Переподпись не нужна.", 15)
     else:
-        step("Шаг 1/5: подпись APK под Changan (v1+v2, serial 0xddb66eefd98476f3)…", 10)
-        signed, method = sign_apk_with_method(apk)
+        hu_serial = discover_hu_signer_serial(adb, step)
+        serial = hu_serial or CHANGAN_SERIAL
+        if hu_serial and hu_serial != CHANGAN_SERIAL:
+            step(
+                f"На установленных приложениях ГУ serial=0x{hu_serial:x} "
+                f"(не cookbook 0x{CHANGAN_SERIAL:x}). Подписываю как на ГУ.",
+                8,
+            )
+        elif hu_serial:
+            step(f"На ГУ те же приложения с serial=0x{hu_serial:x} — совпадает с гайдом.", 8)
+        else:
+            step(
+                f"Не снял serial с приложений ГУ, беру гайд 0x{CHANGAN_SERIAL:x}.",
+                8,
+            )
+        store = ensure_keystore(serial=serial)
+        step(
+            f"Шаг 1/5: подпись APK под Changan (v1+v2, serial 0x{serial:x})…",
+            10,
+        )
+        signed, method = sign_apk_with_method(apk, keystore=store, adb_binary=adb.binary)
         step(f"Подписано ({method}): {signed}", 25)
+        for seen in apk_certificate_serials(signed):
+            step(f"в подписанном APK serial=0x{seen:x}", 26)
     report.signed_apk = signed
 
     # Feiyu: `adb install` with anything on stdin hangs until timeout (180s).
@@ -143,9 +177,8 @@ def install_apk(
     if "not auth" in blob or "-118" in blob:
         step(
             "ГУ показала «is not auth, install failed» (код -118). Это отказ белого "
-            "списка Feiyu, не зависание: пакет разобрали, сертификат не приняли. "
-            "Hub переподписывает v1+v2 с serial 0xddb66eefd98476f3. Если окно 提示 "
-            "осталось — удалите папку data\\certs на флешке и повторите установку.",
+            "списка Feiyu: пакет разобрали, сертификат не приняли. В журнале выше — "
+            "serial с уже стоящих приложений и способ подписи (apksigner или python).",
             100,
         )
         return report
@@ -158,3 +191,42 @@ def _after_install(adb: Adb, report: InstallReport) -> None:
     for result in adb.clear_launcher_cache():
         report.add(result.text or result.stderr or "ok")
     report.add("Иконки в штатном меню Feiyu может не быть — это нормально.")
+
+
+def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:
+    """Read signing serials from third-party apps already on the head unit."""
+    from hub.paths import app_data
+
+    found: list[int] = []
+    probe_dir = app_data() / "probe"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    for pkg in PROBE_PACKAGES:
+        result = adb.shell(f"pm path {pkg}", timeout=10)
+        remote = ""
+        for line in result.stdout.splitlines():
+            if "package:" in line:
+                remote = line.split("package:", 1)[-1].strip()
+                break
+        if not remote:
+            continue
+        local = probe_dir / f"{pkg.split('.')[-1]}.apk"
+        pulled = adb.raw(["pull", remote, str(local)], timeout=40)
+        if not pulled.ok or not local.exists() or local.stat().st_size < 64:
+            continue
+        try:
+            serials = apk_certificate_serials(local)
+        except Exception:
+            serials = []
+        try:
+            local.unlink()
+        except OSError:
+            pass
+        if not serials:
+            continue
+        serial = serials[0]
+        found.append(serial)
+        if step:
+            step(f"на ГУ {pkg} serial=0x{serial:x}", 8)
+        if serial == CHANGAN_SERIAL:
+            return serial
+    return found[0] if found else None

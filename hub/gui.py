@@ -716,8 +716,8 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "Hub подписывает APK v1+v2 с serial 0xddb66eefd98476f3.\n"
-                        "Нажмите «Установить» ещё раз на новой сборке Hub.",
+                        "В журнале смотрите serial уже стоящих приложений и строку «Подписано».\n"
+                        "Пришлите logs\\hub.log, если снова отказ.",
                     )
                 )
 
@@ -741,8 +741,9 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «com.changanhub.quickbar is not auth, install failed!» — "
-                        "белый список Feiyu (код -118), не краш установщика.\n"
-                        "Hub подписывает панель v1+v2. Повторите установку этой сборкой.",
+                        "белый список Feiyu (код -118).\n"
+                        "В журнале — serial приложений на ГУ и способ подписи. "
+                        "Пришлите logs\\hub.log, если отказ повторится.",
                     )
                 )
 

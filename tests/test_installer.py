@@ -11,6 +11,7 @@ class FakeAdb:
         self.connected_flag = True
         self.pushed = []
         self.shells = []
+        self.binary = Path("adb")
 
     def connected(self) -> bool:
         return True
@@ -21,6 +22,9 @@ class FakeAdb:
     def push(self, local: Path, remote: str, timeout: int = 180) -> CommandResult:
         self.pushed.append(remote)
         return CommandResult(True, f"{local} -> {remote}", "", 0, [])
+
+    def raw(self, args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        return CommandResult(True, "", "", 0, args)
 
     def shell(self, command: str, timeout: int = 60) -> CommandResult:
         self.shells.append(command)
@@ -140,3 +144,39 @@ def test_install_reports_not_auth(tmp_path: Path) -> None:
     assert not report.ok
     assert any("-118" in line or "not auth" in line.lower() for line in report.log)
     assert any("белого" in line.lower() or "списка" in line.lower() for line in report.log)
+
+
+def test_discover_hu_signer_serial(tmp_path: Path) -> None:
+    from hub.installer import discover_hu_signer_serial
+    from hub.signer import CHANGAN_SERIAL, sign_apk, ensure_keystore
+    from unittest.mock import patch
+    import zipfile
+
+    apk = tmp_path / "newpipe.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+    store = ensure_keystore(tmp_path / "certs")
+    with patch("hub.signer.find_apksigner", return_value=None):
+        signed = sign_apk(apk, tmp_path / "newpipe-signed.apk", keystore=store)
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm path org.schabi.newpipe"):
+            return CommandResult(True, "package:/data/app/newpipe.apk", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            Path(args[2]).write_bytes(signed.read_bytes())
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    serial = discover_hu_signer_serial(fake, lambda m, p: notes.append(m))
+    assert serial == CHANGAN_SERIAL
+    assert any("newpipe" in line.lower() for line in notes)
+
