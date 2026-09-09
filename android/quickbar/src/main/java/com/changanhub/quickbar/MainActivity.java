@@ -1,0 +1,71 @@
+package com.changanhub.quickbar;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.provider.Settings;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
+
+public class MainActivity extends Activity {
+    private TextView status;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        status = findViewById(R.id.status);
+        Button start = findViewById(R.id.btn_start);
+        start.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!canDraw()) {
+                    requestOverlay();
+                    return;
+                }
+                OverlayService.start(MainActivity.this);
+                status.setText("Панель запущена справа");
+                finish();
+            }
+        });
+        refresh();
+        if (canDraw()) {
+            OverlayService.start(this);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refresh();
+        if (canDraw()) {
+            OverlayService.start(this);
+        }
+    }
+
+    private void refresh() {
+        status.setText(canDraw()
+                ? "Разрешение выдано. Панель можно держать всегда поверх приложений."
+                : getString(R.string.need_overlay));
+    }
+
+    private boolean canDraw() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true;
+        }
+        return Settings.canDrawOverlays(this);
+    }
+
+    private void requestOverlay() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception ignored) {
+            status.setText(getString(R.string.need_overlay));
+        }
+    }
+}

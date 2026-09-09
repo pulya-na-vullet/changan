@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">QuickBar</string>
+    <string name="overlay_notification">Правая панель быстрого доступа активна</string>
+    <string name="need_overlay">Нужно разрешение «поверх других окон»</string>
+    <string name="start">Запустить панель</string>
+    <string name="hint">Панель останется справа поверх всех приложений. На ГУ Changan разрешение выдаётся через ADB автоматически.</string>
+</resources>
