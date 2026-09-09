@@ -108,6 +108,8 @@ class Adb:
     def raw(self, args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
         argv = self.prefix() + args
         started = time.monotonic()
+        if self.on_log:
+            self.on_log(argv, "", f"запущен, жду ответ (лимит {timeout}с)…", -1, 0)
         try:
             proc = subprocess.run(
                 argv,
@@ -215,7 +217,11 @@ class Adb:
             last = self.raw(args, timeout=timeout, input_text=stdin)
             blob = last.stdout + "\n" + last.stderr
             if last.code == 124:
-                continue
+                # One hang is enough. Retrying 4 stdin variants used to freeze
+                # the UI for timeout×5 (pm install 25s → 125s of a dead queue).
+                stdout = self._strip_password_banner(last.stdout)
+                stderr = self._strip_password_banner(last.stderr)
+                return CommandResult(False, stdout, stderr or last.stderr, 124, last.argv)
             if self.needs_password(blob) and not last.stdout.strip():
                 continue
             stdout = self._strip_password_banner(last.stdout)
@@ -247,18 +253,14 @@ class Adb:
         parsed = {label: self.getprop(prop) for label, prop in keys.items()}
         return parsed
 
-    def push(self, local: Path, remote: str, timeout: int = 180) -> CommandResult:
-        return self.raw(
-            ["push", str(local), remote],
-            timeout=timeout,
-            input_text=f"{SHELL_PASSWORD}\n",
-        )
+    def push(self, local: Path, remote: str, timeout: int = 40) -> CommandResult:
+        # Do not send stdin: adb may wait for file data and hang.
+        return self.raw(["push", str(local), remote], timeout=timeout)
 
-    def install_stream(self, apk: Path, timeout: int = 180) -> CommandResult:
+    def install_stream(self, apk: Path, timeout: int = 8) -> CommandResult:
         return self.raw(
             ["install", "-r", "-t", "-g", "--no-streaming", str(apk)],
             timeout=timeout,
-            input_text=f"{SHELL_PASSWORD}\n",
         )
 
     def screenshot(self, dest: Path) -> CommandResult:

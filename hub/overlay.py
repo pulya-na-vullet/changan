@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from hub.adb import Adb
-from hub.installer import install_apk
+from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
 
 PACKAGE = "com.changanhub.quickbar"
@@ -16,19 +16,21 @@ def overlay_apk() -> Path:
     return bundled_apps() / "QuickBar.apk"
 
 
-def grant_overlay(adb: Adb) -> list[str]:
+def grant_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     log = []
     for cmd in (
         f"appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
         f"cmd appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
     ):
+        if progress:
+            progress(f"разрешение: {cmd}", 90)
         result = adb.shell(cmd, timeout=10)
         log.append(f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}")
     return log
 
 
-def start_overlay(adb: Adb) -> list[str]:
-    log = grant_overlay(adb)
+def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
+    log = grant_overlay(adb, progress=progress)
     for cmd in (
         f"am start -n {PACKAGE}/.MainActivity",
         f"monkey -p {PACKAGE} -c android.intent.category.LAUNCHER 1",
@@ -36,6 +38,8 @@ def start_overlay(adb: Adb) -> list[str]:
         f"am start-foreground-service -n {SERVICE}",
         f"am startservice -n {SERVICE} -a {PACKAGE}.SHOW",
     ):
+        if progress:
+            progress(f"запуск: {cmd}", 95)
         result = adb.shell(cmd, timeout=10)
         log.append(f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}")
     return log
@@ -46,18 +50,21 @@ def stop_overlay(adb: Adb) -> list[str]:
     return [f"force-stop code={result.code} {result.text or result.stderr}"]
 
 
-def install_overlay(adb: Adb) -> list[str]:
+def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     apk = overlay_apk()
     if not apk.exists():
         return [f"QuickBar.apk не найден: {apk}"]
     lines = [f"Файл панели: {apk} ({apk.stat().st_size} байт)"]
-    report = install_apk(adb, apk, already_signed=False)
+    if progress:
+        progress(lines[0], 5)
+    report = install_apk(adb, apk, already_signed=False, progress=progress)
     lines.extend(report.log)
     if report.ok:
-        lines.append("Установщик вернул успех. Запускаю панель (иконки в штатном меню Feiyu часто нет).")
+        lines.append("Пакет установлен. Запускаю панель…")
     else:
-        lines.append("Установщик не подтвердил успех — всё равно пробую запустить, пакет мог встать.")
-    lines += start_overlay(adb)
-    lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не иконка в меню приложений.")
-    lines.append("Если колонки нет: громкость «−» 10–20 сек, затем в Hub «Только запустить».")
+        lines.append("Установщик не подтвердил успех — пробую запустить на случай, если пакет уже есть.")
+    lines += start_overlay(adb, progress=progress)
+    if progress:
+        progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
+    lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
     return lines

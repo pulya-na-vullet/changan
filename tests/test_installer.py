@@ -52,3 +52,34 @@ def test_install_falls_back_to_pm(tmp_path: Path) -> None:
     assert report.method.startswith("pm install")
     assert fake.pushed
     assert any(cmd.startswith("pm install") for cmd in fake.shells)
+
+
+def test_install_never_calls_adb_install(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("adb install must not be used on Feiyu")
+
+    fake.install_stream = boom  # type: ignore[method-assign]
+    steps: list[tuple[str, int]] = []
+    with patch("hub.installer.sign_apk", return_value=apk):
+        report = install_apk(fake, apk, already_signed=True, progress=lambda m, p: steps.append((m, p)))
+
+    assert report.ok
+    assert any("push" in msg.lower() for msg, _ in steps)
+    assert any("pm install" in msg.lower() for msg, _ in steps)
+    assert steps[0][1] <= steps[-1][1]
+
+
+def test_classify_install_steps() -> None:
+    from hub.installer import classify_install_step
+
+    assert classify_install_step("Шаг 1/5: подпись APK под Changan…") == "sign"
+    assert classify_install_step("push → /sdcard/Download/x.apk") == "push"
+    assert classify_install_step("выполняю pm install -r -t /sdcard/x") == "pm"
+    assert classify_install_step("запуск: am start -n com.changanhub.quickbar/.MainActivity") == "start"

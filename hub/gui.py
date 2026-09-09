@@ -6,6 +6,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -13,7 +14,7 @@ from typing import Callable
 
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
 from hub.catalog import CATALOG
-from hub.installer import install_apk
+from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, start_overlay, stop_overlay
 from hub.paths import bundled_apps
@@ -63,7 +64,7 @@ def _bind_theme(root: tk.Tk) -> None:
     style.configure("TNotebook.Tab", background=PANEL, foreground=TEXT, padding=(16, 8))
     style.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", ACCENT)])
     style.configure("TEntry", fieldbackground=CARD, foreground=TEXT)
-    style.configure("Horizontal.TProgressbar", troughcolor=PANEL, background=ACCENT)
+    style.configure("Horizontal.TProgressbar", troughcolor=PANEL, background=ACCENT, thickness=12)
 
 
 class HubApp:
@@ -82,6 +83,14 @@ class HubApp:
         self.page = tk.StringVar(value="connect")
         self.busy = False
         self.busy_title = ""
+        self.step_var = tk.StringVar(value="Ожидание — нажмите «Подключить», затем ставьте панель")
+        self.queue_var = tk.StringVar(value="Очередь пуста")
+        self.elapsed_var = tk.StringVar(value="")
+        self.pct_var = tk.StringVar(value="")
+        self.progress_var = tk.DoubleVar(value=0)
+        self._busy_t0 = 0.0
+        self._last_progress_t = 0.0
+        self._active_stage: str | None = None
         self.jobs: queue.Queue[tuple[str, Callable[[], None]]] = queue.Queue()
         self._worker = threading.Thread(target=self._job_loop, daemon=True, name="hub-worker")
         self._worker.start()
@@ -151,6 +160,46 @@ class HubApp:
         self.dot = tk.Canvas(top, width=18, height=18, bg=BG, highlightthickness=0)
         self.dot.pack(side=tk.RIGHT)
         self._set_dot(False)
+
+        loader = tk.Frame(main, bg=CARD)
+        loader.pack(fill=tk.X, padx=20, pady=(0, 8))
+        head = tk.Frame(loader, bg=CARD)
+        head.pack(fill=tk.X, padx=12, pady=(8, 0))
+        tk.Label(head, text="Процесс установки", bg=CARD, fg=TEXT, font=FONT_H).pack(side=tk.LEFT)
+        tk.Label(head, textvariable=self.elapsed_var, bg=CARD, fg=MUTED, font=("Segoe UI", 10)).pack(
+            side=tk.LEFT, padx=12
+        )
+        tk.Label(head, textvariable=self.pct_var, bg=CARD, fg=ACCENT, font=("Segoe UI", 10, "bold")).pack(
+            side=tk.RIGHT
+        )
+        tk.Label(loader, textvariable=self.step_var, bg=CARD, fg=ACCENT, font=FONT, anchor="w").pack(
+            fill=tk.X, padx=12, pady=(4, 2)
+        )
+        self.progress_bar = ttk.Progressbar(
+            loader, variable=self.progress_var, maximum=100, mode="determinate"
+        )
+        self.progress_bar.pack(fill=tk.X, padx=12, pady=4)
+        stages = tk.Frame(loader, bg=CARD)
+        stages.pack(fill=tk.X, padx=12, pady=(0, 4))
+        self.stage_labels: dict[str, tk.Label] = {}
+        for i, (key, title) in enumerate(PROCESS_STAGES):
+            lbl = tk.Label(
+                stages,
+                text=f"○  {title}",
+                bg=CARD,
+                fg=MUTED,
+                font=("Segoe UI", 10),
+                anchor="w",
+            )
+            lbl.grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 28), pady=1)
+            self.stage_labels[key] = lbl
+        qrow = tk.Frame(loader, bg=CARD)
+        qrow.pack(fill=tk.X, padx=12, pady=(0, 8))
+        tk.Label(qrow, textvariable=self.queue_var, bg=CARD, fg=MUTED, font=("Segoe UI", 10)).pack(
+            side=tk.LEFT
+        )
+        ttk.Button(qrow, text="Сбросить очередь", command=self.clear_queue).pack(side=tk.RIGHT)
+        self.root.after(400, self._tick_loader)
 
         self.stack = ttk.Frame(main)
         self.stack.pack(fill=tk.BOTH, expand=True, padx=20)
@@ -229,7 +278,8 @@ class HubApp:
         ttk.Label(
             page,
             text="Любой APK будет переподписан под Changan и поставлен через push + pm install. "
-            "adb install на Feiyu почти всегда закрыт.",
+            "adb install на Feiyu зависает — Hub его больше не вызывает. "
+            "Смотрите лоадер сверху: подпись → копирование → pm install.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(6, 12))
         row = ttk.Frame(page)
@@ -254,7 +304,10 @@ class HubApp:
             "• Удержание добавляет в избранное\n"
             "• ↔ раскрывает подписи и поиск\n"
             "• ▸ сворачивает в тонкий край, чтобы не мешать фильму\n"
-            "• Автозапуск после перезагрузки ГУ"
+            "• Автозапуск после перезагрузки ГУ\n\n"
+            "Пока сверху крутится лоадер — не жмите кнопку повторно. "
+            "Очередь задач значит, что предыдущий шаг ещё не закончился (или завис). "
+            "Иконки в штатном меню Feiyu не будет: ищите зелёную колонку СПРАВА."
         )
         tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
             anchor="w", pady=12
@@ -391,29 +444,146 @@ class HubApp:
             self.adb.on_log = self.journal.adb
         return self.adb
 
+    def _tick_loader(self) -> None:
+        try:
+            if not self.root.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if self.busy:
+            elapsed = int(time.monotonic() - self._busy_t0)
+            self.elapsed_var.set(f"идёт {elapsed} с")
+            if time.monotonic() - self._last_progress_t > 1.2:
+                if str(self.progress_bar.cget("mode")) != "indeterminate":
+                    self.progress_bar.configure(mode="indeterminate")
+                    self.progress_bar.start(12)
+        try:
+            self.root.after(400, self._tick_loader)
+        except tk.TclError:
+            return
+
+    def _reset_stages(self) -> None:
+        self._active_stage = None
+
+        def go() -> None:
+            for key, title in PROCESS_STAGES:
+                self.stage_labels[key].configure(text=f"○  {title}", fg=MUTED)
+
+        self._ui(go)
+
+    def _apply_stage(self, message: str, percent: int) -> None:
+        key = classify_install_step(message)
+        if key:
+            self._active_stage = key
+        low = message.lower()
+        failed = any(word in low for word in ("ошибка", "не удалась", "не удалось", "не найден"))
+        finished = percent >= 100 and not failed
+        active = self._active_stage
+
+        def go() -> None:
+            titles = dict(PROCESS_STAGES)
+            order = [k for k, _ in PROCESS_STAGES]
+            idx = order.index(active) if active in titles else -1
+            for i, stage in enumerate(order):
+                title = titles[stage]
+                widget = self.stage_labels[stage]
+                if failed and stage == active:
+                    widget.configure(text=f"✕  {title}", fg=DANGER)
+                elif finished or (idx >= 0 and i < idx):
+                    widget.configure(text=f"✓  {title}", fg=ACCENT)
+                elif stage == active:
+                    widget.configure(text=f"●  {title}  …", fg=ACCENT)
+
+        self._ui(go)
+
+    def _show_progress(self, message: str, percent: int) -> None:
+        queued = self.jobs.qsize()
+        qtext = "Очередь пуста" if queued == 0 else f"В очереди ещё {queued}"
+        pct = max(0, min(100, int(percent)))
+        self._last_progress_t = time.monotonic()
+        self._apply_stage(message, pct)
+
+        def go() -> None:
+            self.step_var.set(message)
+            self.queue_var.set(qtext)
+            self.pct_var.set(f"{pct} %")
+            self.progress_bar.stop()
+            self.progress_bar.configure(mode="determinate")
+            self.progress_var.set(pct)
+
+        self._ui(go)
+        self.journal.write("INFO", "step", message, pct=pct)
+
+    def clear_queue(self) -> None:
+        self.journal.action("сбросить очередь")
+        dropped = 0
+        while True:
+            try:
+                self.jobs.get_nowait()
+                dropped += 1
+            except queue.Empty:
+                break
+        self.journal.write(
+            "WARN",
+            "job",
+            f"снято из очереди: {dropped}. Текущий шаг доработает (лимит ADB 8–40 с).",
+        )
+        self._show_progress(self.step_var.get() or "Ожидание", int(self.progress_var.get()))
+
     def _work(self, title: str, fn: Callable[[], None]) -> None:
         self.journal.action("кнопка", title)
-        pending = self.jobs.qsize() + (1 if self.busy else 0)
-        if pending:
-            self.journal.write("INFO", "job", f"в очереди: {title} (перед этим ещё {pending})")
+        if self.busy:
+            self.journal.write(
+                "WARN",
+                "job",
+                f"пропуск «{title}»: уже выполняется «{self.busy_title}». Дождитесь лоадера или сбросьте очередь.",
+            )
+            self._ui(lambda: self.queue_var.set(f"Идёт «{self.busy_title}» — повтор не ставлю"))
+            return
+        pending = list(self.jobs.queue)
+        if any(t == title for t, _ in pending):
+            self.journal.write("WARN", "job", f"«{title}» уже в очереди")
+            return
+        waiting = self.jobs.qsize()
+        if waiting:
+            self.journal.write("INFO", "job", f"в очереди: {title} (перед этим ещё {waiting})")
         else:
             self.journal.write("INFO", "job", f"старт: {title}")
         self.jobs.put((title, fn))
+        self._ui(lambda: self.queue_var.set(f"В очереди ещё {self.jobs.qsize()}"))
 
     def _job_loop(self) -> None:
         while True:
             title, fn = self.jobs.get()
             self.busy = True
             self.busy_title = title
+            self._busy_t0 = time.monotonic()
+            self._last_progress_t = time.monotonic()
+            self._reset_stages()
+            self._show_progress(f"Выполняется: {title}", 5)
             self.journal.write("INFO", "job", f"выполняется: {title}")
             try:
                 fn()
                 self.journal.write("INFO", "job", f"готово: {title}")
+                elapsed = int(time.monotonic() - self._busy_t0)
+                self._ui(lambda n=elapsed: self.elapsed_var.set(f"готово за {n} с"))
+                self._show_progress(f"Готово: {title}", 100)
             except Exception as exc:  # noqa: BLE001
                 self.journal.error(title, exc)
+                self._show_progress(f"Ошибка: {title}", 100)
             finally:
                 self.busy = False
                 self.busy_title = ""
+                left = self.jobs.qsize()
+                self._ui(
+                    lambda n=left: self.queue_var.set("Очередь пуста" if n == 0 else f"В очереди ещё {n}")
+                )
+                self._ui(lambda: self.progress_bar.stop())
+
+    def _hu_ready(self, adb: Adb) -> bool:
+        # Never call adb.connected() here: devices -l was the last line in the
+        # user's log before install hung, and it blocks the worker with no loader.
+        return bool(adb.serial)
 
     def refresh_connection(self) -> None:
         def go() -> None:
@@ -514,12 +684,13 @@ class HubApp:
 
         def go() -> None:
             adb = self._need_adb()
-            if not adb or not adb.connected():
-                self.log("Сначала подключите ГУ")
-                return
-            report = install_apk(adb, path)
-            for line in report.log:
-                self.log(line)
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial установка не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            report = install_apk(adb, path, progress=progress)
             self.log("Готово" if report.ok else "Не установлено")
 
         self._work(f"Установка {path.name}", go)
@@ -527,11 +698,14 @@ class HubApp:
     def deploy_overlay(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb or not adb.connected():
-                self.log("Сначала подключите ГУ")
-                return
-            for line in install_overlay(adb):
-                self.log(line)
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial установка не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in install_overlay(adb, progress=progress):
+                self.journal.write("INFO", "overlay", line)
 
         self._work("QuickBar", go)
 
@@ -540,8 +714,10 @@ class HubApp:
             adb = self._need_adb()
             if not adb:
                 return
-            for line in start_overlay(adb):
-                self.log(line)
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+            for line in start_overlay(adb, progress=progress):
+                self.journal.write("INFO", "overlay", line)
 
         self._work("Запуск панели", go)
 

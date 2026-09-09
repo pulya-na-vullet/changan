@@ -22,6 +22,23 @@ def test_shell_always_sends_password() -> None:
     assert "spm8666p1_64_car" in result.stdout
 
 
+def test_shell_timeout_does_not_retry() -> None:
+    adb = object.__new__(Adb)
+    calls: list[tuple] = []
+
+    def fake_raw(args, timeout=45, input_text=None):
+        calls.append((tuple(args), input_text, timeout))
+        from hub.adb import CommandResult
+
+        return CommandResult(False, "", "timeout after 25s", 124, args)
+
+    adb.raw = fake_raw  # type: ignore[method-assign]
+    adb.last_password_used = False
+    result = Adb.shell(adb, "pm install -r /sdcard/x.apk", timeout=25)
+    assert result.code == 124
+    assert len(calls) == 1
+
+
 def test_journal_writes_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("hub.journal.logs_dir", lambda: tmp_path)
     journal = Journal()
