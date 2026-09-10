@@ -31,8 +31,8 @@ def test_start_overlay_kicks_boot_intents() -> None:
     fake = FakeAdb()
     start_overlay(fake)
     joined = "\n".join(fake.shells)
-    assert "BOOT_COMPLETED" in joined
-    assert "USER_PRESENT" in joined
+    assert "LOCKED_BOOT_COMPLETED" in joined or "ACC_ON" in joined
+    assert "POWER_CONNECTED" in joined
     assert "MainActivity" in joined
     assert "start-foreground-service" in joined or "startservice" in joined
     assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
@@ -57,15 +57,22 @@ def test_quickbar_is_three_times_taller() -> None:
     )
     assert "HEIGHT_SCALE = 3" in src
     assert "48 * HEIGHT_SCALE" in src
-    assert "220 * HEIGHT_SCALE" in src
+    assert "VERTICAL_MARGIN = 0.20f" in src
+    assert "COLLAPSED_W_DP = 64" in src
     assert "displayHeight()" in src
+    assert "overlayHeight()" in src
     assert "scheduleWatchdog" in src
     assert "ACTION_KEEPALIVE" in src
+    assert "setExactAndAllowWhileIdle" in src
 
 
 def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
+    assert "KeepAliveJob" in mf
+    assert 'android:versionName="1.1.0"' in mf
+    assert "ACTION_BOOT_IPO" in mf
+    assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
@@ -100,12 +107,22 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "collapsedZones" in src
     assert "recentZone" in src
     assert "evenSpacer" in src
-    assert "COLLAPSED_W_DP = 144" in src
+    assert "COLLAPSED_W_DP = 64" in src
+    assert "COLLAPSED_ICON_DP" in src
+    assert 'tools.addView(toolIcon(R.drawable.ic_menu' not in src
     assert "LEGACY_PACKAGE" in src
     assert "KEY_RECENT" in src
     assert "UsbStorage.apkFiles" in src
+    assert "PackageActions.copyToCache" in src
     assert "PackageActions.uninstall" in src
     assert "PackageActions.install" in src
+    assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java")).is_file()
+    job = Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java").read_text(
+        encoding="utf-8"
+    )
+    assert "setPersisted(true)" in job
+    assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/UsbStorage.java").is_file()
+    assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java").is_file()
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/UsbStorage.java")).is_file()
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java")).is_file()
 

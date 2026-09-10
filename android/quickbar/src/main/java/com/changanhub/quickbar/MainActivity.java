@@ -27,17 +27,14 @@ public class MainActivity extends Activity {
                     requestOverlay();
                     return;
                 }
-                requestIgnoreBattery();
-                OverlayService.start(MainActivity.this);
-                OverlayService.scheduleWatchdog(MainActivity.this);
+                startPanel();
                 status.setText("Панель запущена справа");
                 finish();
             }
         });
         refresh();
         if (canDraw()) {
-            OverlayService.start(this);
-            OverlayService.scheduleWatchdog(this);
+            startPanel();
         }
     }
 
@@ -46,9 +43,15 @@ public class MainActivity extends Activity {
         super.onResume();
         refresh();
         if (canDraw()) {
-            OverlayService.start(this);
-            OverlayService.scheduleWatchdog(this);
+            startPanel();
         }
+    }
+
+    private void startPanel() {
+        requestIgnoreBattery();
+        OverlayService.start(this);
+        OverlayService.scheduleWatchdog(this);
+        KeepAliveJob.schedule(this);
     }
 
     private void refresh() {

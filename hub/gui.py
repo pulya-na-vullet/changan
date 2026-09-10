@@ -331,6 +331,7 @@ class HubApp:
             "Feiyu не удаляет уже авторизованный пакет (提示 «is auth app, not allow delete!»). "
             "Hub больше не вызывает pm uninstall: ставит новый com.changanhub.quickdock "
             "и отключает старую com.changanhub.quickbar. Скачайте новый ZIP. "
+            "После ACC панель должна подняться сама (нужна эта сборка). "
             "На экране — зелёная колонка СПРАВА, не иконка в меню."
         )
         ttk.Label(

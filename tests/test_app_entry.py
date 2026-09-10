@@ -13,6 +13,8 @@ def test_run_bat_starts_once() -> None:
     text = (root / "run.bat").read_text(encoding="utf-8")
     assert text.lower().count("@echo off") == 1
     assert "ensure_env.py" in text
+    assert "goto :launch" in text
+    assert "skipping pip" in text
     assert "chcp 65001" in text
     assert "logs\\start.log" in text or "logs\\start.log" in text.replace("/", "\\")
     assert "pythonw.exe" in text
@@ -22,3 +24,5 @@ def test_run_bat_starts_once() -> None:
     assert "cryptography" in env
     assert "ensurepip" in env
     assert "start.log" in env
+    assert "pip не запускаю" in env
+    assert "timeout=120" in env

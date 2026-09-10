@@ -26,6 +26,8 @@ PERSIST_SHELL = (
     f"am set-inactive {PACKAGE} false",
     f"appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
     f"appops set {PACKAGE} GET_USAGE_STATS allow",
+    f"pm grant {PACKAGE} android.permission.READ_EXTERNAL_STORAGE",
+    f"pm grant {PACKAGE} android.permission.WRITE_EXTERNAL_STORAGE",
     "settings put secure install_non_market_apps 1",
 )
 
@@ -73,9 +75,10 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         f"am startservice -n {SERVICE}",
         f"am start-foreground-service -n {SERVICE}",
         f"am startservice -n {SERVICE} -a com.changanhub.quickbar.SHOW",
-        f"am broadcast -a android.intent.action.BOOT_COMPLETED -p {PACKAGE}",
-        f"am broadcast -a android.intent.action.USER_PRESENT -p {PACKAGE}",
+        f"am broadcast -a android.intent.action.LOCKED_BOOT_COMPLETED -p {PACKAGE}",
+        f"am broadcast -a android.intent.action.QUICKBOOT_POWERON -p {PACKAGE}",
         f"am broadcast -a android.intent.action.ACTION_POWER_CONNECTED -p {PACKAGE}",
+        f"am broadcast -a android.intent.action.ACC_ON -p {PACKAGE}",
     ):
         if progress:
             progress(f"запуск: {cmd}", 95)

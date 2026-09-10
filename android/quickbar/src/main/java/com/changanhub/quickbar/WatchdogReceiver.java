@@ -16,5 +16,6 @@ public class WatchdogReceiver extends BroadcastReceiver {
             OverlayService.keepAlive(app);
         }
         OverlayService.scheduleWatchdog(app);
+        KeepAliveJob.schedule(app);
     }
 }

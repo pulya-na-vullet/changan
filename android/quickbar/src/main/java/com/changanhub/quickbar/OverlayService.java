@@ -68,8 +68,9 @@ public class OverlayService extends Service {
     /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
     public static final int HEIGHT_SCALE = 3;
     private static final int ICON_DP = 48 * HEIGHT_SCALE;
-    private static final int COLLAPSED_H_DP = 220 * HEIGHT_SCALE;
     private static final int ROW_PAD_V_DP = 8 * HEIGHT_SCALE;
+    /** Leave the top and bottom fifths of the screen free (Yandex / climate). */
+    private static final float VERTICAL_MARGIN = 0.20f;
 
     private static final String CH = "quickbar";
     private static final String PREFS = "quickbar";
@@ -78,9 +79,10 @@ public class OverlayService extends Service {
     private static final String KEY_WIDE = "wide";
     private static final String KEY_RECENT = "recent";
     private static final int RECENT_MAX = 3;
-    private static final int COLLAPSED_W_DP = 144;
+    private static final int COLLAPSED_W_DP = 64;
+    private static final int COLLAPSED_ICON_DP = 36;
     private static final int WATCHDOG_REQ = 7;
-    private static final long WATCHDOG_MS = 30_000L;
+    private static final long WATCHDOG_MS = 20_000L;
     private static final int[] BOOT_RETRY_SEC = {3, 10, 30, 60, 120};
 
     private WindowManager windowManager;
@@ -90,6 +92,7 @@ public class OverlayService extends Service {
     private LinearLayout tools;
     private EditText search;
     private TextView titleView;
+    private TextView usbStatus;
     private boolean collapsed;
     private boolean wide;
     private boolean usbMode;
@@ -141,11 +144,12 @@ public class OverlayService extends Service {
         Intent intent = new Intent(app, WatchdogReceiver.class);
         intent.setAction(ACTION_KEEPALIVE);
         PendingIntent pi = pending(app, WATCHDOG_REQ, intent);
-        am.setRepeating(
-                AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                SystemClock.elapsedRealtime() + 10_000L,
-                WATCHDOG_MS,
-                pi);
+        long at = SystemClock.elapsedRealtime() + WATCHDOG_MS;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+        } else {
+            am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+        }
     }
 
     public static void scheduleBootRetries(Context context) {
@@ -189,6 +193,7 @@ public class OverlayService extends Service {
         startInForeground();
         registerLifeReceiver();
         scheduleWatchdog(this);
+        KeepAliveJob.schedule(this);
         suppressLegacy();
         attachOverlay();
         handler.postDelayed(attachWatch, 15_000);
@@ -198,6 +203,7 @@ public class OverlayService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         startInForeground();
         scheduleWatchdog(this);
+        KeepAliveJob.schedule(this);
         String action = intent != null ? intent.getAction() : ACTION_SHOW;
         if (ACTION_HIDE.equals(action)) {
             detachOverlay();
@@ -360,17 +366,16 @@ public class OverlayService extends Service {
     private WindowManager.LayoutParams buildParams(int type) {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 dp(96),
-                displayHeight(),
+                overlayHeight(),
                 type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.END | Gravity.TOP;
         lp.x = 0;
-        lp.y = 0;
+        lp.y = overlayTop();
         return lp;
     }
 
@@ -392,22 +397,32 @@ public class OverlayService extends Service {
         if (params == null || windowManager == null || root == null) {
             return;
         }
-        int screenH = displayHeight();
+        int height = overlayHeight();
+        params.height = height;
+        params.y = overlayTop();
+        params.gravity = Gravity.END | Gravity.TOP;
         if (collapsed) {
             params.width = dp(COLLAPSED_W_DP);
-            params.height = screenH;
-            params.gravity = Gravity.END | Gravity.TOP;
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         } else {
             params.width = dp(380);
-            params.height = screenH;
-            params.gravity = Gravity.END | Gravity.TOP;
         }
         try {
             windowManager.updateViewLayout(root, params);
         } catch (Exception ignored) {
         }
         refreshChrome();
+    }
+
+    /** Middle 60% of the screen — do not cover the top/bottom 20%. */
+    private int overlayHeight() {
+        int screen = displayHeight();
+        int height = Math.round(screen * (1f - 2f * VERTICAL_MARGIN));
+        return Math.max(dp(280), height);
+    }
+
+    private int overlayTop() {
+        return Math.round(displayHeight() * VERTICAL_MARGIN);
     }
 
     private int displayHeight() {
@@ -432,7 +447,7 @@ public class OverlayService extends Service {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setBackground(panelBackground());
-        panel.setPadding(dp(6), dp(10 * HEIGHT_SCALE), dp(6), dp(10 * HEIGHT_SCALE));
+        panel.setPadding(dp(6), dp(8), dp(6), dp(8));
 
         titleView = new TextView(this);
         titleView.setText(R.string.app_name);
@@ -452,12 +467,6 @@ public class OverlayService extends Service {
             @Override
             public void onClick(View v) {
                 setCollapsed(true);
-            }
-        }));
-        tools.addView(toolIcon(R.drawable.ic_menu, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                expandToFull();
             }
         }));
         tools.addView(toolIcon(R.drawable.ic_refresh, new View.OnClickListener() {
@@ -485,6 +494,13 @@ public class OverlayService extends Service {
         });
         tools.addView(usbToggle);
         panel.addView(tools);
+
+        usbStatus = new TextView(this);
+        usbStatus.setTextColor(Color.parseColor("#3DDC97"));
+        usbStatus.setTextSize(12);
+        usbStatus.setVisibility(View.GONE);
+        usbStatus.setPadding(dp(4), dp(4), dp(4), dp(4));
+        panel.addView(usbStatus);
 
         search = new EditText(this);
         search.setHint("поиск");
@@ -576,10 +592,11 @@ public class OverlayService extends Service {
             usbToggle.setVisibility(chrome);
         }
         if (collapsed) {
-            root.setPadding(dp(2), dp(8), dp(2), dp(8));
+            root.setPadding(dp(2), dp(4), dp(2), dp(4));
         } else {
-            root.setPadding(dp(6), dp(10), dp(6), dp(10));
+            root.setPadding(dp(6), dp(8), dp(6), dp(8));
         }
+        root.setBackground(panelBackground());
     }
 
     private ImageView toolIcon(int drawable, View.OnClickListener click) {
@@ -612,9 +629,15 @@ public class OverlayService extends Service {
 
     private GradientDrawable panelBackground() {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(Color.parseColor("#E60B1220"));
-        d.setCornerRadii(new float[]{dp(18), dp(18), 0, 0, 0, 0, dp(18), dp(18)});
-        d.setStroke(dp(1), Color.parseColor("#663DDC97"));
+        if (collapsed) {
+            d.setColor(Color.parseColor("#990B1220"));
+            d.setCornerRadii(new float[]{dp(10), dp(10), 0, 0, 0, 0, dp(10), dp(10)});
+            d.setStroke(Math.max(1, dp(1) / 2), Color.parseColor("#333DDC97"));
+        } else {
+            d.setColor(Color.parseColor("#E60B1220"));
+            d.setCornerRadii(new float[]{dp(18), dp(18), 0, 0, 0, 0, dp(18), dp(18)});
+            d.setStroke(dp(1), Color.parseColor("#663DDC97"));
+        }
         return d;
     }
 
@@ -758,9 +781,8 @@ public class OverlayService extends Service {
     private View collapsedZones() {
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(LinearLayout.VERTICAL);
-        int height = Math.max(dp(420), displayHeight() - dp(32));
         wrap.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, height));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         wrap.addView(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
             @Override
@@ -770,7 +792,7 @@ public class OverlayService extends Service {
         }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         wrap.addView(collapseDivider(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
         wrap.addView(recentZone(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         return wrap;
@@ -789,7 +811,8 @@ public class OverlayService extends Service {
         zone.setOnClickListener(click);
         ImageView image = new ImageView(this);
         image.setImageResource(icon);
-        zone.addView(image, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        image.setColorFilter(Color.parseColor("#CC3DDC97"));
+        zone.addView(image, new LinearLayout.LayoutParams(dp(COLLAPSED_ICON_DP), dp(COLLAPSED_ICON_DP)));
         return zone;
     }
 
@@ -802,7 +825,8 @@ public class OverlayService extends Service {
         zone.addView(evenSpacer());
         for (int i = 0; i < RECENT_MAX; i++) {
             ImageView image = new ImageView(this);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(64), dp(64));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    dp(COLLAPSED_ICON_DP), dp(COLLAPSED_ICON_DP));
             lp.gravity = Gravity.CENTER_HORIZONTAL;
             if (i < recent.size()) {
                 final String pkg = recent.get(i);
@@ -833,11 +857,18 @@ public class OverlayService extends Service {
 
     private void renderUsb() {
         TextView hint = new TextView(this);
-        hint.setText("APK с флешки в USB ГУ. Подпись — та же, что в Hub, иначе окно 提示 -118.");
+        hint.setText("APK с флешки в USB ГУ. Тап по строке или зелёной кнопке — установка.");
         hint.setTextColor(Color.parseColor("#9AA7B8"));
         hint.setTextSize(11);
         hint.setPadding(dp(4), 0, dp(4), dp(8));
         appList.addView(hint);
+        if (usbStatus != null && usbStatus.getVisibility() == View.VISIBLE) {
+            TextView copy = new TextView(this);
+            copy.setText(usbStatus.getText());
+            copy.setTextColor(Color.parseColor("#3DDC97"));
+            copy.setPadding(dp(4), 0, dp(4), dp(8));
+            appList.addView(copy);
+        }
         List<File> apks = UsbStorage.apkFiles(this);
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         int shown = 0;
@@ -853,12 +884,20 @@ public class OverlayService extends Service {
         }
         if (shown == 0) {
             TextView empty = new TextView(this);
+            List<File> roots = UsbStorage.roots(this);
+            StringBuilder paths = new StringBuilder();
+            for (int i = 0; i < roots.size() && i < 6; i++) {
+                if (paths.length() > 0) {
+                    paths.append("\n");
+                }
+                paths.append(roots.get(i).getAbsolutePath());
+            }
             empty.setText(apks.isEmpty()
-                    ? "флешка не найдена или на ней нет APK.\nВставьте USB в разъём ГУ."
+                    ? "APK не найдены.\nВставьте USB в разъём ГУ.\n" + paths
                     : "нет APK по поиску");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
+            empty.setPadding(0, dp(12), 0, dp(12));
             appList.addView(empty);
         }
     }
@@ -875,8 +914,17 @@ public class OverlayService extends Service {
 
     private View apkRow(final File apk) {
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(4), dp(ROW_PAD_V_DP / 2), dp(4), dp(ROW_PAD_V_DP / 2));
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(10), dp(4), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#2228E07A"));
+        bg.setCornerRadius(dp(10));
+        row.setBackground(bg);
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         TextView name = new TextView(this);
         name.setText(apk.getName());
         name.setTextColor(Color.WHITE);
@@ -887,16 +935,16 @@ public class OverlayService extends Service {
         meta.setTextColor(Color.parseColor("#9AA7B8"));
         meta.setTextSize(10);
         meta.setMaxLines(2);
-        row.addView(name);
-        row.addView(meta);
-        if (wide) {
-            row.addView(actionIcon(R.drawable.ic_install, Color.parseColor("#3DDC97"), new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    installFromUsb(apk);
-                }
-            }));
-        }
+        text.addView(name);
+        text.addView(meta);
+        row.addView(text, textLp);
+        View installBtn = actionIcon(R.drawable.ic_install, Color.parseColor("#3DDC97"), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                installFromUsb(apk);
+            }
+        });
+        row.addView(installBtn);
         row.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -906,12 +954,25 @@ public class OverlayService extends Service {
         return row;
     }
 
+    private void showUsbStatus(String message) {
+        if (usbStatus != null) {
+            usbStatus.setText(message);
+            usbStatus.setVisibility(View.VISIBLE);
+        }
+        if (usbMode && !collapsed && appList != null) {
+            renderApps();
+        }
+    }
+
     private void installFromUsb(File apk) {
-        pauseForDialog(this);
-        setCollapsed(true);
+        showUsbStatus("ставлю " + apk.getName() + "…");
         try {
-            PackageActions.install(this, apk);
+            File local = PackageActions.copyToCache(this, apk);
+            PackageActions.install(this, local);
+            showUsbStatus("отправлено в установщик: " + apk.getName());
         } catch (Exception e) {
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            showUsbStatus("ошибка: " + msg);
             usbMode = true;
             setCollapsed(false);
         }

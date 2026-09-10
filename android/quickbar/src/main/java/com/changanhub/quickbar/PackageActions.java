@@ -8,6 +8,7 @@ import android.net.Uri;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -21,6 +22,35 @@ public final class PackageActions {
         intent.setData(Uri.parse("package:" + pkg));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(intent);
+    }
+
+    /** PackageInstaller often cannot stream from /mnt/media_rw; copy first. */
+    public static File copyToCache(Context context, File apk) throws Exception {
+        File dir = new File(context.getCacheDir(), "apk");
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new Exception("нет кэша для APK");
+        }
+        File dest = new File(dir, apk.getName());
+        FileInputStream in = new FileInputStream(apk);
+        FileOutputStream out = new FileOutputStream(dest);
+        try {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) >= 0) {
+                if (n == 0) {
+                    continue;
+                }
+                out.write(buf, 0, n);
+            }
+            out.flush();
+        } finally {
+            in.close();
+            out.close();
+        }
+        if (dest.length() < 64) {
+            throw new Exception("скопированный APK пустой");
+        }
+        return dest;
     }
 
     public static void install(Context context, File apk) throws Exception {

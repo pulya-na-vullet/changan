@@ -20,12 +20,17 @@ public final class UsbStorage {
     public static List<File> roots(Context context) {
         List<File> found = new ArrayList<>();
         addStorageVolumes(context, found);
+        addAppVolumeRoots(context, found);
         addIfDir(found, new File("/mnt/media_rw"));
         addIfDir(found, new File("/mnt/usb_storage"));
         addIfDir(found, new File("/mnt/usbhost"));
+        addIfDir(found, new File("/mnt/udisk"));
         addIfDir(found, new File("/storage/usb0"));
+        addIfDir(found, new File("/storage/usbotg"));
         addIfDir(found, new File("/storage/udisk"));
         addIfDir(found, new File("/storage/usbdisk"));
+        addIfDir(found, new File("/sdcard/Download"));
+        addIfDir(found, new File("/storage/emulated/0/Download"));
         File storage = new File("/storage");
         File[] kids = storage.listFiles();
         if (kids != null) {
@@ -40,6 +45,36 @@ public final class UsbStorage {
             }
         }
         return uniqueExisting(found);
+    }
+
+    private static void addAppVolumeRoots(Context context, List<File> found) {
+        try {
+            File[] dirs = context.getExternalFilesDirs(null);
+            if (dirs == null) {
+                return;
+            }
+            for (int i = 0; i < dirs.length; i++) {
+                File dir = dirs[i];
+                if (dir == null) {
+                    continue;
+                }
+                addIfDir(found, dir);
+                File vol = dir;
+                for (int up = 0; up < 4 && vol != null; up++) {
+                    vol = vol.getParentFile();
+                }
+                if (vol != null) {
+                    String path = vol.getAbsolutePath();
+                    if (path.contains("/emulated/") || path.endsWith("/emulated")
+                            || path.contains("sdcard0")) {
+                        addIfDir(found, new File(vol, "Download"));
+                    } else {
+                        addIfDir(found, vol);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     public static List<File> apkFiles(Context context) {

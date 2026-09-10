@@ -47,24 +47,25 @@ def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess[str]
     )
 
 
-def ok(args: list[str]) -> bool:
+def ok(args: list[str], timeout: int = 90) -> bool:
     try:
-        proc = run(args, timeout=40)
+        proc = run(args, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0
 
 
 def cryptography_ok(py: Path) -> bool:
-    return py.is_file() and ok([str(py), "-c", "import cryptography"])
+    # USB flash drives are slow; 40s was not enough and Hub rebuilt .venv every launch.
+    return py.is_file() and ok([str(py), "-c", "import cryptography"], timeout=120)
 
 
 def pip_ok(py: Path) -> bool:
     if not py.is_file():
         return False
-    if not ok([str(py), "-c", "import pip"]):
+    if not ok([str(py), "-c", "import pip"], timeout=60):
         return False
-    return ok([str(py), "-m", "pip", "--version"])
+    return ok([str(py), "-m", "pip", "--version"], timeout=60)
 
 
 def remove_venv() -> None:
@@ -90,7 +91,6 @@ def remove_venv() -> None:
 
 def create_venv(system_python: str) -> None:
     log(f"создаю .venv через {system_python}")
-    # Prefer the running interpreter: it is the one the user actually has.
     builder = venv.EnvBuilder(with_pip=True, clear=True, upgrade_deps=False)
     builder.create(VENV)
     py = venv_python()
@@ -104,7 +104,7 @@ def create_venv(system_python: str) -> None:
 
 
 def install_requirements(py: Path) -> None:
-    log("ставлю cryptography (один раз, не каждый запуск)")
+    log("ставлю cryptography (первый запуск или после поломки .venv)")
     proc = run(
         [str(py), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(REQ)],
         timeout=600,
@@ -122,14 +122,16 @@ def main() -> int:
         log(f"ensure_env: python={sys.executable} cwd={ROOT}")
         py = venv_python()
         if cryptography_ok(py):
-            log("окружение в порядке, cryptography есть")
+            log("окружение в порядке, cryptography уже есть — pip не запускаю")
             return 0
-        if py.is_file() and not pip_ok(py):
+        if not py.is_file():
+            create_venv(sys.executable)
+            py = venv_python()
+        elif not pip_ok(py):
             log("pip в .venv сломан (часто после копирования флешки). Пересоздаю.")
             remove_venv()
-        if not venv_python().is_file():
             create_venv(sys.executable)
-        py = venv_python()
+            py = venv_python()
         if not pip_ok(py):
             log("pip всё ещё нет, пробую ensurepip")
             run([str(py), "-m", "ensurepip", "--upgrade"])

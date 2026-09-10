@@ -29,7 +29,19 @@ if not defined PY (
   exit /b 1
 )
 
-echo Checking .venv (old copy on the USB stick is often broken^)...
+set "VPY=%CD%\.venv\Scripts\python.exe"
+set "VPW=%CD%\.venv\Scripts\pythonw.exe"
+
+if exist "%VPY%" (
+  "%VPY%" -c "import cryptography" >nul 2>&1
+  if not errorlevel 1 (
+    echo .venv already ready, skipping pip.
+    echo %DATE% %TIME% venv ok skip ensure_env>> logs\start.log
+    goto :launch
+  )
+)
+
+echo Checking .venv (only if cryptography is missing^)...
 %PY% ensure_env.py
 if errorlevel 1 (
   echo.
@@ -39,8 +51,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set "VPY=%CD%\.venv\Scripts\python.exe"
-set "VPW=%CD%\.venv\Scripts\pythonw.exe"
+:launch
 if not exist "%VPY%" (
   echo Missing %VPY%
   pause
