@@ -465,7 +465,8 @@ class HubApp:
                 self.journal.write("INFO", "adb", f"бинарник: {self.adb.binary}")
             except AdbError as exc:
                 self.journal.error("adb", exc)
-                self._ui(lambda: messagebox.showerror("ADB", str(exc)))
+                msg = str(exc)
+                self._ui(lambda m=msg: messagebox.showerror("ADB", m))
                 return None
         else:
             self.adb.on_log = self.journal.adb

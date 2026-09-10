@@ -23,3 +23,11 @@ def test_catalog_has_quickbar() -> None:
     assert package_from_row(previous) == "com.changanhub.quickdock"
     lane = package_label("com.changanhub.quicklane")
     assert package_from_row(lane) == "com.changanhub.quicklane"
+
+
+def test_need_adb_dialog_does_not_close_over_exc() -> None:
+    from pathlib import Path
+
+    src = Path("hub/gui.py").read_text(encoding="utf-8")
+    assert 'lambda: messagebox.showerror("ADB", str(exc))' not in src
+    assert "lambda m=msg: messagebox.showerror(\"ADB\", m)" in src
