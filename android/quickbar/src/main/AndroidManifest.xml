@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.changanhub.quickbar">
+    package="com.changanhub.quickdock">
 
     <uses-sdk
         android:minSdkVersion="24"
@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
 
     <application
         android:allowBackup="true"
@@ -25,11 +26,10 @@
         android:theme="@style/AppTheme"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
-        android:persistent="true"
         android:directBootAware="true">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.changanhub.quickbar.MainActivity"
             android:exported="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
@@ -42,13 +42,13 @@
         </activity>
 
         <service
-            android:name=".OverlayService"
+            android:name="com.changanhub.quickbar.OverlayService"
             android:exported="true"
             android:enabled="true"
             android:directBootAware="true" />
 
         <receiver
-            android:name=".BootReceiver"
+            android:name="com.changanhub.quickbar.BootReceiver"
             android:exported="true"
             android:enabled="true"
             android:directBootAware="true">
@@ -81,13 +81,13 @@
         </receiver>
 
         <receiver
-            android:name=".WatchdogReceiver"
+            android:name="com.changanhub.quickbar.WatchdogReceiver"
             android:exported="false"
             android:enabled="true"
             android:directBootAware="true" />
 
         <receiver
-            android:name=".InstallResultReceiver"
+            android:name="com.changanhub.quickbar.InstallResultReceiver"
             android:exported="false"
             android:enabled="true" />
     </application>

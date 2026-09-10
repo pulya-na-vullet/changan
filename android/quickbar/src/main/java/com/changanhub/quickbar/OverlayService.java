@@ -62,6 +62,8 @@ public class OverlayService extends Service {
     public static final String ACTION_REFRESH = "com.changanhub.quickbar.REFRESH";
     public static final String ACTION_KEEPALIVE = "com.changanhub.quickbar.KEEPALIVE";
     public static final String ACTION_PAUSE = "com.changanhub.quickbar.PAUSE";
+    /** Previous applicationId. Feiyu forbids deleting that auth package. */
+    public static final String LEGACY_PACKAGE = "com.changanhub.quickbar";
 
     /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
     public static final int HEIGHT_SCALE = 3;
@@ -187,6 +189,7 @@ public class OverlayService extends Service {
         startInForeground();
         registerLifeReceiver();
         scheduleWatchdog(this);
+        suppressLegacy();
         attachOverlay();
         handler.postDelayed(attachWatch, 15_000);
     }
@@ -203,6 +206,7 @@ public class OverlayService extends Service {
         if (root == null) {
             attachOverlay();
         }
+        suppressLegacy();
         if (ACTION_PAUSE.equals(action)) {
             overlayPausedUntil = SystemClock.elapsedRealtime() + 90_000L;
             setCollapsed(true);
@@ -666,7 +670,9 @@ public class OverlayService extends Service {
                 continue;
             }
             String pkg = ri.activityInfo.packageName;
-            if (getPackageName().equals(pkg) || seen.contains(pkg)) {
+            if (getPackageName().equals(pkg)
+                    || LEGACY_PACKAGE.equals(pkg)
+                    || seen.contains(pkg)) {
                 continue;
             }
             seen.add(pkg);
@@ -912,6 +918,9 @@ public class OverlayService extends Service {
     }
 
     private void uninstallUserApp(String pkg) {
+        if (pkg == null || pkg.equals(getPackageName()) || LEGACY_PACKAGE.equals(pkg)) {
+            return;
+        }
         pauseForDialog(this);
         setCollapsed(true);
         try {
@@ -1120,6 +1129,26 @@ public class OverlayService extends Service {
     private int dp(int value) {
         DisplayMetrics m = getResources().getDisplayMetrics();
         return Math.round(value * m.density);
+    }
+
+    /** Old com.changanhub.quickbar cannot be uninstalled on Feiyu (auth, not allow delete). */
+    private void suppressLegacy() {
+        if (LEGACY_PACKAGE.equals(getPackageName())) {
+            return;
+        }
+        try {
+            Intent hide = new Intent(ACTION_HIDE);
+            hide.setClassName(LEGACY_PACKAGE, OverlayService.class.getName());
+            startService(hide);
+        } catch (Exception ignored) {
+        }
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am != null) {
+                am.killBackgroundProcesses(LEGACY_PACKAGE);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static class AppItem {

@@ -8,8 +8,13 @@ from hub.adb import Adb
 from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
 
-PACKAGE = "com.changanhub.quickbar"
-SERVICE = f"{PACKAGE}/.OverlayService"
+# New applicationId: Feiyu forbids deleting the already-installed auth package
+# ``com.changanhub.quickbar`` (提示 «is auth app, not allow delete!»).
+PACKAGE = "com.changanhub.quickdock"
+LEGACY_PACKAGE = "com.changanhub.quickbar"
+JAVA_MAIN = "com.changanhub.quickbar.MainActivity"
+JAVA_SERVICE = "com.changanhub.quickbar.OverlayService"
+SERVICE = f"{PACKAGE}/{JAVA_SERVICE}"
 
 # Keep the panel alive after ACC off→on. Feiyu drops BOOT_COMPLETED;
 # deviceidle + background appops stop the HU from freezing the process.
@@ -39,14 +44,35 @@ def grant_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     return log
 
 
-def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
-    log = grant_overlay(adb, progress=progress)
+def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
+    """Hide the undeletable old overlay. ``pm uninstall`` shows 提示 «not allow delete»
+    and times out; Feiyu never removes an auth package."""
+    log: list[str] = []
     for cmd in (
-        f"am start -n {PACKAGE}/.MainActivity",
+        f"am startservice -n {LEGACY_PACKAGE}/{JAVA_SERVICE} -a com.changanhub.quickbar.HIDE",
+        f"am startservice -n {LEGACY_PACKAGE}/{JAVA_SERVICE} -a com.changanhub.quickbar.PAUSE",
+        f"am force-stop {LEGACY_PACKAGE}",
+        f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore",
+        f"dumpsys deviceidle whitelist -{LEGACY_PACKAGE}",
+        f"pm disable-user --user 0 {LEGACY_PACKAGE}",
+        f"pm disable {LEGACY_PACKAGE}",
+    ):
+        if progress:
+            progress(f"старая панель: {cmd}", 88)
+        result = adb.shell(cmd, timeout=8)
+        log.append(f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}")
+    return log
+
+
+def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
+    log = retire_legacy(adb, progress=progress)
+    log += grant_overlay(adb, progress=progress)
+    for cmd in (
+        f"am start -n {PACKAGE}/{JAVA_MAIN}",
         f"monkey -p {PACKAGE} -c android.intent.category.LAUNCHER 1",
         f"am startservice -n {SERVICE}",
         f"am start-foreground-service -n {SERVICE}",
-        f"am startservice -n {SERVICE} -a {PACKAGE}.SHOW",
+        f"am startservice -n {SERVICE} -a com.changanhub.quickbar.SHOW",
         f"am broadcast -a android.intent.action.BOOT_COMPLETED -p {PACKAGE}",
         f"am broadcast -a android.intent.action.USER_PRESENT -p {PACKAGE}",
         f"am broadcast -a android.intent.action.ACTION_POWER_CONNECTED -p {PACKAGE}",
@@ -59,13 +85,14 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
 
 
 def stop_overlay(adb: Adb) -> list[str]:
-    result = adb.shell(f"am force-stop {PACKAGE}", timeout=10)
-    return [f"force-stop code={result.code} {result.text or result.stderr}"]
+    lines = []
+    for pkg in (PACKAGE, LEGACY_PACKAGE):
+        result = adb.shell(f"am force-stop {pkg}", timeout=10)
+        lines.append(f"force-stop {pkg} code={result.code} {result.text or result.stderr}")
+    return lines
 
 
 def remove_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
-    from hub.installer import uninstall_package
-
     lines: list[str] = []
 
     def step(message: str, percent: int) -> None:
@@ -73,7 +100,19 @@ def remove_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         if progress:
             progress(message, percent)
 
-    uninstall_package(adb, PACKAGE, step)
+    step("Feiyu не удаляет auth-приложение (提示 not allow delete). Отключаю обе панели.", 40)
+    lines += retire_legacy(adb, progress=progress)
+    for cmd in (
+        f"am force-stop {PACKAGE}",
+        f"pm disable-user --user 0 {PACKAGE}",
+        f"pm disable {PACKAGE}",
+    ):
+        step(f"выполняю {cmd}", 70)
+        result = adb.shell(cmd, timeout=8)
+        step(
+            f"{cmd} code={result.code} stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}",
+            75,
+        )
     return lines
 
 
@@ -89,26 +128,25 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     if not report.ok:
         if any("not auth" in line.lower() or "-118" in line for line in report.log):
             lines.append(
-                "Пакет НЕ установлен. Белое окно 提示 «com.changanhub.quickbar is not auth,"
-                "install failed!» — отказ белого списка Feiyu (pm -118), не краш. "
-                "В «Приложения ГУ» пакета не будет. Имя после успеха: QuickBar / "
-                "com.changanhub.quickbar."
+                "Пакет НЕ установлен. Белое окно 提示 «is not auth, install failed!» — "
+                "отказ белого списка Feiyu (pm -118), не краш. "
+                f"Имя после успеха: QuickBar / {PACKAGE}."
             )
         else:
             lines.append(
-                "Пакет НЕ установлен. В «Приложения ГУ» не будет com.changanhub.quickbar, "
-                "на экране машины — тоже. Имя после успеха: QuickBar / com.changanhub.quickbar."
+                f"Пакет НЕ установлен. В «Приложения ГУ» не будет {PACKAGE}. "
+                f"Имя после успеха: QuickBar / {PACKAGE}."
             )
         if progress:
             progress("Установка не удалась — пакета в списке не будет.", 100)
         return lines
-    lines.append("Пакет установлен. В списке ГУ: QuickBar · com.changanhub.quickbar")
+    lines.append(f"Пакет установлен. В списке ГУ: QuickBar · {PACKAGE}")
     lines += start_overlay(adb, progress=progress)
     if progress:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
     lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
     lines.append(
-        "После выключения машины панель должна подняться сама (ACC/BOOT + watchdog 30 с). "
-        "Иконки выше в 3 раза. Нужна именно эта сборка APK — переустановите панель."
+        "Старую com.changanhub.quickbar Feiyu не даёт удалить (auth, not allow delete) — "
+        "Hub её отключает и ставит новую com.changanhub.quickdock."
     )
     return lines

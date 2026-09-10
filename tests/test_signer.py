@@ -97,3 +97,15 @@ def test_sign_minimal_apk(tmp_path: Path) -> None:
 
     assert CHANGAN_SERIAL in apk_certificate_serials(signed)
     assert v2_certificate_ders(data)
+
+
+def test_switching_serial_keeps_previous_key(tmp_path: Path) -> None:
+    first = ensure_keystore(tmp_path, serial=CHANGAN_SERIAL)
+    pem = first.certificate.read_bytes()
+    other = 0xD42599C0446BDAFC
+    second = ensure_keystore(tmp_path, serial=other)
+    assert first.certificate.exists()
+    assert first.certificate.read_bytes() == pem
+    assert second.serial == other
+    assert second.certificate.resolve() != first.certificate.resolve()
+    assert cert_matches_whitelist(x509.load_pem_x509_certificate(second.certificate.read_bytes()), other)

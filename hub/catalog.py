@@ -26,10 +26,10 @@ CATALOG: list[CatalogApp] = [
         id="quickbar",
         name="QuickBar (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
-        package="com.changanhub.quickbar",
+        package="com.changanhub.quickdock",
         kind="dock",
         source="bundled",
-        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickbar.",
+        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickdock. Старую com.changanhub.quickbar Feiyu не удаляет (auth).",
     ),
     CatalogApp(
         id="files",
@@ -119,6 +119,7 @@ _EXTRA_LABELS = {
     "ru.yandex.androidkeyboard": "Яндекс Клавиатура",
     "ru.kinopoisk": "Кинопоиск",
     "air.StrelkaHUDFREE": "Стрелка",
+    "com.changanhub.quickbar": "QuickBar (старая, Feiyu не удаляет)",
 }
 
 

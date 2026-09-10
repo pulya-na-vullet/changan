@@ -148,10 +148,9 @@ def install_apk(
     report.signed_apk = signed
     report.package = package
 
-    # Do not uninstall first. Feiyu 提示 «is not auth» is an *install* whitelist
-    # rejection: if we delete the old panel and then the new APK fails -118,
-    # the HU is left with nothing. Try replace in place; only uninstall when
-    # PackageManager says the signatures do not match.
+    # Never pm uninstall on Feiyu: auth packages show 提示 «is auth app, not allow
+    # delete!» and hang ADB ~20s without deleting. Overlay updates use a new
+    # applicationId (com.changanhub.quickdock) so this is a first install.
 
     # Working path from the HU log: push → /data/local/tmp + pm install -r -t -g.
     step("Шаг 2/5: копирую APK на ГУ (push). adb install пропускаю — на Feiyu он зависает.", 35)
@@ -181,20 +180,13 @@ def install_apk(
     )
     blob = f"{result.stdout}\n{result.stderr}"
     if not _ok_install(result) and "update_incompatible" in blob.lower():
-        found = package or _package_from_pm_error(blob)
-        if found:
-            step(
-                f"Старая {found} с другой подписью. Настройки ГУ её не снимают — удаляю через ADB.",
-                62,
-            )
-            uninstall_package(adb, found, step)
-            report.package = found
-            step(f"повтор {cmd}", 65)
-            result = adb.shell(cmd, timeout=25)
-            step(
-                f"{cmd} code={result.code} stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}",
-                70,
-            )
+        step(
+            "Подпись не совпадает со стоящей панелью. Feiyu запрещает удалять auth-приложение "
+            "(提示 «is auth app, not allow delete!») — pm uninstall не вызываю, старая панель "
+            "остаётся. Новая ставится отдельным пакетом com.changanhub.quickdock.",
+            70,
+        )
+        # Do not pm uninstall: that 提示 hangs ADB for 20s and does not delete.
     if _ok_install(result):
         report.ok = True
         report.method = f"pm install {PM_INSTALL_FLAGS}"
@@ -208,7 +200,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quickbar не появится.",
+            "в списке com.changanhub.quickdock не появится.",
             100,
         )
         return report
@@ -272,8 +264,8 @@ def apk_package_name(apk: Path) -> str | None:
     from hub.catalog import CATALOG
 
     stem = apk.name.lower()
-    if "quickbar" in stem:
-        return "com.changanhub.quickbar"
+    if "quickbar" in stem or "quickdock" in stem:
+        return "com.changanhub.quickdock"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")
@@ -290,29 +282,26 @@ def apk_package_name(apk: Path) -> str | None:
 
 
 def uninstall_package(adb: Adb, package: str, step: Progress | None = None) -> bool:
-    """Remove an existing package via ADB. Feiyu settings often hide Uninstall for overlays."""
+    """Feiyu refuses to delete whitelist-signed apps (提示 not allow delete).
+
+    Do not call ``pm uninstall`` — it only shows that dialog and times out.
+    Overlay packages are disabled instead; other packages are left in place.
+    """
 
     def note(message: str, percent: int = 58) -> None:
         if step:
             step(message, percent)
 
-    path = adb.shell(f"pm path {package}", timeout=10)
-    if "package:" not in path.stdout:
-        note(f"на ГУ нет {package} — снимать нечего")
-        return True
-    note(f"останавливаю старую {package}")
-    adb.shell(f"am force-stop {package}", timeout=10)
-    for cmd in (f"pm uninstall {package}", f"pm uninstall --user 0 {package}"):
-        note(f"выполняю {cmd}")
-        result = adb.shell(cmd, timeout=20)
-        blob = f"{result.stdout}\n{result.stderr}"
+    if package in ("com.changanhub.quickbar", "com.changanhub.quickdock"):
         note(
-            f"{cmd} code={result.code} stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}"
+            f"{package} — auth-приложение, Feiyu не удаляет (提示 not allow delete). "
+            "Отключаю, не uninstall.",
         )
-        if result.ok or "success" in blob.lower():
-            note(f"старая {package} удалена")
-            return True
-    note(f"не снял {package} через pm — попробую поставить поверх")
+        adb.shell(f"am force-stop {package}", timeout=8)
+        adb.shell(f"appops set {package} SYSTEM_ALERT_WINDOW ignore", timeout=8)
+        adb.shell(f"pm disable-user --user 0 {package}", timeout=8)
+        return False
+    note(f"не вызываю pm uninstall для {package} — на Feiyu это 提示 not allow delete")
     return False
 
 

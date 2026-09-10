@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from hub.overlay import PACKAGE, PERSIST_SHELL, grant_overlay, remove_overlay, start_overlay
+from hub.overlay import LEGACY_PACKAGE, PACKAGE, PERSIST_SHELL, grant_overlay, remove_overlay, start_overlay
 
 
 class FakeAdb:
@@ -35,26 +35,20 @@ def test_start_overlay_kicks_boot_intents() -> None:
     assert "USER_PRESENT" in joined
     assert "MainActivity" in joined
     assert "start-foreground-service" in joined or "startservice" in joined
+    assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
+    assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
+    assert "pm uninstall" not in joined
+    assert f"{PACKAGE}/com.changanhub.quickbar.MainActivity" in joined
+    assert PACKAGE == "com.changanhub.quickdock"
 
 
-def test_remove_overlay_uninstalls_package() -> None:
+def test_remove_overlay_disables_instead_of_uninstall() -> None:
     fake = FakeAdb()
-
-    def shell(command: str, timeout: int = 60):
-        from hub.adb import CommandResult
-
-        fake.shells.append(command)
-        if command.startswith(f"pm path {PACKAGE}"):
-            return CommandResult(True, "package:/data/app/quickbar/base.apk", "", 0, [])
-        if command.startswith("pm uninstall"):
-            return CommandResult(True, "Success", "", 0, [])
-        return CommandResult(True, "", "", 0, [])
-
-    fake.shell = shell  # type: ignore[method-assign]
     lines = remove_overlay(fake)
     joined = "\n".join(fake.shells + lines)
-    assert f"pm uninstall {PACKAGE}" in joined
-    assert "force-stop" in joined or "останавливаю" in "\n".join(lines)
+    assert "pm uninstall" not in joined
+    assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
+    assert "force-stop" in joined
 
 
 def test_quickbar_is_three_times_taller() -> None:
@@ -76,6 +70,9 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
+    assert 'package="com.changanhub.quickdock"' in mf
+    assert "android:persistent" not in mf
+    assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
     assert "InstallResultReceiver" in mf
     boot = Path("android/quickbar/src/main/java/com/changanhub/quickbar/BootReceiver.java").read_text(
@@ -104,6 +101,7 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "recentZone" in src
     assert "evenSpacer" in src
     assert "COLLAPSED_W_DP = 144" in src
+    assert "LEGACY_PACKAGE" in src
     assert "KEY_RECENT" in src
     assert "UsbStorage.apkFiles" in src
     assert "PackageActions.uninstall" in src

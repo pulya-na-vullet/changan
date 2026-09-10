@@ -96,7 +96,10 @@ def cert_matches_whitelist(cert: x509.Certificate, serial: int = CHANGAN_SERIAL)
 
 def ensure_keystore(directory: Path | None = None, serial: int | None = None) -> Keystore:
     wanted = serial if serial is not None else CHANGAN_SERIAL
-    folder = keystore_dir(directory)
+    base = keystore_dir(directory)
+    _archive_flat_keystore(base)
+    folder = base / format(wanted, "x")
+    folder.mkdir(parents=True, exist_ok=True)
     store = Keystore(
         directory=folder,
         private_key=folder / "changan.key",
@@ -106,12 +109,44 @@ def ensure_keystore(directory: Path | None = None, serial: int | None = None) ->
     if store.exists:
         try:
             cert = load_certificate(store.certificate)
-            if cert_matches_whitelist(cert, wanted):
+            if cert.serial_number == wanted and cert_matches_whitelist(cert, wanted):
                 return store
+        except Exception:
+            pass
+    # Tests and older Hub copies keep files directly in ``base``.
+    flat = Keystore(
+        directory=base,
+        private_key=base / "changan.key",
+        certificate=base / "changan.crt",
+        serial=wanted,
+    )
+    if flat.exists:
+        try:
+            cert = load_certificate(flat.certificate)
+            if cert.serial_number == wanted and cert_matches_whitelist(cert, wanted):
+                return flat
         except Exception:
             pass
     _generate(store, serial=wanted)
     return store
+
+
+def _archive_flat_keystore(base: Path) -> None:
+    """Keep the previous key when Hub switches serials. Overwriting it made
+    Feiyu refuse updates (UPDATE_INCOMPATIBLE) and refuse deletes (auth app)."""
+    crt = base / "changan.crt"
+    key = base / "changan.key"
+    if not crt.exists() or not key.exists():
+        return
+    try:
+        cert = load_certificate(crt)
+    except Exception:
+        return
+    dest = base / format(cert.serial_number, "x")
+    dest.mkdir(parents=True, exist_ok=True)
+    if not (dest / "changan.crt").exists():
+        shutil.copy2(key, dest / "changan.key")
+        shutil.copy2(crt, dest / "changan.crt")
 
 
 def load_certificate(path: Path) -> x509.Certificate:

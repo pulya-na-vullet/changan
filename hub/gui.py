@@ -279,9 +279,10 @@ class HubApp:
         ttk.Label(
             page,
             text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
-            "Старую версию Hub снимает только если подпись не совпадает (иначе Feiyu отвечает UPDATE_INCOMPATIBLE). "
-            "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке, не при удалении; "
-            "в этом случае старая панель остаётся. "
+            "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
+            "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет: "
+            "Hub не вызывает pm uninstall. QuickBar ставится как новый пакет com.changanhub.quickdock, "
+            "старая com.changanhub.quickbar остаётся на ГУ, но отключается. "
             "adb install на Feiyu зависает — Hub его не вызывает. "
             "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
@@ -333,17 +334,20 @@ class HubApp:
             "Свёрнутый край шире в 2 раза и из двух равных зон: полное меню и 3 последних приложения "
             "(иконки recents с равными отступами до краёв и между собой). "
             "У сторонних — корзина. «флешка» — APK с USB в разъёме ГУ.\n"
-            "При «Установить и запустить» Hub сначала ставит поверх. Старую панель снимает "
-            "через ADB только если подпись не совпадает (из настроек Android оверлей часто не удалить). "
-            "Окно 提示 «is not auth, install failed!» — отказ белого списка при установке, не при удалении; "
-            "тогда старая панель не трогается. Один способ: push в /data/local/tmp + pm install -r -t -g. "
+            "При «Установить и запустить» Hub ставит новый пакет com.changanhub.quickdock. "
+            "Старую com.changanhub.quickbar Feiyu не даёт удалить (提示 «is auth app, not allow delete») — "
+            "Hub её отключает (disable), не uninstall. "
+            "Окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
+            "Один способ: push в /data/local/tmp + pm install -r -t -g. "
             "После выключения/включения машины панель поднимается сама: BOOT, ACC, "
             "питание, экран и таймер каждые 30 с. Hub ещё добавляет пакет в белый список "
             "deviceidle, чтобы Feiyu не замораживал процесс. Пока крутится лоадер — не жмите "
             "повторно. Окно 提示 «is not auth, install failed!» — ГУ не приняла подпись. "
             "Иконки в штатном меню Feiyu не будет. После установки: QuickBar · "
-            "com.changanhub.quickbar. На экране — зелёная колонка СПРАВА. "
-            "Если панель уже стояла — нажмите «Установить и запустить» ещё раз, нужна новая сборка."
+            "com.changanhub.quickdock. На экране — зелёная колонка СПРАВА. "
+            "Если панель уже стояла — нажмите «Установить и запустить» ещё раз, нужна новая сборка. "
+            "Старую com.changanhub.quickbar Feiyu не даёт удалить (提示 not allow delete) — "
+            "Hub ставит новый пакет и отключает старый."
         )
         tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
             anchor="w", pady=12
@@ -356,8 +360,9 @@ class HubApp:
         ttk.Label(
             page,
             text="После установки панели здесь появится строка «QuickBar (правая панель) · "
-            "com.changanhub.quickbar». На экране машины это не иконка в меню, а зелёная колонка справа. "
-            "В фильтре наберите quickbar.",
+            "com.changanhub.quickdock». Старая com.changanhub.quickbar тоже может остаться в списке — "
+            "Feiyu её не удаляет (提示 not allow delete). На экране — зелёная колонка справа. "
+            "В фильтре наберите quickbar или quickdock.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(page)
@@ -752,6 +757,22 @@ class HubApp:
             def progress(message: str, percent: int) -> None:
                 self._show_progress(message, percent)
 
+            if path.name.lower().startswith("quickbar"):
+                lines = install_overlay(adb, progress=progress)
+                for line in lines:
+                    self.journal.write("INFO", "overlay", line)
+                joined = "\n".join(lines).lower()
+                self.log("Готово" if "пакет установлен" in joined else "Не установлено")
+                if "not auth" in joined or "-118" in joined:
+                    self._ui(
+                        lambda: messagebox.showerror(
+                            "ГУ отказала в установке",
+                            "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
+                            "В журнале смотрите serial уже стоящих приложений и строку «Подписано».\n"
+                            "Пришлите logs\\hub.log, если снова отказ.",
+                        )
+                    )
+                return
             report = install_apk(adb, path, progress=progress)
             self.log("Готово" if report.ok else "Не установлено")
             if not report.ok and any("not auth" in line.lower() or "-118" in line for line in report.log):
@@ -837,11 +858,11 @@ class HubApp:
             pkgs = adb.packages()
             self.pkg_all = pkgs
             self.root.after(0, self._apply_pkg_filter)
-            if "com.changanhub.quickbar" in pkgs:
-                self.log("Панель есть в списке: QuickBar · com.changanhub.quickbar")
+            if "com.changanhub.quickdock" in pkgs or "com.changanhub.quickbar" in pkgs:
+                self.log("Панель есть в списке: QuickBar · com.changanhub.quickdock")
             else:
                 self.log(
-                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickbar) нет — "
+                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickdock) нет — "
                     "установка не прошла, в меню ГУ его тоже не будет."
                 )
 

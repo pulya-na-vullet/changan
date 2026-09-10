@@ -87,6 +87,8 @@ def main() -> None:
             str(SRC / "AndroidManifest.xml"),
             "--java",
             str(gen),
+            "--custom-package",
+            "com.changanhub.quickbar",
             "--auto-add-overlay",
             str(res_zip),
         ]
