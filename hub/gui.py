@@ -328,14 +328,11 @@ class HubApp:
             style="Muted.TLabel",
         ).pack(anchor="w")
         body = (
-            "«Удалить с ГУ» только отключает панель: Feiyu не удаляет auth-пакет "
-            "(提示 «is auth app, not allow delete!»). Повторная установка ставит новый "
-            "com.changanhub.quicklane и отключает старые quickbar/quickdock. "
-            "Запуск поднимает только сервис справа — окно приложения не всплывает поверх карты. "
-            "Свёрнуто панель сама не разворачивается (сеть/USB/watchdog только держат процесс). "
-            "Клавиатура — одна кнопка на 20% ниже верха. После ACC колонка поднимается сама "
-            "(служба спец. возможностей + JobScheduler, без окна поверх карты). "
-            "На экране — зелёная колонка СПРАВА, не иконка в меню."
+            "После ACC колонка поднимается сама (спец. возможности + Job, без окна на карте). "
+            "Сначала нажмите «Установить и запустить» — это включает автозапуск. "
+            "«Удалить с ГУ» только отключает панель: Feiyu не стирает auth "
+            "(提示 «is auth app, not allow delete!»). Рабочая — com.changanhub.quicklane. "
+            "Свёрнутую колонку сеть/USB не раскрывают. Зелёная колонка СПРАВА, не иконка в меню."
         )
         ttk.Label(
             page,
@@ -351,12 +348,15 @@ class HubApp:
         ttk.Label(page, text="Что уже стоит на ГУ", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="После установки панели здесь появится строка «QuickBar (правая панель) · "
-            "com.changanhub.quicklane». Старые com.changanhub.quickbar и com.changanhub.quickdock "
-            "могут остаться в списке — Feiyu не удаляет auth-пакеты (提示 not allow delete). "
-            "Кнопка «Удалить / отключить» пробует короткий uninstall, иначе отключает пакет. "
-            "На экране — зелёная колонка справа. В фильтре наберите quickbar, quickdock или quicklane.",
+            text=(
+                "После установки панели здесь появится «QuickBar · com.changanhub.quicklane». "
+                "Старые quickbar/quickdock могут остаться — Feiyu не стирает auth. "
+                "«Удалить / отключить»: короткий uninstall, иначе hide/disable. "
+                "В фильтре: quicklane, quickbar, zona."
+            ),
             style="Muted.TLabel",
+            wraplength=640,
+            justify="left",
         ).pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(page)
         row.pack(fill=tk.X, pady=8)
