@@ -14,7 +14,7 @@
 | Проблема | Как Hub это закрывает |
 |---|---|
 | Нет developer-сертификата Changan | Локальный ключ с серийником `0xddb66eefd98476f3`. Именно его проверяет `CertificateManager` Feiyu/Wutong, заводской ключ не нужен |
-| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится один `pm install -r -t -g`. Старую версию Hub снимает через `pm uninstall` только если подпись не совпадает. Окно 提示 «is not auth» — отказ белого списка при установке; старая панель тогда не удаляется |
+| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Если подпись не совпадает со стоящим пакетом, Hub пробует короткий `pm uninstall --user 0` и ставит снова. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет, тогда QuickBar ставится новым id |
 | Приложения не видны в лаунчере | Сбрасывается кэш `com.iflytek.autofly.launcher` |
 | Нужен быстрый доступ поверх всего | QuickBar — правый док на 13.2″ вертикальном экране |
 | USB-A в USB-A Windows не видит машину | Пошаговый мастер + перезапуск adb server + подсказки по драйверу |
@@ -68,7 +68,7 @@ python -m hub apps
 
 ## Правая панель (QuickBar)
 
-Приложение `com.changanhub.quickdock` держит поверх всех Activity узкую колонку
+Приложение `com.changanhub.quicklane` держит поверх всех Activity узкую колонку
 справа:
 
 - тап — запуск;
@@ -82,7 +82,8 @@ python -m hub apps
 - высота иконок **×3** (удобно на 13.2″);
 - автозапуск после ACC off→on: `BOOT_COMPLETED` / `POWER_CONNECTED` / MTK `BOOT_IPO`,
   JobScheduler и AlarmManager; если Feiyu всё равно убивает процесс — нужен новый ZIP;
-  `USER_PRESENT` и watchdog `AlarmManager` каждые 30 с;
+  `USER_PRESENT` и watchdog `AlarmManager` каждые 20 с только держат процесс,
+  свёрнутую панель сами не разворачивают;
 - Hub добавляет пакет в `dumpsys deviceidle whitelist` и разрешает
   `RUN_IN_BACKGROUND`, чтобы Feiyu не убивал процесс после выключения машины;
 - разрешение «поверх окон» Hub выдаёт сам через `appops`.
@@ -111,8 +112,10 @@ Java — из Android Studio `jbr`, даже если `java` нет в PATH. И�
 Поставленные так приложения система считает «авторизованными». Белое окно
 **提示** `xx is auth app, not allow delete!` — Feiyu **не удаляет** такой пакет
 (`pm uninstall` зависает ~20 с и ничего не снимает). Панель QuickBar поэтому
-ставится новым id `com.changanhub.quickdock`; старая `com.changanhub.quickbar`
-остаётся на ГУ, Hub её отключает (`pm disable-user` + снимает overlay).
+ставится новым id `com.changanhub.quicklane`; старые `com.changanhub.quickbar`
+и `com.changanhub.quickdock` остаются на ГУ, Hub их отключает (`pm disable-user`
++ снимает overlay). Кнопка «Удалить с ГУ» тоже только отключает панель — после
+этого «Установить и запустить» снова ставит `quicklane`.
 Сброс ГУ до заводских — единственный полный uninstall.
 
 **Нельзя:** ставить это на чужую машину, отключать Vecentek целиком, шить

@@ -13,9 +13,11 @@ def test_catalog_has_quickbar() -> None:
 
     assert any(app.id == "quickbar" for app in CATALOG)
     assert all(app.package for app in CATALOG)
-    row = package_label("com.changanhub.quickdock")
+    row = package_label("com.changanhub.quicklane")
     assert "QuickBar" in row
-    assert package_from_row(row) == "com.changanhub.quickdock"
+    assert package_from_row(row) == "com.changanhub.quicklane"
     legacy = package_label("com.changanhub.quickbar")
-    assert "quickbar" in legacy
+    assert "quickbar" in legacy.lower()
     assert package_from_row(legacy) == "com.changanhub.quickbar"
+    previous = package_label("com.changanhub.quickdock")
+    assert package_from_row(previous) == "com.changanhub.quickdock"

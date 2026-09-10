@@ -30,6 +30,22 @@ def sdk_root() -> Path:
     raise SystemExit("Android SDK not found. Set ANDROID_HOME.")
 
 
+def javac_bin() -> str:
+    """d8 34 NPEs on JDK 21 nestmate attributes. Prefer 17 when present."""
+    homes = [
+        "/usr/lib/jvm/java-17-openjdk-amd64",
+        "/usr/lib/jvm/java-17-openjdk",
+        os.environ.get("JAVA_HOME"),
+    ]
+    for home in homes:
+        if not home:
+            continue
+        cand = Path(home) / "bin" / "javac"
+        if cand.exists():
+            return str(cand)
+    return "javac"
+
+
 def latest(path: Path) -> Path:
     versions = sorted(
         [p for p in path.iterdir() if p.is_dir()],
@@ -90,9 +106,9 @@ def main() -> None:
             "--custom-package",
             "com.changanhub.quickbar",
             "--version-code",
-            "3",
+            "4",
             "--version-name",
-            "1.2.0",
+            "1.3.0",
             "--auto-add-overlay",
             str(res_zip),
         ]
@@ -102,7 +118,7 @@ def main() -> None:
     java_files += [str(p) for p in gen.rglob("*.java")]
     run(
         [
-            "javac",
+            javac_bin(),
             "-g:none",
             "-source",
             "8",
@@ -119,8 +135,7 @@ def main() -> None:
         ]
     )
 
-    classes_jar = OUT / "classes.jar"
-    run(["jar", "cf", str(classes_jar), "-C", str(classes), "."])
+    class_files = [str(p) for p in classes.rglob("*.class")]
     run(
         [
             str(d8),
@@ -130,7 +145,7 @@ def main() -> None:
             str(android_jar),
             "--output",
             str(dex_dir),
-            str(classes_jar),
+            *class_files,
         ]
     )
 

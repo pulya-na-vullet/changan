@@ -80,6 +80,34 @@ def test_shell_device_not_found_does_not_retry() -> None:
     assert len(calls) == 1
 
 
+def test_shell_security_exception_does_not_retry() -> None:
+    adb = object.__new__(Adb)
+    calls: list[tuple] = []
+
+    def fake_raw(args, timeout=45, input_text=None):
+        calls.append((tuple(args), input_text, timeout))
+        from hub.adb import CommandResult
+
+        return CommandResult(
+            False,
+            "",
+            "please input verify password: verify success!\n"
+            "Security exception: Package com.changanhub.quickdock has not requested permission "
+            "android.permission.WRITE_EXTERNAL_STORAGE",
+            255,
+            args,
+        )
+
+    adb.raw = fake_raw  # type: ignore[method-assign]
+    adb.last_password_used = False
+    result = Adb.shell(
+        adb, "pm grant com.changanhub.quickdock android.permission.WRITE_EXTERNAL_STORAGE", timeout=10
+    )
+    assert not result.ok
+    assert result.code == 255
+    assert len(calls) == 1
+
+
 def test_journal_writes_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("hub.journal.logs_dir", lambda: tmp_path)
     journal = Journal()

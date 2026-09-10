@@ -8,11 +8,15 @@ from hub.adb import Adb
 from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
 
-# New applicationId: Feiyu forbids deleting the already-installed auth package
-# ``com.changanhub.quickbar`` (提示 «is auth app, not allow delete!»).
-PACKAGE = "com.changanhub.quickdock"
-LEGACY_PACKAGE = "com.changanhub.quickbar"
-JAVA_MAIN = "com.changanhub.quickbar.MainActivity"
+# New applicationId: Feiyu forbids deleting already-installed auth packages
+# (提示 «is auth app, not allow delete!»). quickbar then quickdock stay on the
+# HU; this id is a first install so a new signature can land.
+PACKAGE = "com.changanhub.quicklane"
+LEGACY_PACKAGES = (
+    "com.changanhub.quickbar",
+    "com.changanhub.quickdock",
+)
+LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 JAVA_SERVICE = "com.changanhub.quickbar.OverlayService"
 SERVICE = f"{PACKAGE}/{JAVA_SERVICE}"
 
@@ -46,18 +50,18 @@ def grant_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     return log
 
 
-def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
-    """Hide the undeletable old overlay. ``pm uninstall`` shows 提示 «not allow delete»
-    and times out; Feiyu never removes an auth package."""
+def _retire_package(adb: Adb, pkg: str, progress: Progress | None = None) -> list[str]:
+    """Hide an undeletable old overlay. ``pm uninstall`` shows 提示 «not allow delete»
+    and times out; Feiyu never removes an auth package. Do not call ``pm disable``
+    without ``--user`` — shell gets SecurityException then hangs the retry."""
     log: list[str] = []
     for cmd in (
-        f"am startservice -n {LEGACY_PACKAGE}/{JAVA_SERVICE} -a com.changanhub.quickbar.HIDE",
-        f"am startservice -n {LEGACY_PACKAGE}/{JAVA_SERVICE} -a com.changanhub.quickbar.PAUSE",
-        f"am force-stop {LEGACY_PACKAGE}",
-        f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore",
-        f"dumpsys deviceidle whitelist -{LEGACY_PACKAGE}",
-        f"pm disable-user --user 0 {LEGACY_PACKAGE}",
-        f"pm disable {LEGACY_PACKAGE}",
+        f"am startservice -n {pkg}/{JAVA_SERVICE} -a com.changanhub.quickbar.HIDE",
+        f"am startservice -n {pkg}/{JAVA_SERVICE} -a com.changanhub.quickbar.PAUSE",
+        f"am force-stop {pkg}",
+        f"appops set {pkg} SYSTEM_ALERT_WINDOW ignore",
+        f"dumpsys deviceidle whitelist -{pkg}",
+        f"pm disable-user --user 0 {pkg}",
     ):
         if progress:
             progress(f"старая панель: {cmd}", 88)
@@ -66,19 +70,29 @@ def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
     return log
 
 
+def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
+    log: list[str] = []
+    for pkg in LEGACY_PACKAGES:
+        log += _retire_package(adb, pkg, progress=progress)
+    return log
+
+
 def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     log = retire_legacy(adb, progress=progress)
+    if progress:
+        progress(f"включаю пакет {PACKAGE}", 89)
+    enabled = adb.shell(f"pm enable --user 0 {PACKAGE}", timeout=8)
+    log.append(
+        f"pm enable --user 0 {PACKAGE} code={enabled.code} "
+        f"out={enabled.stdout.strip()!r} err={enabled.stderr.strip()!r}"
+    )
     log += grant_overlay(adb, progress=progress)
+    # Only the overlay service. am start / monkey would pop MainActivity over
+    # the map; boot broadcasts would expand a collapsed dock.
     for cmd in (
-        f"am start -n {PACKAGE}/{JAVA_MAIN}",
-        f"monkey -p {PACKAGE} -c android.intent.category.LAUNCHER 1",
         f"am startservice -n {SERVICE}",
         f"am start-foreground-service -n {SERVICE}",
         f"am startservice -n {SERVICE} -a com.changanhub.quickbar.SHOW",
-        f"am broadcast -a android.intent.action.LOCKED_BOOT_COMPLETED -p {PACKAGE}",
-        f"am broadcast -a android.intent.action.QUICKBOOT_POWERON -p {PACKAGE}",
-        f"am broadcast -a android.intent.action.ACTION_POWER_CONNECTED -p {PACKAGE}",
-        f"am broadcast -a android.intent.action.ACC_ON -p {PACKAGE}",
     ):
         if progress:
             progress(f"запуск: {cmd}", 95)
@@ -89,7 +103,7 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
 
 def stop_overlay(adb: Adb) -> list[str]:
     lines = []
-    for pkg in (PACKAGE, LEGACY_PACKAGE):
+    for pkg in (PACKAGE, *LEGACY_PACKAGES):
         result = adb.shell(f"am force-stop {pkg}", timeout=10)
         lines.append(f"force-stop {pkg} code={result.code} {result.text or result.stderr}")
     return lines
@@ -103,19 +117,9 @@ def remove_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         if progress:
             progress(message, percent)
 
-    step("Feiyu не удаляет auth-приложение (提示 not allow delete). Отключаю обе панели.", 40)
+    step("Feiyu не удаляет auth-приложение (提示 not allow delete). Отключаю панели.", 40)
     lines += retire_legacy(adb, progress=progress)
-    for cmd in (
-        f"am force-stop {PACKAGE}",
-        f"pm disable-user --user 0 {PACKAGE}",
-        f"pm disable {PACKAGE}",
-    ):
-        step(f"выполняю {cmd}", 70)
-        result = adb.shell(cmd, timeout=8)
-        step(
-            f"{cmd} code={result.code} stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}",
-            75,
-        )
+    lines += _retire_package(adb, PACKAGE, progress=progress)
     return lines
 
 
@@ -149,7 +153,7 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
     lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
     lines.append(
-        "Старую com.changanhub.quickbar Feiyu не даёт удалить (auth, not allow delete) — "
-        "Hub её отключает и ставит новую com.changanhub.quickdock."
+        "Старые com.changanhub.quickbar и com.changanhub.quickdock Feiyu не даёт удалить "
+        "(auth, not allow delete) — Hub их отключает и ставит новую com.changanhub.quicklane."
     )
     return lines

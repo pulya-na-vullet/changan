@@ -26,10 +26,10 @@ CATALOG: list[CatalogApp] = [
         id="quickbar",
         name="QuickBar (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
-        package="com.changanhub.quickdock",
+        package="com.changanhub.quicklane",
         kind="dock",
         source="bundled",
-        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickdock. Старую com.changanhub.quickbar Feiyu не удаляет (auth).",
+        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quicklane. Старые com.changanhub.quickbar / quickdock Feiyu не удаляет (auth).",
     ),
     CatalogApp(
         id="files",
@@ -120,6 +120,7 @@ _EXTRA_LABELS = {
     "ru.kinopoisk": "Кинопоиск",
     "air.StrelkaHUDFREE": "Стрелка",
     "com.changanhub.quickbar": "QuickBar (старая, Feiyu не удаляет)",
+    "com.changanhub.quickdock": "QuickBar (предыдущая, Feiyu не удаляет)",
 }
 
 

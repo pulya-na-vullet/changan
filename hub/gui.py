@@ -280,9 +280,9 @@ class HubApp:
             page,
             text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
-            "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет: "
-            "Hub не вызывает pm uninstall. QuickBar ставится как новый пакет com.changanhub.quickdock, "
-            "старая com.changanhub.quickbar остаётся на ГУ, но отключается. "
+            "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
+            "Hub при несовпадении подписи пробует короткий pm uninstall --user 0, иначе ставит новую "
+            "QuickBar как com.changanhub.quicklane и отключает старые quickbar/quickdock. "
             "adb install на Feiyu зависает — Hub его не вызывает. "
             "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
@@ -328,11 +328,12 @@ class HubApp:
             style="Muted.TLabel",
         ).pack(anchor="w")
         body = (
-            "Feiyu не удаляет уже авторизованный пакет (提示 «is auth app, not allow delete!»). "
-            "Hub больше не вызывает pm uninstall: ставит новый com.changanhub.quickdock "
-            "и отключает старую com.changanhub.quickbar. Скачайте новый ZIP. "
-            "Свёрнуто: две отдельные кнопки, между ними ≥20% экрана без оверлея (Яндекс). "
-            "Клавиатура — одна кнопка на 20% ниже верха. После ACC панель поднимается сама. "
+            "«Удалить с ГУ» только отключает панель: Feiyu не удаляет auth-пакет "
+            "(提示 «is auth app, not allow delete!»). Повторная установка ставит новый "
+            "com.changanhub.quicklane и отключает старые quickbar/quickdock. "
+            "Запуск поднимает только сервис справа — окно приложения не всплывает поверх карты. "
+            "Свёрнуто панель сама не разворачивается (сеть/USB/watchdog только держат процесс). "
+            "Клавиатура — одна кнопка на 20% ниже верха. После ACC колонка поднимается в том же виде. "
             "На экране — зелёная колонка СПРАВА, не иконка в меню."
         )
         ttk.Label(
@@ -350,9 +351,9 @@ class HubApp:
         ttk.Label(
             page,
             text="После установки панели здесь появится строка «QuickBar (правая панель) · "
-            "com.changanhub.quickdock». Старая com.changanhub.quickbar тоже может остаться в списке — "
-            "Feiyu её не удаляет (提示 not allow delete). На экране — зелёная колонка справа. "
-            "В фильтре наберите quickbar или quickdock.",
+            "com.changanhub.quicklane». Старые com.changanhub.quickbar и com.changanhub.quickdock "
+            "могут остаться в списке — Feiyu их не удаляет (提示 not allow delete). "
+            "На экране — зелёная колонка справа. В фильтре наберите quickbar, quickdock или quicklane.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(page)
@@ -848,11 +849,11 @@ class HubApp:
             pkgs = adb.packages()
             self.pkg_all = pkgs
             self.root.after(0, self._apply_pkg_filter)
-            if "com.changanhub.quickdock" in pkgs or "com.changanhub.quickbar" in pkgs:
-                self.log("Панель есть в списке: QuickBar · com.changanhub.quickdock")
+            if any(p in pkgs for p in ("com.changanhub.quicklane", "com.changanhub.quickdock", "com.changanhub.quickbar")):
+                self.log("Панель есть в списке: QuickBar · com.changanhub.quicklane")
             else:
                 self.log(
-                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickdock) нет — "
+                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quicklane) нет — "
                     "установка не прошла, в меню ГУ его тоже не будет."
                 )
 

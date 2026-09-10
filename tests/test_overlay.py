@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from hub.overlay import LEGACY_PACKAGE, PACKAGE, PERSIST_SHELL, grant_overlay, remove_overlay, start_overlay
+from hub.overlay import (
+    LEGACY_PACKAGE,
+    LEGACY_PACKAGES,
+    PACKAGE,
+    PERSIST_SHELL,
+    grant_overlay,
+    remove_overlay,
+    start_overlay,
+)
 
 
 class FakeAdb:
@@ -27,19 +35,24 @@ def test_grant_overlay_keeps_process_alive() -> None:
     assert any("deviceidle whitelist +" in cmd for cmd in PERSIST_SHELL)
 
 
-def test_start_overlay_kicks_boot_intents() -> None:
+def test_start_overlay_kicks_service_not_activity() -> None:
     fake = FakeAdb()
     start_overlay(fake)
     joined = "\n".join(fake.shells)
-    assert "LOCKED_BOOT_COMPLETED" in joined or "ACC_ON" in joined
-    assert "POWER_CONNECTED" in joined
-    assert "MainActivity" in joined
+    assert "MainActivity" not in joined
+    assert "monkey" not in joined
+    assert "LOCKED_BOOT_COMPLETED" not in joined
+    assert "POWER_CONNECTED" not in joined
     assert "start-foreground-service" in joined or "startservice" in joined
+    assert f"pm enable --user 0 {PACKAGE}" in joined
+    assert f"am startservice -n {PACKAGE}/com.changanhub.quickbar.OverlayService" in joined
     assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quickdock" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
-    assert f"{PACKAGE}/com.changanhub.quickbar.MainActivity" in joined
-    assert PACKAGE == "com.changanhub.quickdock"
+    assert f"pm disable {LEGACY_PACKAGE}" not in joined
+    assert PACKAGE == "com.changanhub.quicklane"
+    assert "com.changanhub.quickdock" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -48,6 +61,8 @@ def test_remove_overlay_disables_instead_of_uninstall() -> None:
     joined = "\n".join(fake.shells + lines)
     assert "pm uninstall" not in joined
     assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
+    assert f"pm disable-user --user 0 {PACKAGE}" in joined
+    assert f"pm disable {PACKAGE}" not in joined
     assert "force-stop" in joined
 
 
@@ -78,14 +93,14 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.2.0"' in mf
+    assert 'android:versionName="1.3.0"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.quickdock"' in mf
+    assert 'package="com.changanhub.quicklane"' in mf
     assert "android:persistent" not in mf
     assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
@@ -96,8 +111,25 @@ def test_manifest_survives_acc_cycle() -> None:
     wd = Path("android/quickbar/src/main/java/com/changanhub/quickbar/WatchdogReceiver.java").read_text(
         encoding="utf-8"
     )
+    job = Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java").read_text(
+        encoding="utf-8"
+    )
+    main = Path("android/quickbar/src/main/java/com/changanhub/quickbar/MainActivity.java").read_text(
+        encoding="utf-8"
+    )
+    overlay = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
     assert "scheduleBootRetries" in boot
+    assert "isIgnitionWake" in boot
+    assert "OverlayService.start(app)" not in boot
     assert "keepAlive" in wd
+    assert "OverlayService.keepAlive(this)" in job
+    assert "OverlayService.start(this)" not in job
+    assert "finish();" in main
+    assert "com.changanhub.quickdock" in overlay
+    assert "ACTION_KEEPALIVE" in overlay
+    assert "getService" in overlay
 
 
 def test_quickbar_groups_and_usb_install() -> None:

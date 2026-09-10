@@ -33,7 +33,7 @@ public class KeepAliveJob extends JobService {
 
     @Override
     public boolean onStartJob(JobParameters params) {
-        OverlayService.start(this);
+        OverlayService.keepAlive(this);
         OverlayService.scheduleWatchdog(this);
         jobFinished(params, false);
         return false;
