@@ -5,6 +5,7 @@ from hub.overlay import (
     LEGACY_PACKAGES,
     PACKAGE,
     PERSIST_SHELL,
+    disable_user_package,
     grant_overlay,
     remove_overlay,
     start_overlay,
@@ -46,6 +47,9 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert "start-foreground-service" in joined or "startservice" in joined
     assert f"pm enable --user 0 {PACKAGE}" in joined
     assert f"am startservice -n {PACKAGE}/com.changanhub.quickbar.OverlayService" in joined
+    assert "BootActivity" in joined
+    assert "enabled_accessibility_services" in joined
+    assert "accessibility_enabled" in joined
     assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickdock" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
@@ -64,6 +68,45 @@ def test_remove_overlay_disables_instead_of_uninstall() -> None:
     assert f"pm disable-user --user 0 {PACKAGE}" in joined
     assert f"pm disable {PACKAGE}" not in joined
     assert "force-stop" in joined
+
+
+def test_disable_user_package_uninstalls_when_allowed() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("pm uninstall"):
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = disable_user_package(fake, "mobi.zona")
+    joined = "\n".join(fake.shells + lines)
+    assert "pm uninstall --user 0 mobi.zona" in joined
+    assert "pm disable-user" not in joined
+    assert "снят" in joined
+
+
+def test_disable_user_package_hides_when_auth_blocks_delete() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "is auth app, not allow delete!", 1, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = disable_user_package(fake, "mobi.zona")
+    joined = "\n".join(fake.shells + lines)
+    assert "pm uninstall --user 0 mobi.zona" in joined
+    assert "pm hide mobi.zona" in joined
+    assert "pm disable-user --user 0 mobi.zona" in joined
+    assert "auth-приложение" in joined
 
 
 def test_quickbar_is_three_times_taller() -> None:
@@ -93,7 +136,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.0"' in mf
+    assert 'android:versionName="1.3.1"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -122,14 +165,37 @@ def test_manifest_survives_acc_cycle() -> None:
     )
     assert "scheduleBootRetries" in boot
     assert "isIgnitionWake" in boot
+    assert "startTrampoline" in boot
+    assert "BootActivity" in boot
     assert "OverlayService.start(app)" not in boot
     assert "keepAlive" in wd
     assert "OverlayService.keepAlive(this)" in job
+    assert "setMinimumLatency" in job
+    assert "setOverrideDeadline" in job
+    assert "setPeriodic" not in job
     assert "OverlayService.start(this)" not in job
     assert "finish();" in main
     assert "com.changanhub.quickdock" in overlay
     assert "ACTION_KEEPALIVE" in overlay
     assert "getService" in overlay
+    assert "KeepAliveAccessibility" in mf
+    assert "com.changanhub.quickbar.BootActivity" in mf
+    assert "com.fyt.boot.ACCON" in mf
+    assert "RECEIVE_LOCKED_BOOT_COMPLETED" in mf
+    assert Path("android/quickbar/src/main/res/xml/keep_alive_accessibility.xml").is_file()
+    access = Path(
+        "android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveAccessibility.java"
+    ).read_text(encoding="utf-8")
+    assert "resumeAfterSleep" in access
+    assert "startTrampoline" in access
+    assert "ACTION_RESUME" in overlay
+    assert "reattachOverlay" in overlay
+    assert "RTC_WAKEUP" in overlay
+    actions = Path(
+        "android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java"
+    ).read_text(encoding="utf-8")
+    assert "COMPONENT_ENABLED_STATE_DISABLED_USER" in actions
+    assert "pm disable-user" in actions
 
 
 def test_quickbar_groups_and_usb_install() -> None:
@@ -165,6 +231,7 @@ def test_quickbar_groups_and_usb_install() -> None:
         encoding="utf-8"
     )
     assert "setPersisted(true)" in job
+    assert "setMinimumLatency" in job
     assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/UsbStorage.java").is_file()
     assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java").is_file()
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/UsbStorage.java")).is_file()

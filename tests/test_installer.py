@@ -234,6 +234,8 @@ def test_install_retries_after_short_uninstall_on_signature_mismatch(tmp_path: P
             return CommandResult(True, "Success", "", 0, [])
         if command.startswith("pm uninstall"):
             return CommandResult(True, "Success", "", 0, [])
+        if command.startswith("pm path"):
+            return CommandResult(True, "package:/data/app/demo/base.apk", "", 0, [])
         return CommandResult(True, "", "", 0, [])
 
     fake.shell = shell  # type: ignore[method-assign]

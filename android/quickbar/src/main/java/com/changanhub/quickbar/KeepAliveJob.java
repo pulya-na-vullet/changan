@@ -8,12 +8,15 @@ import android.content.ComponentName;
 import android.content.Context;
 
 /**
- * Persisted periodic job so Feiyu can restart QuickBar after ACC even when
- * BOOT_COMPLETED is dropped and AlarmManager was cleared.
+ * One-shot persisted job that reschedules itself. Periodic 15-minute jobs are
+ * too slow after ACC: Feiyu drops BOOT_COMPLETED and the panel must come back
+ * within seconds. setPersisted survives a real reboot; the short deadline
+ * forces JobScheduler to run soon after the HU wakes.
  */
 public class KeepAliveJob extends JobService {
     private static final int JOB_ID = 71;
-    private static final long PERIOD_MS = 15 * 60 * 1000L;
+    private static final long LATENCY_MS = 15_000L;
+    private static final long DEADLINE_MS = 40_000L;
 
     public static void schedule(Context context) {
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
@@ -22,7 +25,8 @@ public class KeepAliveJob extends JobService {
         }
         JobInfo job = new JobInfo.Builder(JOB_ID, new ComponentName(context, KeepAliveJob.class))
                 .setPersisted(true)
-                .setPeriodic(PERIOD_MS)
+                .setMinimumLatency(LATENCY_MS)
+                .setOverrideDeadline(DEADLINE_MS)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
                 .build();
         try {
@@ -35,6 +39,7 @@ public class KeepAliveJob extends JobService {
     public boolean onStartJob(JobParameters params) {
         OverlayService.keepAlive(this);
         OverlayService.scheduleWatchdog(this);
+        schedule(this);
         jobFinished(params, false);
         return false;
     }

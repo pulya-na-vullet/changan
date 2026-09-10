@@ -333,7 +333,8 @@ class HubApp:
             "com.changanhub.quicklane и отключает старые quickbar/quickdock. "
             "Запуск поднимает только сервис справа — окно приложения не всплывает поверх карты. "
             "Свёрнуто панель сама не разворачивается (сеть/USB/watchdog только держат процесс). "
-            "Клавиатура — одна кнопка на 20% ниже верха. После ACC колонка поднимается в том же виде. "
+            "Клавиатура — одна кнопка на 20% ниже верха. После ACC колонка поднимается сама "
+            "(служба спец. возможностей + JobScheduler, без окна поверх карты). "
             "На экране — зелёная колонка СПРАВА, не иконка в меню."
         )
         ttk.Label(
@@ -352,7 +353,8 @@ class HubApp:
             page,
             text="После установки панели здесь появится строка «QuickBar (правая панель) · "
             "com.changanhub.quicklane». Старые com.changanhub.quickbar и com.changanhub.quickdock "
-            "могут остаться в списке — Feiyu их не удаляет (提示 not allow delete). "
+            "могут остаться в списке — Feiyu не удаляет auth-пакеты (提示 not allow delete). "
+            "Кнопка «Удалить / отключить» пробует короткий uninstall, иначе отключает пакет. "
             "На экране — зелёная колонка справа. В фильтре наберите quickbar, quickdock или quicklane.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(4, 0))
@@ -363,6 +365,7 @@ class HubApp:
         )
         self.launch_btn = ttk.Button(row, text="Запустить выбранное", command=self.launch_selected)
         self.launch_btn.pack(side=tk.LEFT, padx=8)
+        ttk.Button(row, text="Удалить / отключить", command=self.disable_selected).pack(side=tk.LEFT)
         self.pkg_filter = tk.StringVar()
         entry = tk.Entry(row, textvariable=self.pkg_filter, bg=CARD, fg=TEXT, insertbackground=TEXT)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
@@ -882,6 +885,28 @@ class HubApp:
             self.log(result.text or result.stderr or f"launch {pkg}")
 
         self._work(f"Запуск {pkg}", go)
+
+    def disable_selected(self) -> None:
+        selection = self.pkg_list.curselection()
+        if not selection:
+            return
+        pkg = package_from_row(self.pkg_list.get(selection[0]))
+
+        def go() -> None:
+            from hub.overlay import disable_user_package
+
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить».")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in disable_user_package(adb, pkg, progress=progress):
+                self.journal.write("INFO", "apps", line)
+            self.refresh_packages()
+
+        self._work(f"Удаление {pkg}", go)
 
     def take_screenshot(self) -> None:
         def go() -> None:

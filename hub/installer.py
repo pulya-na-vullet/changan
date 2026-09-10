@@ -175,7 +175,9 @@ def install_apk(
     # first so pm install -r can replace a matching signature; mismatched
     # signatures get a short uninstall --user 0, not a 20s auth-delete hang.
     if package:
-        adb.shell(f"pm enable --user 0 {package}", timeout=8)
+        present = adb.shell(f"pm path {package}", timeout=8)
+        if "package:" in (present.stdout or ""):
+            adb.shell(f"pm enable --user 0 {package}", timeout=8)
 
     # Working path from the HU log: push → /data/local/tmp + pm install -r -t -g.
     step("Шаг 2/5: копирую APK на ГУ (push). adb install пропускаю — на Feiyu он зависает.", 35)

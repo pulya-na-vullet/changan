@@ -18,14 +18,18 @@ LEGACY_PACKAGES = (
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 JAVA_SERVICE = "com.changanhub.quickbar.OverlayService"
+JAVA_BOOT = "com.changanhub.quickbar.BootActivity"
+JAVA_ACCESS = "com.changanhub.quickbar.KeepAliveAccessibility"
 SERVICE = f"{PACKAGE}/{JAVA_SERVICE}"
+ACCESS_COMPONENT = f"{PACKAGE}/{JAVA_ACCESS}"
 
-# Keep the panel alive after ACC off→on. Feiyu drops BOOT_COMPLETED;
-# deviceidle + background appops stop the HU from freezing the process.
+# Keep the panel alive after ACC off→on. Feiyu drops BOOT_COMPLETED and
+# force-stops third-party apps; accessibility + deviceidle keep a wake path.
 PERSIST_SHELL = (
     f"appops set {PACKAGE} SYSTEM_ALERT_WINDOW allow",
     f"appops set {PACKAGE} RUN_IN_BACKGROUND allow",
     f"appops set {PACKAGE} RUN_ANY_IN_BACKGROUND allow",
+    f"appops set {PACKAGE} START_FOREGROUND allow",
     f"dumpsys deviceidle whitelist +{PACKAGE}",
     f"am set-inactive {PACKAGE} false",
     f"appops set {PACKAGE} REQUEST_INSTALL_PACKAGES allow",
@@ -77,6 +81,60 @@ def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
     return log
 
 
+def enable_accessibility(adb: Adb, progress: Progress | None = None) -> list[str]:
+    """Feiyu rebinds enabled accessibility services after ACC even without BOOT_COMPLETED."""
+    log: list[str] = []
+    current = adb.shell("settings get secure enabled_accessibility_services", timeout=8)
+    raw = (current.stdout or "").strip()
+    if raw in ("", "null", "0"):
+        value = ACCESS_COMPONENT
+    elif ACCESS_COMPONENT in raw:
+        value = raw
+    else:
+        value = f"{raw}:{ACCESS_COMPONENT}"
+    cmds = (
+        f"settings put secure enabled_accessibility_services {value}",
+        "settings put secure accessibility_enabled 1",
+    )
+    for cmd in cmds:
+        if progress:
+            progress(f"автозапуск ACC: {cmd}", 92)
+        result = adb.shell(cmd, timeout=8)
+        log.append(f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}")
+    return log
+
+
+def disable_user_package(adb: Adb, package: str, progress: Progress | None = None) -> list[str]:
+    """Feiyu refuses pm uninstall on whitelist-signed apps. Disable instead."""
+    log: list[str] = []
+
+    def step(message: str, percent: int = 70) -> None:
+        log.append(message)
+        if progress:
+            progress(message, percent)
+
+    step(f"пробую pm uninstall --user 0 {package} (лимит 8с)", 60)
+    gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=8)
+    log.append(
+        f"pm uninstall --user 0 {package} code={gone.code} "
+        f"out={gone.stdout.strip()!r} err={gone.stderr.strip()!r}"
+    )
+    blob = f"{gone.stdout}\n{gone.stderr}".lower()
+    if gone.code != 124 and "success" in blob and "failure" not in blob and "not allow" not in blob:
+        step(f"{package} снят", 100)
+        return log
+    step("Feiyu не удаляет auth-приложение. Скрываю и отключаю пакет.", 70)
+    for cmd in (
+        f"am force-stop {package}",
+        f"pm hide {package}",
+        f"cmd package hide {package}",
+        f"pm disable-user --user 0 {package}",
+    ):
+        result = adb.shell(cmd, timeout=8)
+        log.append(f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}")
+    return log
+
+
 def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     log = retire_legacy(adb, progress=progress)
     if progress:
@@ -87,9 +145,11 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         f"out={enabled.stdout.strip()!r} err={enabled.stderr.strip()!r}"
     )
     log += grant_overlay(adb, progress=progress)
-    # Only the overlay service. am start / monkey would pop MainActivity over
-    # the map; boot broadcasts would expand a collapsed dock.
+    log += enable_accessibility(adb, progress=progress)
+    # BootActivity is Theme.NoDisplay and finishes immediately — clears FLAG_STOPPED
+    # so ACC/BOOT broadcasts will be delivered later. Do not start MainActivity.
     for cmd in (
+        f"am start -n {PACKAGE}/{JAVA_BOOT} --activity-no-animation",
         f"am startservice -n {SERVICE}",
         f"am start-foreground-service -n {SERVICE}",
         f"am startservice -n {SERVICE} -a com.changanhub.quickbar.SHOW",

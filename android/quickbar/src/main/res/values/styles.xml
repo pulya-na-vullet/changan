@@ -7,4 +7,5 @@
         <item name="android:navigationBarColor">@color/bg_solid</item>
         <item name="android:textColor">@color/text</item>
     </style>
+    <style name="BootTheme" parent="@android:style/Theme.NoDisplay" />
 </resources>

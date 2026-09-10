@@ -80,10 +80,16 @@ python -m hub apps
 - клавиатура — панель сворачивается в **одну кнопку** на 20% ниже верхнего края; тап разворачивает снова;
 - кнопки панели — иконки (обновление, USB, корзина, установка);
 - высота иконок **×3** (удобно на 13.2″);
-- автозапуск после ACC off→on: `BOOT_COMPLETED` / `POWER_CONNECTED` / MTK `BOOT_IPO`,
-  JobScheduler и AlarmManager; если Feiyu всё равно убивает процесс — нужен новый ZIP;
-  `USER_PRESENT` и watchdog `AlarmManager` каждые 20 с только держат процесс,
-  свёрнутую панель сами не разворачивают;
+- автозапуск после ACC off→on: Feiyu часто **не шлёт** `BOOT_COMPLETED` и
+  force-stop ставит пакет в FLAG_STOPPED. Панель поднимает служба спец.
+  возможностей (Hub пишет `enabled_accessibility_services`), JobScheduler
+  (15–40 с, persisted), AlarmManager RTC+elapsed, FYT/Incall `ACC_ON` и
+  невидимый `BootActivity`. Если процесс пережил сон, а окна WindowManager
+  умерли — `ACTION_RESUME` пересоздаёт колонку. Свёрнутую панель сеть/USB
+  сами не раскрывают;
+- удаление сторонних приложений: Feiyu **не удаляет** пакеты с той же
+  whitelist-подписью (提示 «is auth app, not allow delete!»). Hub и корзина
+  панели пробуют короткий `pm uninstall`, иначе `pm hide` / `pm disable-user`;
 - Hub добавляет пакет в `dumpsys deviceidle whitelist` и разрешает
   `RUN_IN_BACKGROUND`, чтобы Feiyu не убивал процесс после выключения машины;
 - разрешение «поверх окон» Hub выдаёт сам через `appops`.

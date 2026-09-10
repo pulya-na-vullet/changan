@@ -21,12 +21,24 @@ public class InstallResultReceiver extends BroadcastReceiver {
             }
             return;
         }
+        String pkg = intent.getStringExtra("pkg");
+        if (status != PackageInstaller.STATUS_SUCCESS && pkg != null && pkg.length() > 0) {
+            PackageActions.disable(context, pkg);
+        }
+        OverlayService.keepAlive(context);
         Intent refresh = new Intent(context, OverlayService.class);
         refresh.setAction(OverlayService.ACTION_REFRESH);
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            context.startForegroundService(refresh);
-        } else {
-            context.startService(refresh);
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(refresh);
+            } else {
+                context.startService(refresh);
+            }
+        } catch (Exception ignored) {
+            try {
+                context.startService(refresh);
+            } catch (Exception ignoredStart) {
+            }
         }
     }
 }

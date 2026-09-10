@@ -5,4 +5,5 @@
     <string name="need_overlay">Нужно разрешение «поверх других окон»</string>
     <string name="start">Запустить панель</string>
     <string name="hint">Панель останется справа поверх всех приложений. На ГУ Changan разрешение выдаётся через ADB автоматически.</string>
+    <string name="acc_service_desc">Держит правую панель после включения зажигания. Не читает содержимое окон.</string>
 </resources>

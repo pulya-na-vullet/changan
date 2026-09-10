@@ -227,6 +227,8 @@ class Adb:
                 return CommandResult(False, stdout, stderr, last.code, last.argv)
             if "security exception" in body or "securityexception" in body:
                 return CommandResult(False, stdout, stderr, last.code, last.argv)
+            if "illegalargumentexception" in body or "unknown package" in body or "exception occurred" in body:
+                return CommandResult(False, stdout, stderr, last.code, last.argv)
             # Feiyu prints "please input verify password: verify success!" on
             # stderr even when the command succeeded with empty stdout (appops).
             # That used to look like "need password" and we retried until hang.
