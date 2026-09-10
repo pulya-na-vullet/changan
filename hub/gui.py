@@ -275,8 +275,10 @@ class HubApp:
             text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
             "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
-            "Hub при несовпадении подписи пробует короткий pm uninstall --user 0, иначе ставит новую "
-            "QuickBar как com.changanhub.quicklane и отключает старые quickbar/quickdock. "
+            "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
+            "Панель QuickBar — отдельный пакет com.changanhub.quickkeep; старые "
+            "quickbar/quickdock/quicklane Hub только отключает, не удаляет "
+            "(иначе 提示 «is auth app, not allow delete!»). "
             "adb install на Feiyu зависает — Hub его не вызывает. "
             "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
@@ -325,7 +327,7 @@ class HubApp:
             "После ACC колонка поднимается сама (спец. возможности + Job, без окна на карте). "
             "Сначала нажмите «Установить и запустить» — это включает автозапуск. "
             "«Удалить с ГУ» только отключает панель: Feiyu не стирает auth "
-            "(提示 «is auth app, not allow delete!»). Рабочая — com.changanhub.quicklane. "
+            "(提示 «is auth app, not allow delete!»). Рабочая — com.changanhub.quickkeep. "
             "Свёрнутую колонку сеть/USB не раскрывают. Зелёная колонка СПРАВА, не иконка в меню."
         )
         ttk.Label(
@@ -343,10 +345,10 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "После установки панели здесь появится «QuickBar · com.changanhub.quicklane». "
-                "Старые quickbar/quickdock могут остаться — Feiyu не стирает auth. "
-                "«Удалить / отключить»: короткий uninstall, иначе hide/disable. "
-                "В фильтре: quicklane, quickbar, zona."
+                "После установки панели здесь появится «QuickBar · com.changanhub.quickkeep». "
+                "Старые quickbar/quickdock/quicklane могут остаться — Feiyu не стирает auth. "
+                "«Удалить / отключить»: для панели только hide/disable, без uninstall. "
+                "В фильтре: quickkeep, quicklane, quickbar, zona."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -857,11 +859,19 @@ class HubApp:
             pkgs = adb.packages()
             self.pkg_all = pkgs
             self.root.after(0, self._apply_pkg_filter)
-            if any(p in pkgs for p in ("com.changanhub.quicklane", "com.changanhub.quickdock", "com.changanhub.quickbar")):
-                self.log("Панель есть в списке: QuickBar · com.changanhub.quicklane")
+            if any(
+                p in pkgs
+                for p in (
+                    "com.changanhub.quickkeep",
+                    "com.changanhub.quicklane",
+                    "com.changanhub.quickdock",
+                    "com.changanhub.quickbar",
+                )
+            ):
+                self.log("Панель есть в списке: QuickBar · com.changanhub.quickkeep")
             else:
                 self.log(
-                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quicklane) нет — "
+                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickkeep) нет — "
                     "установка не прошла, в меню ГУ его тоже не будет."
                 )
 

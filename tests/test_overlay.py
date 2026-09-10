@@ -52,11 +52,13 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert "accessibility_enabled" in joined
     assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickdock" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quicklane" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
     assert f"pm disable {LEGACY_PACKAGE}" not in joined
-    assert PACKAGE == "com.changanhub.quicklane"
+    assert PACKAGE == "com.changanhub.quickkeep"
     assert "com.changanhub.quickdock" in LEGACY_PACKAGES
+    assert "com.changanhub.quicklane" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -136,14 +138,14 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.1"' in mf
+    assert 'android:versionName="1.3.2"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.quicklane"' in mf
+    assert 'package="com.changanhub.quickkeep"' in mf
     assert "android:persistent" not in mf
     assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
@@ -176,6 +178,7 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "OverlayService.start(this)" not in job
     assert "finish();" in main
     assert "com.changanhub.quickdock" in overlay
+    assert "com.changanhub.quicklane" in overlay
     assert "ACTION_KEEPALIVE" in overlay
     assert "getService" in overlay
     assert "KeepAliveAccessibility" in mf
@@ -293,3 +296,65 @@ def test_collapsed_gap_leaves_yandex_passthrough() -> None:
         if menu_h + recent_h + 3 * gap <= screen:
             assert recent_y + recent_h == screen - gap
             assert menu_y + menu_h + between + recent_h + gap == screen
+
+
+def test_accessibility_dedupes_and_skips_huge_lists() -> None:
+    from hub.overlay import ACCESS_COMPONENT, accessibility_services_value, enable_accessibility
+
+    assert accessibility_services_value("", ACCESS_COMPONENT) == ACCESS_COMPONENT
+    assert accessibility_services_value("null", ACCESS_COMPONENT) == ACCESS_COMPONENT
+    dup = ":".join(["com.incall/.A", "com.iflytek/.B"] * 40)
+    value = accessibility_services_value(dup, ACCESS_COMPONENT)
+    assert value is not None
+    assert value.count("com.incall/.A") == 1
+    assert ACCESS_COMPONENT in value.split(":")
+    assert len(f"settings put secure enabled_accessibility_services {value}") < 500
+    huge = ":".join(f"com.pkg{i}/.Svc" for i in range(400))
+    assert accessibility_services_value(huge, ACCESS_COMPONENT) is None
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("settings get"):
+            return CommandResult(True, dup, "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    enable_accessibility(fake)
+    puts = [c for c in fake.shells if c.startswith("settings put secure enabled_accessibility_services")]
+    assert len(puts) == 1
+    assert len(puts[0]) < 500
+    assert "accessibility_enabled 1" in "\n".join(fake.shells)
+
+
+def test_disable_overlay_never_uninstalls() -> None:
+    fake = FakeAdb()
+    lines = disable_user_package(fake, PACKAGE)
+    joined = "\n".join(fake.shells)
+    assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
+    assert f"pm disable-user --user 0 {PACKAGE}" in joined
+    assert "auth-панель" in "\n".join(lines)
+
+
+def test_adb_raw_swallows_filename_too_long(monkeypatch) -> None:
+    import subprocess
+
+    from hub.adb import Adb
+
+    def boom(*_a, **_k):
+        exc = OSError("The filename or extension is too long")
+        exc.winerror = 206
+        raise exc
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    adb = object.__new__(Adb)
+    adb.binary = Path("adb")
+    adb.serial = None
+    adb.on_log = None
+    result = Adb.raw(adb, ["shell", "settings put secure enabled_accessibility_services x"])
+    assert not result.ok
+    assert result.code == 206
+    assert "too long" in result.stderr.lower() or "OSError" in result.stderr

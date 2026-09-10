@@ -9,14 +9,18 @@ from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
 
 # New applicationId: Feiyu forbids deleting already-installed auth packages
-# (提示 «is auth app, not allow delete!»). quickbar then quickdock stay on the
-# HU; this id is a first install so a new signature can land.
-PACKAGE = "com.changanhub.quicklane"
+# (提示 «is auth app, not allow delete!»). quickbar / quickdock / quicklane stay
+# on the HU; this id is a first install so a new signature can land.
+PACKAGE = "com.changanhub.quickkeep"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
+    "com.changanhub.quicklane",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
+# Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
+# settings put of the raw string raises WinError 206 and kills Hub.
+_MAX_SETTINGS_CMD = 3500
 JAVA_SERVICE = "com.changanhub.quickbar.OverlayService"
 JAVA_BOOT = "com.changanhub.quickbar.BootActivity"
 JAVA_ACCESS = "com.changanhub.quickbar.KeepAliveAccessibility"
@@ -81,21 +85,47 @@ def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
     return log
 
 
+def accessibility_services_value(raw: str, component: str, max_cmd: int = _MAX_SETTINGS_CMD) -> str | None:
+    """Deduped ``enabled_accessibility_services`` value, or None if still too long.
+
+    Feiyu repeats incall/iflytek components dozens of times. Rewriting that
+    string with ``settings put`` blows the Windows command line (WinError 206).
+    Putting only our component would wipe Incall — skip the rewrite instead.
+    """
+    parts: list[str] = []
+    seen: set[str] = set()
+    blob = (raw or "").strip()
+    if blob and blob not in ("null", "0"):
+        for item in blob.split(":"):
+            item = item.strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            parts.append(item)
+    if component not in seen:
+        parts.append(component)
+    value = ":".join(parts)
+    cmd = f"settings put secure enabled_accessibility_services {value}"
+    if len(cmd) > max_cmd:
+        return None
+    return value
+
+
 def enable_accessibility(adb: Adb, progress: Progress | None = None) -> list[str]:
     """Feiyu rebinds enabled accessibility services after ACC even without BOOT_COMPLETED."""
     log: list[str] = []
     current = adb.shell("settings get secure enabled_accessibility_services", timeout=8)
     raw = (current.stdout or "").strip()
-    if raw in ("", "null", "0"):
-        value = ACCESS_COMPONENT
-    elif ACCESS_COMPONENT in raw:
-        value = raw
+    value = accessibility_services_value(raw, ACCESS_COMPONENT)
+    cmds: list[str] = []
+    if value is None:
+        log.append(
+            "enabled_accessibility_services слишком длинный даже после дедупа — "
+            "не вызываю settings put (WinError 206). Только accessibility_enabled 1."
+        )
     else:
-        value = f"{raw}:{ACCESS_COMPONENT}"
-    cmds = (
-        f"settings put secure enabled_accessibility_services {value}",
-        "settings put secure accessibility_enabled 1",
-    )
+        cmds.append(f"settings put secure enabled_accessibility_services {value}")
+    cmds.append("settings put secure accessibility_enabled 1")
     for cmd in cmds:
         if progress:
             progress(f"автозапуск ACC: {cmd}", 92)
@@ -112,6 +142,15 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
         log.append(message)
         if progress:
             progress(message, percent)
+
+    if package == PACKAGE or package in LEGACY_PACKAGES:
+        step(
+            f"{package} — auth-панель, pm uninstall покажет 提示 not allow delete. "
+            "Отключаю без удаления.",
+            60,
+        )
+        log += _retire_package(adb, package, progress=progress)
+        return log
 
     step(f"пробую pm uninstall --user 0 {package} (лимит 8с)", 60)
     gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=8)
@@ -213,7 +252,7 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
     lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
     lines.append(
-        "Старые com.changanhub.quickbar и com.changanhub.quickdock Feiyu не даёт удалить "
-        "(auth, not allow delete) — Hub их отключает и ставит новую com.changanhub.quicklane."
+        "Старые com.changanhub.quickbar / quickdock / quicklane Feiyu не даёт удалить "
+        "(auth, not allow delete) — Hub их отключает и ставит новую com.changanhub.quickkeep."
     )
     return lines

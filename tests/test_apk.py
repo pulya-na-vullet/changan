@@ -19,6 +19,6 @@ def test_bundled_quickbar_apk() -> None:
         assert "AndroidManifest.xml" in names
         assert "META-INF/CERT.RSA" in names
         mf = zf.read("AndroidManifest.xml")
-        assert "com.changanhub.quicklane".encode("utf-16-le") in mf
+        assert "com.changanhub.quickkeep".encode("utf-16-le") in mf
         certs = pkcs7.load_der_pkcs7_certificates(zf.read("META-INF/CERT.RSA"))
         assert certs[0].serial_number == CHANGAN_SERIAL

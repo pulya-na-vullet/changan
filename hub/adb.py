@@ -131,6 +131,15 @@ class Adb:
             )
         except FileNotFoundError as exc:
             raise AdbError(f"Не удалось запустить adb: {exc}") from exc
+        except OSError as exc:
+            elapsed = int((time.monotonic() - started) * 1000)
+            winerr = getattr(exc, "winerror", None)
+            code = 206 if winerr == 206 else (exc.errno or 1)
+            stderr = f"{type(exc).__name__}: {exc}"
+            result = CommandResult(False, "", stderr, code, argv)
+            if self.on_log:
+                self.on_log(argv, result.stdout, result.stderr, result.code, elapsed)
+            return result
         except subprocess.TimeoutExpired as exc:
             elapsed = int((time.monotonic() - started) * 1000)
             stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")

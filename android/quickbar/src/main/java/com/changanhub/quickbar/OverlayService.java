@@ -74,6 +74,7 @@ public class OverlayService extends Service {
     public static final String[] LEGACY_PACKAGES = {
             "com.changanhub.quickbar",
             "com.changanhub.quickdock",
+            "com.changanhub.quicklane",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 

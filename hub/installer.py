@@ -12,6 +12,7 @@ from hub.adb import Adb, CommandResult
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.quickkeep",
     "com.changanhub.quicklane",
     "com.changanhub.quickdock",
     "com.changanhub.quickbar",
@@ -129,7 +130,13 @@ def install_apk(
         signed = apk
         step("Переподпись не нужна.", 15)
     else:
-        installed_serial = discover_package_signer_serial(adb, package, step) if package else None
+        # Overlay leftovers are auth apps. Cloning their serial (not the cert)
+        # and generating a new keystore makes pm install -r fail with
+        # UPDATE_INCOMPATIBLE, then pm uninstall pops 提示 not allow delete.
+        # Sign from NewPipe/EasyConn probe serial instead.
+        installed_serial = None
+        if package and package not in OVERLAY_PACKAGES:
+            installed_serial = discover_package_signer_serial(adb, package, step)
         hu_serial = load_cached_hu_serial()
         if installed_serial:
             step(
@@ -208,33 +215,46 @@ def install_apk(
     blob = f"{result.stdout}\n{result.stderr}"
     if not _ok_install(result) and "update_incompatible" in blob.lower():
         conflict = _package_from_pm_error(blob) or package
-        step(
-            f"Подпись не совпадает со стоящим {conflict}. Пробую pm uninstall --user 0 "
-            "(лимит 8с), затем повторную установку.",
-            72,
+        overlay_conflict = bool(
+            (conflict and conflict in OVERLAY_PACKAGES) or (package and package in OVERLAY_PACKAGES)
         )
-        if conflict:
-            gone = adb.shell(f"pm uninstall --user 0 {conflict}", timeout=8)
+        if overlay_conflict:
             step(
-                f"pm uninstall --user 0 {conflict} code={gone.code} "
-                f"stdout={gone.stdout.strip()!r} stderr={gone.stderr.strip()!r}",
-                73,
+                f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
+                "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickkeep.",
+                72,
             )
-            if _ok_uninstall(gone):
-                step(f"выполняю {cmd}", 74)
-                result = adb.shell(cmd, timeout=25)
+            if conflict:
+                uninstall_package(adb, conflict, step)
+        else:
+            step(
+                f"Подпись не совпадает со стоящим {conflict}. Пробую pm uninstall --user 0 "
+                "(лимит 8с), затем повторную установку.",
+                72,
+            )
+            if conflict:
+                gone = adb.shell(f"pm uninstall --user 0 {conflict}", timeout=8)
                 step(
-                    f"{cmd} code={result.code} stdout={result.stdout.strip()!r} "
-                    f"stderr={result.stderr.strip()!r}",
-                    75,
+                    f"pm uninstall --user 0 {conflict} code={gone.code} "
+                    f"stdout={gone.stdout.strip()!r} stderr={gone.stderr.strip()!r}",
+                    73,
                 )
-            else:
-                step(
-                    "Feiyu не сняла пакет (提示 not allow delete или timeout). "
-                    "Старую панель не трогаю. Новая QuickBar ставится отдельным "
-                    "пакетом com.changanhub.quicklane.",
-                    75,
-                )
+                if _ok_uninstall(gone):
+                    step(f"выполняю {cmd}", 74)
+                    result = adb.shell(cmd, timeout=25)
+                    step(
+                        f"{cmd} code={result.code} stdout={result.stdout.strip()!r} "
+                        f"stderr={result.stderr.strip()!r}",
+                        75,
+                    )
+                else:
+                    step(
+                        "Feiyu не сняла пакет (提示 not allow delete или timeout). "
+                        "Старую панель не трогаю. Новая QuickBar ставится отдельным "
+                        "пакетом com.changanhub.quickkeep.",
+                        75,
+                    )
     if _ok_install(result):
         report.ok = True
         report.method = f"pm install {PM_INSTALL_FLAGS}"
@@ -248,7 +268,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quicklane не появится.",
+            "в списке com.changanhub.quickkeep не появится.",
             100,
         )
         return report
@@ -321,8 +341,8 @@ def apk_package_name(apk: Path) -> str | None:
     from hub.catalog import CATALOG
 
     stem = apk.name.lower()
-    if "quickbar" in stem or "quickdock" in stem or "quicklane" in stem:
-        return "com.changanhub.quicklane"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep")):
+        return "com.changanhub.quickkeep"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")
