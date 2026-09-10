@@ -19,6 +19,8 @@ def test_run_bat_starts_once() -> None:
     assert "logs\\start.log" in text or "logs\\start.log" in text.replace("/", "\\")
     assert "pythonw.exe" in text
     assert text.lower().count("setlocal") == 1
+    assert "hub already running" in text.lower()
+    assert "Do not delete .venv" in text
     assert (root / "ensure_env.py").is_file()
     env = (root / "ensure_env.py").read_text(encoding="utf-8")
     assert "cryptography" in env
@@ -26,3 +28,19 @@ def test_run_bat_starts_once() -> None:
     assert "start.log" in env
     assert "pip не запускаю" in env
     assert "timeout=120" in env
+    assert "hub_running" in env
+    assert "setup_running" in env
+    assert "trusted-host" in env
+
+
+def test_hub_lock_detects_live_pid(tmp_path, monkeypatch) -> None:
+    import os
+
+    import ensure_env
+
+    monkeypatch.setattr(ensure_env, "LOCK", tmp_path / "hub.lock")
+    assert ensure_env.hub_running() is False
+    (tmp_path / "hub.lock").write_text(str(os.getpid()), encoding="utf-8")
+    assert ensure_env.hub_running() is True
+    (tmp_path / "hub.lock").write_text("99999999", encoding="utf-8")
+    assert ensure_env.hub_running() is False

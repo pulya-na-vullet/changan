@@ -246,31 +246,25 @@ class HubApp:
     def _page_connect(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
         ttk.Label(page, text="USB-A → USB-A и инженерное меню", style="Title.TLabel").pack(anchor="w")
-        steps = (
-            "1. На ГУ откройте Phone / Телефон. Наберите "
-            f"{ENGINEERING_CODE} и нажмите вызов.\n"
-            f"2. Пароль инженерного меню: {ENGINEERING_PIN}. Меню может быть на китайском — "
-            "это нормально даже на английской ГУ.\n"
-            "3. Второй пункт слева (USB). Нажмите кнопку ADB. Не USB Storage.\n"
-            "4. Кабель USB-A — USB-A именно data-кабель (4 контакта), не зарядка. "
-            "Вставьте в штатный USB под парящей консолью / в боксе.\n"
-            "5. На ноутбуке Windows: драйвер Google USB / Universal ADB. "
-            "Если в диспетчере устройств «Unknown Android» — обновите драйвер вручную.\n"
-            f"6. Пароль adb shell, если спросит: {SHELL_PASSWORD}. Hub вводит его сам.\n"
-            "Сертификат разработчика Changan не нужен: Hub сам выпускает локальный ключ "
-            "с серийником 0xddb66eefd98476f3, который принимает CertificateManager ГУ."
+        row = ttk.Frame(page)
+        row.pack(anchor="w", pady=8, fill=tk.X)
+        self.connect_btn = ttk.Button(
+            row, text="Подключить / обновить", style="Accent.TButton", command=self.refresh_connection
         )
-        tk.Label(page, text=steps, bg=BG, fg=TEXT, font=FONT, justify="left", wraplength=820).pack(
+        self.connect_btn.pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(row, text="Перезапустить adb server", command=self.restart_adb).pack(side=tk.LEFT)
+        steps = (
+            f"Телефон ГУ: {ENGINEERING_CODE} → PIN {ENGINEERING_PIN} → USB → ADB "
+            "(не Storage). После ACC повторить. "
+            "Кабель ноутбук→штатный USB ГУ, не флешка E:. "
+            f"Пароль shell {SHELL_PASSWORD} Hub вводит сам. "
+            "Пустой список = ADB на ГУ выключен, не поломка программы."
+        )
+        tk.Label(page, text=steps, bg=BG, fg=TEXT, font=FONT, justify="left", wraplength=640).pack(
             anchor="w", pady=12
         )
-        row = ttk.Frame(page)
-        row.pack(anchor="w", pady=8)
-        ttk.Button(row, text="Подключить / обновить", style="Accent.TButton", command=self.refresh_connection).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
-        ttk.Button(row, text="Перезапустить adb server", command=self.restart_adb).pack(side=tk.LEFT)
         self.info_box = tk.Label(page, text="", bg=CARD, fg=TEXT, font=FONT_MONO, justify="left", anchor="nw")
-        self.info_box.pack(fill=tk.BOTH, expand=True, pady=16)
+        self.info_box.pack(fill=tk.X, pady=16)
         return page
 
     def _page_install(self) -> ttk.Frame:
@@ -645,11 +639,20 @@ class HubApp:
     def _refresh_now(self, adb: Adb) -> None:
         devices = adb.devices()
         if not devices:
+            time.sleep(2)
+            devices = adb.devices()
+        if not devices:
             self._ui(lambda: self.status.set("Устройств нет. Включите ADB на ГУ и проверьте кабель."))
             self._ui(lambda: self._set_dot(False))
             self._ui(
                 lambda: self.info_box.configure(
-                    text="adb devices пуст.\nКабель data? ADB в инженерном меню? Драйвер Windows?"
+                    text=(
+                        "adb devices пуст — ноутбук не видит ГУ.\n"
+                        "После ACC снова: Телефон → *#*#888 → PIN 369875 → USB → ADB "
+                        "(не USB Storage).\n"
+                        "Кабель data ноутбук→штатный USB ГУ. Флешка с Hub — это не ADB.\n"
+                        "Затем «Подключить / обновить». Если пусто — «Перезапустить adb server»."
+                    )
                 )
             )
             self.journal.write("WARN", "connect", "adb devices пуст")
@@ -810,10 +813,12 @@ class HubApp:
     def resume_overlay(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb:
-                return
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ запуск панели не стартует.")
+
             def progress(message: str, percent: int) -> None:
                 self._show_progress(message, percent)
+
             for line in start_overlay(adb, progress=progress):
                 self.journal.write("INFO", "overlay", line)
 
@@ -822,8 +827,8 @@ class HubApp:
     def kill_overlay(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb:
-                return
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить».")
             for line in stop_overlay(adb):
                 self.log(line)
 

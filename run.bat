@@ -32,6 +32,13 @@ if not defined PY (
 set "VPY=%CD%\.venv\Scripts\python.exe"
 set "VPW=%CD%\.venv\Scripts\pythonw.exe"
 
+%PY% -c "import ensure_env, sys; sys.exit(0 if ensure_env.hub_running() else 1)" >nul 2>&1
+if not errorlevel 1 (
+  echo Hub already running. Close that window instead of clicking run.bat again.
+  echo %DATE% %TIME% hub already running>> logs\start.log
+  exit /b 0
+)
+
 if exist "%VPY%" (
   "%VPY%" -c "import cryptography" >nul 2>&1
   if not errorlevel 1 (
@@ -46,7 +53,8 @@ echo Checking .venv (only if cryptography is missing^)...
 if errorlevel 1 (
   echo.
   echo Failed. Log: logs\start.log
-  echo Delete the folder .venv on the flash drive and run run.bat again.
+  echo Do not delete .venv if Hub already worked. Wait for the first run.bat window.
+  echo pip needs internet — better at home, not car Wi-Fi. Then run.bat once.
   pause
   exit /b 1
 )
