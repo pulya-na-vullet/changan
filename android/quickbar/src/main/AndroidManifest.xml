@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.changanhub.quickdock"
-    android:versionCode="3"
-    android:versionName="1.2.0">
+    package="com.changanhub.quickkeep"
+    android:versionCode="6"
+    android:versionName="1.3.2">
 
     <uses-sdk
         android:minSdkVersion="24"
@@ -10,6 +10,7 @@
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.RECEIVE_LOCKED_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.GET_TASKS" />
@@ -44,6 +45,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.changanhub.quickbar.BootActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/BootTheme"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:directBootAware="true" />
+
         <service
             android:name="com.changanhub.quickbar.OverlayService"
             android:exported="true"
@@ -65,7 +75,11 @@
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.REBOOT" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
@@ -79,11 +93,19 @@
                 <action android:name="android.intent.action.ACTION_ACC_ON" />
                 <action android:name="android.intent.action.ACTION_BOOT_IPO" />
                 <action android:name="android.intent.action.BOOT_IPO" />
+                <action android:name="android.intent.action.ACTION_SHUTDOWN_IPO" />
                 <action android:name="mtk.intent.action.BOOT_IPO" />
+                <action android:name="com.mediatek.intent.action.BOOT_IPO" />
                 <action android:name="com.android.action.ACC_ON" />
                 <action android:name="com.microntek.bootcheck" />
                 <action android:name="autolink.intent.action.ACC_ON" />
+                <action android:name="com.fyt.boot.ACCON" />
+                <action android:name="com.syu.ms.ACCON" />
+                <action android:name="com.incall.intent.action.ACC_ON" />
+                <action android:name="com.incall.action.ACC_ON" />
+                <action android:name="com.incall.intent.action.POWER_ON" />
                 <action android:name="android.hardware.usb.action.USB_STATE" />
+                <action android:name="android.bluetooth.adapter.action.STATE_CHANGED" />
             </intent-filter>
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />
@@ -97,9 +119,22 @@
 
         <receiver
             android:name="com.changanhub.quickbar.WatchdogReceiver"
-            android:exported="false"
+            android:exported="true"
             android:enabled="true"
             android:directBootAware="true" />
+
+        <service
+            android:name="com.changanhub.quickbar.KeepAliveAccessibility"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/keep_alive_accessibility" />
+        </service>
 
         <receiver
             android:name="com.changanhub.quickbar.InstallResultReceiver"

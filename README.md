@@ -14,7 +14,7 @@
 | Проблема | Как Hub это закрывает |
 |---|---|
 | Нет developer-сертификата Changan | Локальный ключ с серийником `0xddb66eefd98476f3`. Именно его проверяет `CertificateManager` Feiyu/Wutong, заводской ключ не нужен |
-| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится один `pm install -r -t -g`. Старую версию Hub снимает через `pm uninstall` только если подпись не совпадает. Окно 提示 «is not auth» — отказ белого списка при установке; старая панель тогда не удаляется |
+| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: короткий `pm uninstall --user 0`. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.quickkeep` |
 | Приложения не видны в лаунчере | Сбрасывается кэш `com.iflytek.autofly.launcher` |
 | Нужен быстрый доступ поверх всего | QuickBar — правый док на 13.2″ вертикальном экране |
 | USB-A в USB-A Windows не видит машину | Пошаговый мастер + перезапуск adb server + подсказки по драйверу |
@@ -23,11 +23,11 @@
 
 Прямая ссылка на ZIP этой ветки:
 
-https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/changan-lamore-hub-2d5b.zip
+https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/fix-quickbar-reinstall-0bfc.zip
 
 Зеркало без промежуточной страницы:
 
-https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/changan-lamore-hub-2d5b
+https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/fix-quickbar-reinstall-0bfc
 
 Распакуйте архив и запустите `app.py`.
 
@@ -47,9 +47,11 @@ https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/changa
 
 1. Python 3.11+ и `adb` (platform-tools) уже должны быть в PATH.
 2. Скачайте ZIP по ссылке выше и распакуйте.
-3. Запуск: двойной клик по `run.bat`. Если `.venv` на флешке битый (ошибка
-   `pip._vendor.rich`), Hub сам пересоздаст его. Лог старта: `logs\start.log`
-   — появляется сразу, ещё до окна программы. `hub.log` пишется после открытия Hub.
+3. Запуск: двойной клик по `run.bat` (ASCII, без `chcp 65001` — из‑за него
+   cmd.exe глотал первую букву каждой строки: `/d`, `ho`, `et`). Если `.venv`
+   нет, bat создаст его; если pip/SSL падает — всё равно запускает Hub
+   системным `python app.py`. Можно сразу: `python app.py`. Лог старта:
+   `logs\start.log`. `hub.log` пишется после открытия Hub.
 4. На ГУ: приложение **Phone** → наберите `*#*#888` → вызов → пароль `369875`.
 5. Второй пункт слева (**USB**) → кнопка **ADB**.
 6. Кабель **data** USB-A ↔ USB-A в штатный разъём под парящей консолью.
@@ -68,7 +70,7 @@ python -m hub apps
 
 ## Правая панель (QuickBar)
 
-Приложение `com.changanhub.quickdock` держит поверх всех Activity узкую колонку
+Приложение `com.changanhub.quickkeep` держит поверх всех Activity узкую колонку
 справа:
 
 - тап — запуск;
@@ -80,9 +82,16 @@ python -m hub apps
 - клавиатура — панель сворачивается в **одну кнопку** на 20% ниже верхнего края; тап разворачивает снова;
 - кнопки панели — иконки (обновление, USB, корзина, установка);
 - высота иконок **×3** (удобно на 13.2″);
-- автозапуск после ACC off→on: `BOOT_COMPLETED` / `POWER_CONNECTED` / MTK `BOOT_IPO`,
-  JobScheduler и AlarmManager; если Feiyu всё равно убивает процесс — нужен новый ZIP;
-  `USER_PRESENT` и watchdog `AlarmManager` каждые 30 с;
+- автозапуск после ACC off→on: Feiyu часто **не шлёт** `BOOT_COMPLETED` и
+  force-stop ставит пакет в FLAG_STOPPED. Панель поднимает служба спец.
+  возможностей (Hub пишет `enabled_accessibility_services`), JobScheduler
+  (15–40 с, persisted), AlarmManager RTC+elapsed, FYT/Incall `ACC_ON` и
+  невидимый `BootActivity`. Если процесс пережил сон, а окна WindowManager
+  умерли — `ACTION_RESUME` пересоздаёт колонку. Свёрнутую панель сеть/USB
+  сами не раскрывают;
+- удаление сторонних приложений: Feiyu **не удаляет** пакеты с той же
+  whitelist-подписью (提示 «is auth app, not allow delete!»). Hub и корзина
+  панели пробуют короткий `pm uninstall`, иначе `pm hide` / `pm disable-user`;
 - Hub добавляет пакет в `dumpsys deviceidle whitelist` и разрешает
   `RUN_IN_BACKGROUND`, чтобы Feiyu не убивал процесс после выключения машины;
 - разрешение «поверх окон» Hub выдаёт сам через `appops`.
@@ -105,15 +114,16 @@ python -m hub apps
 Java — из Android Studio `jbr`, даже если `java` нет в PATH. Иначе Hub подписывает
 сам. В журнале будет строка `Подписано (apksigner:…)` или `Подписано (python-v1v2; …)`.
 
-`run.bat` ставит зависимости **один раз** и открывает Hub через `pythonw`, чтобы
-не нужно было кликать дважды.
+`run.bat` открывает Hub через `pythonw` или системный `python app.py`. Не
+ставьте `chcp 65001` — UTF-8 code page ломает разбор строк в cmd.exe.
 
 Поставленные так приложения система считает «авторизованными». Белое окно
 **提示** `xx is auth app, not allow delete!` — Feiyu **не удаляет** такой пакет
-(`pm uninstall` зависает ~20 с и ничего не снимает). Панель QuickBar поэтому
-ставится новым id `com.changanhub.quickdock`; старая `com.changanhub.quickbar`
-остаётся на ГУ, Hub её отключает (`pm disable-user` + снимает overlay).
-Сброс ГУ до заводских — единственный полный uninstall.
+(`pm uninstall` зависает ~8 с и ничего не снимает). Панель QuickBar поэтому
+ставится новым id `com.changanhub.quickkeep`; старые `quickbar` / `quickdock` /
+`quicklane` остаются на ГУ, Hub их отключает (`pm disable-user` + снимает overlay).
+Кнопка «Удалить с ГУ» тоже только отключает панель — после этого «Установить и
+запустить» ставит `quickkeep`. Сброс ГУ до заводских — единственный полный uninstall.
 
 **Нельзя:** ставить это на чужую машину, отключать Vecentek целиком, шить
 случайные `system` образы. `adb root` Hub **не вызывает** — на Feiyu он

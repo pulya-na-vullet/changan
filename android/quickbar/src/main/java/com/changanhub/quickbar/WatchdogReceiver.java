@@ -12,6 +12,8 @@ public class WatchdogReceiver extends BroadcastReceiver {
         String action = intent != null ? intent.getAction() : OverlayService.ACTION_KEEPALIVE;
         if (OverlayService.ACTION_SHOW.equals(action)) {
             OverlayService.start(app);
+        } else if (OverlayService.ACTION_RESUME.equals(action)) {
+            OverlayService.resumeAfterSleep(app);
         } else {
             OverlayService.keepAlive(app);
         }

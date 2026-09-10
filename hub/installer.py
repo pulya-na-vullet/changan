@@ -11,6 +11,13 @@ from typing import Callable
 from hub.adb import Adb, CommandResult
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
+OVERLAY_PACKAGES = (
+    "com.changanhub.quickkeep",
+    "com.changanhub.quicklane",
+    "com.changanhub.quickdock",
+    "com.changanhub.quickbar",
+)
+
 # Logs from Lamore Feiyu: first push to tmp succeeds; extra folders only add noise.
 REMOTE_CANDIDATES = (
     "/data/local/tmp",
@@ -76,6 +83,15 @@ class InstallReport:
         self.log.append(line)
 
 
+def _ok_uninstall(result: CommandResult) -> bool:
+    blob = (result.stdout + "\n" + result.stderr).lower()
+    if result.code == 124:
+        return False
+    if "not allow delete" in blob or "failure" in blob or "error" in blob:
+        return False
+    return "success" in blob or result.ok
+
+
 def _ok_install(result: CommandResult) -> bool:
     blob = (result.stdout + "\n" + result.stderr).lower()
     if "failure" in blob or "error" in blob or "not auth" in blob:
@@ -114,8 +130,22 @@ def install_apk(
         signed = apk
         step("Переподпись не нужна.", 15)
     else:
+        # Overlay leftovers are auth apps. Cloning their serial (not the cert)
+        # and generating a new keystore makes pm install -r fail with
+        # UPDATE_INCOMPATIBLE, then pm uninstall pops 提示 not allow delete.
+        # Sign from NewPipe/EasyConn probe serial instead.
+        installed_serial = None
+        if package and package not in OVERLAY_PACKAGES:
+            installed_serial = discover_package_signer_serial(adb, package, step)
         hu_serial = load_cached_hu_serial()
-        if hu_serial:
+        if installed_serial:
+            step(
+                f"Уже стоящий {package} serial=0x{installed_serial:x} — подписываю тем же ключом, "
+                "чтобы pm install -r прошёл.",
+                8,
+            )
+            hu_serial = installed_serial
+        elif hu_serial:
             step(f"Беру сохранённый serial ГУ 0x{hu_serial:x} (без скачивания приложений).", 8)
         else:
             hu_serial = discover_hu_signer_serial(adb, step)
@@ -148,9 +178,13 @@ def install_apk(
     report.signed_apk = signed
     report.package = package
 
-    # Never pm uninstall on Feiyu: auth packages show 提示 «is auth app, not allow
-    # delete!» and hang ADB ~20s without deleting. Overlay updates use a new
-    # applicationId (com.changanhub.quickdock) so this is a first install.
+    # Overlay re-signs can disagree with a leftover disabled package. Enable
+    # first so pm install -r can replace a matching signature; mismatched
+    # signatures get a short uninstall --user 0, not a 20s auth-delete hang.
+    if package:
+        present = adb.shell(f"pm path {package}", timeout=8)
+        if "package:" in (present.stdout or ""):
+            adb.shell(f"pm enable --user 0 {package}", timeout=8)
 
     # Working path from the HU log: push → /data/local/tmp + pm install -r -t -g.
     step("Шаг 2/5: копирую APK на ГУ (push). adb install пропускаю — на Feiyu он зависает.", 35)
@@ -180,13 +214,47 @@ def install_apk(
     )
     blob = f"{result.stdout}\n{result.stderr}"
     if not _ok_install(result) and "update_incompatible" in blob.lower():
-        step(
-            "Подпись не совпадает со стоящей панелью. Feiyu запрещает удалять auth-приложение "
-            "(提示 «is auth app, not allow delete!») — pm uninstall не вызываю, старая панель "
-            "остаётся. Новая ставится отдельным пакетом com.changanhub.quickdock.",
-            70,
+        conflict = _package_from_pm_error(blob) or package
+        overlay_conflict = bool(
+            (conflict and conflict in OVERLAY_PACKAGES) or (package and package in OVERLAY_PACKAGES)
         )
-        # Do not pm uninstall: that 提示 hangs ADB for 20s and does not delete.
+        if overlay_conflict:
+            step(
+                f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
+                "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickkeep.",
+                72,
+            )
+            if conflict:
+                uninstall_package(adb, conflict, step)
+        else:
+            step(
+                f"Подпись не совпадает со стоящим {conflict}. Пробую pm uninstall --user 0 "
+                "(лимит 8с), затем повторную установку.",
+                72,
+            )
+            if conflict:
+                gone = adb.shell(f"pm uninstall --user 0 {conflict}", timeout=8)
+                step(
+                    f"pm uninstall --user 0 {conflict} code={gone.code} "
+                    f"stdout={gone.stdout.strip()!r} stderr={gone.stderr.strip()!r}",
+                    73,
+                )
+                if _ok_uninstall(gone):
+                    step(f"выполняю {cmd}", 74)
+                    result = adb.shell(cmd, timeout=25)
+                    step(
+                        f"{cmd} code={result.code} stdout={result.stdout.strip()!r} "
+                        f"stderr={result.stderr.strip()!r}",
+                        75,
+                    )
+                else:
+                    step(
+                        "Feiyu не сняла пакет (提示 not allow delete или timeout). "
+                        "Старую панель не трогаю. Новая QuickBar ставится отдельным "
+                        "пакетом com.changanhub.quickkeep.",
+                        75,
+                    )
     if _ok_install(result):
         report.ok = True
         report.method = f"pm install {PM_INSTALL_FLAGS}"
@@ -200,7 +268,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quickdock не появится.",
+            "в списке com.changanhub.quickkeep не появится.",
             100,
         )
         return report
@@ -223,39 +291,48 @@ def _after_install(adb: Adb, report: InstallReport) -> None:
     report.add("Иконки в штатном меню Feiyu может не быть — это нормально.")
 
 
-def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:
-    """Read signing serials from third-party apps already on the head unit."""
+def discover_package_signer_serial(
+    adb: Adb, package: str, step: Progress | None = None
+) -> int | None:
+    """Read the signing serial of a package already on the head unit."""
     from hub.paths import app_data
 
+    result = adb.shell(f"pm path {package}", timeout=10)
+    remote = ""
+    for line in result.stdout.splitlines():
+        if "package:" in line:
+            remote = line.split("package:", 1)[-1].strip()
+            break
+    if not remote:
+        return None
     probe_dir = app_data() / "probe"
     probe_dir.mkdir(parents=True, exist_ok=True)
+    local = probe_dir / f"{package.split('.')[-1]}.apk"
+    pulled = adb.raw(["pull", remote, str(local)], timeout=40)
+    if not pulled.ok or not local.exists() or local.stat().st_size < 64:
+        return None
+    try:
+        serials = apk_certificate_serials(local)
+    except Exception:
+        serials = []
+    try:
+        local.unlink()
+    except OSError:
+        pass
+    if not serials:
+        return None
+    serial = serials[0]
+    if step:
+        step(f"на ГУ {package} serial=0x{serial:x}", 8)
+    return serial
+
+
+def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:
+    """Read signing serials from third-party apps already on the head unit."""
     for pkg in PROBE_PACKAGES:
-        result = adb.shell(f"pm path {pkg}", timeout=10)
-        remote = ""
-        for line in result.stdout.splitlines():
-            if "package:" in line:
-                remote = line.split("package:", 1)[-1].strip()
-                break
-        if not remote:
-            continue
-        local = probe_dir / f"{pkg.split('.')[-1]}.apk"
-        pulled = adb.raw(["pull", remote, str(local)], timeout=40)
-        if not pulled.ok or not local.exists() or local.stat().st_size < 64:
-            continue
-        try:
-            serials = apk_certificate_serials(local)
-        except Exception:
-            serials = []
-        try:
-            local.unlink()
-        except OSError:
-            pass
-        if not serials:
-            continue
-        serial = serials[0]
-        if step:
-            step(f"на ГУ {pkg} serial=0x{serial:x}", 8)
-        return serial
+        serial = discover_package_signer_serial(adb, pkg, step)
+        if serial:
+            return serial
     return None
 
 
@@ -264,8 +341,8 @@ def apk_package_name(apk: Path) -> str | None:
     from hub.catalog import CATALOG
 
     stem = apk.name.lower()
-    if "quickbar" in stem or "quickdock" in stem:
-        return "com.changanhub.quickdock"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep")):
+        return "com.changanhub.quickkeep"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")
@@ -292,10 +369,10 @@ def uninstall_package(adb: Adb, package: str, step: Progress | None = None) -> b
         if step:
             step(message, percent)
 
-    if package in ("com.changanhub.quickbar", "com.changanhub.quickdock"):
+    if package in OVERLAY_PACKAGES:
         note(
             f"{package} — auth-приложение, Feiyu не удаляет (提示 not allow delete). "
-            "Отключаю, не uninstall.",
+            "Отключаю, не длинный uninstall.",
         )
         adb.shell(f"am force-stop {package}", timeout=8)
         adb.shell(f"appops set {package} SYSTEM_ALERT_WINDOW ignore", timeout=8)

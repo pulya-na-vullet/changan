@@ -70,6 +70,18 @@ def _adb_candidates() -> list[Path]:
     return uniq
 
 
+def _no_adb_target(text: str) -> bool:
+    """True when adb has no HU — extra password/exec-out retries only waste time."""
+    low = (text or "").lower()
+    return (
+        "no devices/emulators found" in low
+        or "no devices found" in low
+        or "device not found" in low
+        or ("device" in low and "not found" in low)
+        or "device offline" in low
+    )
+
+
 def _run_kwargs() -> dict:
     return {
         "capture_output": True,
@@ -119,6 +131,15 @@ class Adb:
             )
         except FileNotFoundError as exc:
             raise AdbError(f"Не удалось запустить adb: {exc}") from exc
+        except OSError as exc:
+            elapsed = int((time.monotonic() - started) * 1000)
+            winerr = getattr(exc, "winerror", None)
+            code = 206 if winerr == 206 else (exc.errno or 1)
+            stderr = f"{type(exc).__name__}: {exc}"
+            result = CommandResult(False, "", stderr, code, argv)
+            if self.on_log:
+                self.on_log(argv, result.stdout, result.stderr, result.code, elapsed)
+            return result
         except subprocess.TimeoutExpired as exc:
             elapsed = int((time.monotonic() - started) * 1000)
             stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
@@ -218,11 +239,16 @@ class Adb:
             blob = (last.stdout + "\n" + last.stderr).lower()
             stdout = self._strip_password_banner(last.stdout)
             stderr = self._strip_password_banner(last.stderr)
+            body = (stdout + "\n" + stderr).lower()
             if last.code == 124:
                 # One hang is enough. Retrying 4 stdin variants used to freeze
                 # the UI for timeout×5 (pm install 25s → 125s of a dead queue).
                 return CommandResult(False, stdout, stderr or last.stderr, 124, last.argv)
-            if "device" in blob and "not found" in blob:
+            if _no_adb_target(blob):
+                return CommandResult(False, stdout, stderr, last.code, last.argv)
+            if "security exception" in body or "securityexception" in body:
+                return CommandResult(False, stdout, stderr, last.code, last.argv)
+            if "illegalargumentexception" in body or "unknown package" in body or "exception occurred" in body:
                 return CommandResult(False, stdout, stderr, last.code, last.argv)
             # Feiyu prints "please input verify password: verify success!" on
             # stderr even when the command succeeded with empty stdout (appops).

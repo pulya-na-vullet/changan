@@ -206,11 +206,82 @@ def test_matching_signature_replaces_without_uninstall(tmp_path: Path) -> None:
 def test_apk_package_name_quickbar_is_new_id(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickdock"
-    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickdock"
+    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickkeep"
+    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickkeep"
+    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.quickkeep"
 
 
-def test_install_does_not_uninstall_auth_package(tmp_path: Path) -> None:
+def test_install_skips_uninstall_on_overlay_signature_mismatch(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    installs = {"n": 0}
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            installs["n"] += 1
+            return CommandResult(
+                False,
+                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quicklane signatures do not match previously installed version; ignoring!]",
+                "",
+                1,
+                [],
+            )
+        if command.startswith("pm uninstall"):
+            return CommandResult(True, "Success", "", 0, [])
+        if command.startswith("pm path"):
+            return CommandResult(True, "package:/data/app/demo/base.apk", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickkeep")
+    assert not report.ok
+    assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
+    assert installs["n"] == 1
+    assert any("not allow delete" in line.lower() or "quickkeep" in line.lower() for line in report.log)
+    assert any("pm disable-user --user 0 com.changanhub.quicklane" in cmd for cmd in fake.shells)
+
+
+def test_install_retries_uninstall_for_non_overlay_mismatch(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    installs = {"n": 0}
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            installs["n"] += 1
+            if installs["n"] == 1:
+                return CommandResult(
+                    False,
+                    "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package mobi.zona signatures do not match previously installed version; ignoring!]",
+                    "",
+                    1,
+                    [],
+                )
+            return CommandResult(True, "Success", "", 0, [])
+        if command.startswith("pm uninstall"):
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True, package="mobi.zona")
+    assert report.ok
+    assert any(cmd.startswith("pm uninstall --user 0 mobi.zona") for cmd in fake.shells)
+    assert installs["n"] == 2
+
+
+def test_install_keeps_auth_package_if_uninstall_blocked(tmp_path: Path) -> None:
     apk = tmp_path / "demo.apk"
     with zipfile.ZipFile(apk, "w") as zf:
         zf.writestr("AndroidManifest.xml", b"mf")
@@ -223,20 +294,20 @@ def test_install_does_not_uninstall_auth_package(tmp_path: Path) -> None:
         if command.startswith("pm install"):
             return CommandResult(
                 False,
-                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quickbar signatures do not match previously installed version; ignoring!]",
+                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quickdock signatures do not match previously installed version; ignoring!]",
                 "",
                 1,
                 [],
             )
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "is auth app, not allow delete!", 1, [])
         return CommandResult(True, "", "", 0, [])
 
     fake.shell = shell  # type: ignore[method-assign]
     with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
-        report = install_apk(fake, apk, already_signed=True)
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickdock")
     assert not report.ok
-    assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
-    assert any(
-        "not allow delete" in line.lower() or "не удаляет" in line.lower() or "запрещает удалять" in line
-        for line in report.log
-    )
+    assert not any(cmd.startswith("pm uninstall --user 0") for cmd in fake.shells)
+    assert sum(1 for cmd in fake.shells if cmd.startswith("pm install")) == 1
+    assert any("quickkeep" in line.lower() or "not allow delete" in line.lower() for line in report.log)
 

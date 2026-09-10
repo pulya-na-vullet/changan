@@ -11,7 +11,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements View.OnClickListener {
     private TextView status;
 
     @Override
@@ -20,35 +20,33 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         status = findViewById(R.id.status);
         Button start = findViewById(R.id.btn_start);
-        start.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!canDraw()) {
-                    requestOverlay();
-                    return;
-                }
-                startPanel();
-                status.setText("Панель запущена справа");
-                finish();
-            }
-        });
+        start.setOnClickListener(this);
         refresh();
         if (canDraw()) {
             startPanel();
+            finish();
         }
+    }
+
+    @Override
+    public void onClick(View v) {
+        if (!canDraw()) {
+            requestOverlay();
+            return;
+        }
+        requestIgnoreBattery();
+        startPanel();
+        status.setText("Панель запущена справа");
+        finish();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         refresh();
-        if (canDraw()) {
-            startPanel();
-        }
     }
 
     private void startPanel() {
-        requestIgnoreBattery();
         OverlayService.start(this);
         OverlayService.scheduleWatchdog(this);
         KeepAliveJob.schedule(this);

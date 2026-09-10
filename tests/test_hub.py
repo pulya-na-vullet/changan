@@ -13,9 +13,21 @@ def test_catalog_has_quickbar() -> None:
 
     assert any(app.id == "quickbar" for app in CATALOG)
     assert all(app.package for app in CATALOG)
-    row = package_label("com.changanhub.quickdock")
+    row = package_label("com.changanhub.quickkeep")
     assert "QuickBar" in row
-    assert package_from_row(row) == "com.changanhub.quickdock"
+    assert package_from_row(row) == "com.changanhub.quickkeep"
     legacy = package_label("com.changanhub.quickbar")
-    assert "quickbar" in legacy
+    assert "quickbar" in legacy.lower()
     assert package_from_row(legacy) == "com.changanhub.quickbar"
+    previous = package_label("com.changanhub.quickdock")
+    assert package_from_row(previous) == "com.changanhub.quickdock"
+    lane = package_label("com.changanhub.quicklane")
+    assert package_from_row(lane) == "com.changanhub.quicklane"
+
+
+def test_need_adb_dialog_does_not_close_over_exc() -> None:
+    from pathlib import Path
+
+    src = Path("hub/gui.py").read_text(encoding="utf-8")
+    assert 'lambda: messagebox.showerror("ADB", str(exc))' not in src
+    assert "lambda m=msg: messagebox.showerror(\"ADB\", m)" in src

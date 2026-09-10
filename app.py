@@ -18,6 +18,15 @@ def _prepare() -> None:
 
 def main() -> None:
     _prepare()
+    from ensure_env import clear_hub_lock, hub_running, write_hub_lock
+
+    if hub_running():
+        print("Changan Hub уже запущен. Закройте то окно или подождите.")
+        raise SystemExit(0)
+    write_hub_lock()
+    import atexit
+
+    atexit.register(clear_hub_lock)
     try:
         from hub.gui import main as gui_main
     except ModuleNotFoundError as exc:

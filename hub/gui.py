@@ -246,31 +246,25 @@ class HubApp:
     def _page_connect(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
         ttk.Label(page, text="USB-A → USB-A и инженерное меню", style="Title.TLabel").pack(anchor="w")
-        steps = (
-            "1. На ГУ откройте Phone / Телефон. Наберите "
-            f"{ENGINEERING_CODE} и нажмите вызов.\n"
-            f"2. Пароль инженерного меню: {ENGINEERING_PIN}. Меню может быть на китайском — "
-            "это нормально даже на английской ГУ.\n"
-            "3. Второй пункт слева (USB). Нажмите кнопку ADB. Не USB Storage.\n"
-            "4. Кабель USB-A — USB-A именно data-кабель (4 контакта), не зарядка. "
-            "Вставьте в штатный USB под парящей консолью / в боксе.\n"
-            "5. На ноутбуке Windows: драйвер Google USB / Universal ADB. "
-            "Если в диспетчере устройств «Unknown Android» — обновите драйвер вручную.\n"
-            f"6. Пароль adb shell, если спросит: {SHELL_PASSWORD}. Hub вводит его сам.\n"
-            "Сертификат разработчика Changan не нужен: Hub сам выпускает локальный ключ "
-            "с серийником 0xddb66eefd98476f3, который принимает CertificateManager ГУ."
+        row = ttk.Frame(page)
+        row.pack(anchor="w", pady=8, fill=tk.X)
+        self.connect_btn = ttk.Button(
+            row, text="Подключить / обновить", style="Accent.TButton", command=self.refresh_connection
         )
-        tk.Label(page, text=steps, bg=BG, fg=TEXT, font=FONT, justify="left", wraplength=820).pack(
+        self.connect_btn.pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(row, text="Перезапустить adb server", command=self.restart_adb).pack(side=tk.LEFT)
+        steps = (
+            f"Телефон ГУ: {ENGINEERING_CODE} → PIN {ENGINEERING_PIN} → USB → ADB "
+            "(не Storage). После ACC повторить. "
+            "Кабель ноутбук→штатный USB ГУ, не флешка E:. "
+            f"Пароль shell {SHELL_PASSWORD} Hub вводит сам. "
+            "Пустой список = ADB на ГУ выключен, не поломка программы."
+        )
+        tk.Label(page, text=steps, bg=BG, fg=TEXT, font=FONT, justify="left", wraplength=640).pack(
             anchor="w", pady=12
         )
-        row = ttk.Frame(page)
-        row.pack(anchor="w", pady=8)
-        ttk.Button(row, text="Подключить / обновить", style="Accent.TButton", command=self.refresh_connection).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
-        ttk.Button(row, text="Перезапустить adb server", command=self.restart_adb).pack(side=tk.LEFT)
         self.info_box = tk.Label(page, text="", bg=CARD, fg=TEXT, font=FONT_MONO, justify="left", anchor="nw")
-        self.info_box.pack(fill=tk.BOTH, expand=True, pady=16)
+        self.info_box.pack(fill=tk.X, pady=16)
         return page
 
     def _page_install(self) -> ttk.Frame:
@@ -280,9 +274,11 @@ class HubApp:
             page,
             text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
-            "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет: "
-            "Hub не вызывает pm uninstall. QuickBar ставится как новый пакет com.changanhub.quickdock, "
-            "старая com.changanhub.quickbar остаётся на ГУ, но отключается. "
+            "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
+            "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
+            "Панель QuickBar — отдельный пакет com.changanhub.quickkeep; старые "
+            "quickbar/quickdock/quicklane Hub только отключает, не удаляет "
+            "(иначе 提示 «is auth app, not allow delete!»). "
             "adb install на Feiyu зависает — Hub его не вызывает. "
             "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
@@ -328,12 +324,11 @@ class HubApp:
             style="Muted.TLabel",
         ).pack(anchor="w")
         body = (
-            "Feiyu не удаляет уже авторизованный пакет (提示 «is auth app, not allow delete!»). "
-            "Hub больше не вызывает pm uninstall: ставит новый com.changanhub.quickdock "
-            "и отключает старую com.changanhub.quickbar. Скачайте новый ZIP. "
-            "Свёрнуто: две отдельные кнопки, между ними ≥20% экрана без оверлея (Яндекс). "
-            "Клавиатура — одна кнопка на 20% ниже верха. После ACC панель поднимается сама. "
-            "На экране — зелёная колонка СПРАВА, не иконка в меню."
+            "После ACC колонка поднимается сама (спец. возможности + Job, без окна на карте). "
+            "Сначала нажмите «Установить и запустить» — это включает автозапуск. "
+            "«Удалить с ГУ» только отключает панель: Feiyu не стирает auth "
+            "(提示 «is auth app, not allow delete!»). Рабочая — com.changanhub.quickkeep. "
+            "Свёрнутую колонку сеть/USB не раскрывают. Зелёная колонка СПРАВА, не иконка в меню."
         )
         ttk.Label(
             page,
@@ -349,11 +344,15 @@ class HubApp:
         ttk.Label(page, text="Что уже стоит на ГУ", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="После установки панели здесь появится строка «QuickBar (правая панель) · "
-            "com.changanhub.quickdock». Старая com.changanhub.quickbar тоже может остаться в списке — "
-            "Feiyu её не удаляет (提示 not allow delete). На экране — зелёная колонка справа. "
-            "В фильтре наберите quickbar или quickdock.",
+            text=(
+                "После установки панели здесь появится «QuickBar · com.changanhub.quickkeep». "
+                "Старые quickbar/quickdock/quicklane могут остаться — Feiyu не стирает auth. "
+                "«Удалить / отключить»: для панели только hide/disable, без uninstall. "
+                "В фильтре: quickkeep, quicklane, quickbar, zona."
+            ),
             style="Muted.TLabel",
+            wraplength=640,
+            justify="left",
         ).pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(page)
         row.pack(fill=tk.X, pady=8)
@@ -362,6 +361,7 @@ class HubApp:
         )
         self.launch_btn = ttk.Button(row, text="Запустить выбранное", command=self.launch_selected)
         self.launch_btn.pack(side=tk.LEFT, padx=8)
+        ttk.Button(row, text="Удалить / отключить", command=self.disable_selected).pack(side=tk.LEFT)
         self.pkg_filter = tk.StringVar()
         entry = tk.Entry(row, textvariable=self.pkg_filter, bg=CARD, fg=TEXT, insertbackground=TEXT)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
@@ -465,7 +465,8 @@ class HubApp:
                 self.journal.write("INFO", "adb", f"бинарник: {self.adb.binary}")
             except AdbError as exc:
                 self.journal.error("adb", exc)
-                self._ui(lambda: messagebox.showerror("ADB", str(exc)))
+                msg = str(exc)
+                self._ui(lambda m=msg: messagebox.showerror("ADB", m))
                 return None
         else:
             self.adb.on_log = self.journal.adb
@@ -641,11 +642,20 @@ class HubApp:
     def _refresh_now(self, adb: Adb) -> None:
         devices = adb.devices()
         if not devices:
+            time.sleep(2)
+            devices = adb.devices()
+        if not devices:
             self._ui(lambda: self.status.set("Устройств нет. Включите ADB на ГУ и проверьте кабель."))
             self._ui(lambda: self._set_dot(False))
             self._ui(
                 lambda: self.info_box.configure(
-                    text="adb devices пуст.\nКабель data? ADB в инженерном меню? Драйвер Windows?"
+                    text=(
+                        "adb devices пуст — ноутбук не видит ГУ.\n"
+                        "После ACC снова: Телефон → *#*#888 → PIN 369875 → USB → ADB "
+                        "(не USB Storage).\n"
+                        "Кабель data ноутбук→штатный USB ГУ. Флешка с Hub — это не ADB.\n"
+                        "Затем «Подключить / обновить». Если пусто — «Перезапустить adb server»."
+                    )
                 )
             )
             self.journal.write("WARN", "connect", "adb devices пуст")
@@ -806,10 +816,12 @@ class HubApp:
     def resume_overlay(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb:
-                return
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ запуск панели не стартует.")
+
             def progress(message: str, percent: int) -> None:
                 self._show_progress(message, percent)
+
             for line in start_overlay(adb, progress=progress):
                 self.journal.write("INFO", "overlay", line)
 
@@ -818,8 +830,8 @@ class HubApp:
     def kill_overlay(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb:
-                return
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить».")
             for line in stop_overlay(adb):
                 self.log(line)
 
@@ -848,11 +860,19 @@ class HubApp:
             pkgs = adb.packages()
             self.pkg_all = pkgs
             self.root.after(0, self._apply_pkg_filter)
-            if "com.changanhub.quickdock" in pkgs or "com.changanhub.quickbar" in pkgs:
-                self.log("Панель есть в списке: QuickBar · com.changanhub.quickdock")
+            if any(
+                p in pkgs
+                for p in (
+                    "com.changanhub.quickkeep",
+                    "com.changanhub.quicklane",
+                    "com.changanhub.quickdock",
+                    "com.changanhub.quickbar",
+                )
+            ):
+                self.log("Панель есть в списке: QuickBar · com.changanhub.quickkeep")
             else:
                 self.log(
-                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickdock) нет — "
+                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickkeep) нет — "
                     "установка не прошла, в меню ГУ его тоже не будет."
                 )
 
@@ -881,6 +901,28 @@ class HubApp:
             self.log(result.text or result.stderr or f"launch {pkg}")
 
         self._work(f"Запуск {pkg}", go)
+
+    def disable_selected(self) -> None:
+        selection = self.pkg_list.curselection()
+        if not selection:
+            return
+        pkg = package_from_row(self.pkg_list.get(selection[0]))
+
+        def go() -> None:
+            from hub.overlay import disable_user_package
+
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить».")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in disable_user_package(adb, pkg, progress=progress):
+                self.journal.write("INFO", "apps", line)
+            self.refresh_packages()
+
+        self._work(f"Удаление {pkg}", go)
 
     def take_screenshot(self) -> None:
         def go() -> None:

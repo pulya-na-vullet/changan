@@ -65,8 +65,18 @@ public class OverlayService extends Service {
     public static final String ACTION_REFRESH = "com.changanhub.quickbar.REFRESH";
     public static final String ACTION_KEEPALIVE = "com.changanhub.quickbar.KEEPALIVE";
     public static final String ACTION_PAUSE = "com.changanhub.quickbar.PAUSE";
-    /** Previous applicationId. Feiyu forbids deleting that auth package. */
-    public static final String LEGACY_PACKAGE = "com.changanhub.quickbar";
+    /** Recreate WindowManager views after ACC: process can survive while surfaces die. */
+    public static final String ACTION_RESUME = "com.changanhub.quickbar.RESUME";
+    /**
+     * Previous applicationIds. Feiyu forbids deleting an auth package, so each
+     * incompatible re-sign ships a new id and Hub disables the old ones.
+     */
+    public static final String[] LEGACY_PACKAGES = {
+            "com.changanhub.quickbar",
+            "com.changanhub.quickdock",
+            "com.changanhub.quicklane",
+    };
+    public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
     /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
     public static final int HEIGHT_SCALE = 3;
@@ -113,6 +123,7 @@ public class OverlayService extends Service {
     /** After the user opens the bar while IME is up, do not peek again until IME hides. */
     private boolean ignoreImePeek;
     private long overlayPausedUntil;
+    private long lastReattachElapsed;
     private View usbToggle;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<AppItem> apps = new ArrayList<>();
@@ -145,6 +156,10 @@ public class OverlayService extends Service {
         launch(context, ACTION_KEEPALIVE);
     }
 
+    public static void resumeAfterSleep(Context context) {
+        launch(context, ACTION_RESUME);
+    }
+
     public static void pauseForDialog(Context context) {
         launch(context, ACTION_PAUSE);
     }
@@ -152,10 +167,17 @@ public class OverlayService extends Service {
     private static void launch(Context context, String action) {
         Intent intent = new Intent(context, OverlayService.class);
         intent.setAction(action);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (Exception foregroundDenied) {
+            try {
+                context.startService(intent);
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -168,11 +190,14 @@ public class OverlayService extends Service {
         Intent intent = new Intent(app, WatchdogReceiver.class);
         intent.setAction(ACTION_KEEPALIVE);
         PendingIntent pi = pending(app, WATCHDOG_REQ, intent);
-        long at = SystemClock.elapsedRealtime() + WATCHDOG_MS;
+        long elapsedAt = SystemClock.elapsedRealtime() + WATCHDOG_MS;
+        long rtcAt = System.currentTimeMillis() + WATCHDOG_MS;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsedAt, pi);
+            PendingIntent rtc = pending(app, WATCHDOG_REQ + 1, intent);
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, rtcAt, rtc);
         } else {
-            am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+            am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsedAt, pi);
         }
     }
 
@@ -184,13 +209,17 @@ public class OverlayService extends Service {
         }
         for (int i = 0; i < BOOT_RETRY_SEC.length; i++) {
             Intent intent = new Intent(app, WatchdogReceiver.class);
-            intent.setAction(ACTION_SHOW);
-            PendingIntent pi = pending(app, 100 + i, intent);
-            long at = SystemClock.elapsedRealtime() + BOOT_RETRY_SEC[i] * 1000L;
+            intent.setAction(ACTION_KEEPALIVE);
+            PendingIntent elapsedPi = pending(app, 100 + i, intent);
+            PendingIntent rtcPi = pending(app, 200 + i, intent);
+            long elapsedAt = SystemClock.elapsedRealtime() + BOOT_RETRY_SEC[i] * 1000L;
+            long rtcAt = System.currentTimeMillis() + BOOT_RETRY_SEC[i] * 1000L;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsedAt, elapsedPi);
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, rtcAt, rtcPi);
             } else {
-                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsedAt, elapsedPi);
+                am.set(AlarmManager.RTC_WAKEUP, rtcAt, rtcPi);
             }
         }
     }
@@ -232,6 +261,11 @@ public class OverlayService extends Service {
         String action = intent != null ? intent.getAction() : ACTION_SHOW;
         if (ACTION_HIDE.equals(action)) {
             detachOverlay();
+            return START_STICKY;
+        }
+        if (ACTION_RESUME.equals(action)) {
+            reattachOverlay();
+            suppressLegacy();
             return START_STICKY;
         }
         if (!hasOverlay()) {
@@ -284,11 +318,7 @@ public class OverlayService extends Service {
         lifeReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if (!hasOverlay()) {
-                    attachOverlay();
-                } else {
-                    applySize();
-                }
+                reattachOverlay();
             }
         };
         IntentFilter filter = new IntentFilter();
@@ -297,6 +327,9 @@ public class OverlayService extends Service {
         filter.addAction(Intent.ACTION_POWER_CONNECTED);
         filter.addAction(Intent.ACTION_USER_UNLOCKED);
         filter.addAction(Intent.ACTION_BOOT_COMPLETED);
+        filter.addAction("com.fyt.boot.ACCON");
+        filter.addAction("com.incall.intent.action.ACC_ON");
+        filter.addAction("android.intent.action.ACC_ON");
         registerReceiver(lifeReceiver, filter);
     }
 
@@ -323,9 +356,13 @@ public class OverlayService extends Service {
                 nm.createNotificationChannel(channel);
             }
         }
-        Intent launch = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(
-                this, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent launch = new Intent(this, OverlayService.class);
+        launch.setAction(ACTION_KEEPALIVE);
+        int piFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            piFlags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pi = PendingIntent.getService(this, 0, launch, piFlags);
         Notification.Builder b;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             b = new Notification.Builder(this, CH);
@@ -347,6 +384,16 @@ public class OverlayService extends Service {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         relayout();
         reloadApps();
+    }
+
+    private void reattachOverlay() {
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastReattachElapsed < 2500L) {
+            return;
+        }
+        lastReattachElapsed = now;
+        detachOverlay();
+        attachOverlay();
     }
 
     private boolean hasOverlay() {
@@ -914,7 +961,7 @@ public class OverlayService extends Service {
             }
             String pkg = ri.activityInfo.packageName;
             if (getPackageName().equals(pkg)
-                    || LEGACY_PACKAGE.equals(pkg)
+                    || isLegacyPackage(pkg)
                     || seen.contains(pkg)) {
                 continue;
             }
@@ -1180,7 +1227,7 @@ public class OverlayService extends Service {
     }
 
     private void uninstallUserApp(String pkg) {
-        if (pkg == null || pkg.equals(getPackageName()) || LEGACY_PACKAGE.equals(pkg)) {
+        if (pkg == null || pkg.equals(getPackageName()) || isLegacyPackage(pkg)) {
             return;
         }
         pauseForDialog(this);
@@ -1190,6 +1237,12 @@ public class OverlayService extends Service {
         } catch (Exception ignored) {
             setCollapsed(false);
         }
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                reloadApps();
+            }
+        }, 1200);
     }
 
     private View row(final AppItem item, boolean favorite) {
@@ -1393,24 +1446,38 @@ public class OverlayService extends Service {
         return Math.round(value * m.density);
     }
 
-    /** Old com.changanhub.quickbar cannot be uninstalled on Feiyu (auth, not allow delete). */
+    /** Old overlay ids cannot be uninstalled on Feiyu (auth, not allow delete). */
     private void suppressLegacy() {
-        if (LEGACY_PACKAGE.equals(getPackageName())) {
-            return;
-        }
-        try {
-            Intent hide = new Intent(ACTION_HIDE);
-            hide.setClassName(LEGACY_PACKAGE, OverlayService.class.getName());
-            startService(hide);
-        } catch (Exception ignored) {
-        }
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
-            if (am != null) {
-                am.killBackgroundProcesses(LEGACY_PACKAGE);
+        for (String pkg : LEGACY_PACKAGES) {
+            if (pkg.equals(getPackageName())) {
+                continue;
             }
-        } catch (Exception ignored) {
+            try {
+                Intent hide = new Intent(ACTION_HIDE);
+                hide.setClassName(pkg, OverlayService.class.getName());
+                startService(hide);
+            } catch (Exception ignored) {
+            }
+            try {
+                ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+                if (am != null) {
+                    am.killBackgroundProcesses(pkg);
+                }
+            } catch (Exception ignored) {
+            }
         }
+    }
+
+    static boolean isLegacyPackage(String pkg) {
+        if (pkg == null) {
+            return false;
+        }
+        for (String legacy : LEGACY_PACKAGES) {
+            if (legacy.equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static class AppItem {

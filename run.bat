@@ -1,72 +1,63 @@
 @echo off
 setlocal EnableExtensions
-chcp 65001 >nul
-title Changan Hub
 cd /d "%~dp0"
 
-if not exist logs mkdir logs
-echo %DATE% %TIME% run.bat start>> logs\start.log
+REM Keep this file ASCII-only. Do not add "chcp 65001": UTF-8 code page
+REM makes cmd.exe skip the first character of later lines
+REM ("cd /d" becomes "/d", "echo" becomes "ho").
 
-echo Changan Hub
-echo.
+set "HUB_LOG=%~dp0logs\start.log"
+if not exist "%~dp0logs" mkdir "%~dp0logs" >nul 2>&1
+echo [%date% %time%] run.bat start>> "%HUB_LOG%"
 
-set "PY="
-where py >nul 2>&1 && (
-  py -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
-  if not errorlevel 1 set "PY=py -3"
-)
-if not defined PY (
-  where python >nul 2>&1 && (
-    python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
-    if not errorlevel 1 set "PY=python"
-  )
-)
-if not defined PY (
-  echo Python 3.10+ not found. Install from python.org and tick "Add python.exe to PATH".
-  echo Do not use the Microsoft Store stub.
-  echo %DATE% %TIME% no python>> logs\start.log
-  pause
-  exit /b 1
-)
+if exist "%~dp0hub.lock" goto :launch
+if exist "%~dp0logs\hub.lock" goto :launch
 
-set "VPY=%CD%\.venv\Scripts\python.exe"
-set "VPW=%CD%\.venv\Scripts\pythonw.exe"
+if exist "%~dp0.venv\Scripts\python.exe" goto :launch
 
-if exist "%VPY%" (
-  "%VPY%" -c "import cryptography" >nul 2>&1
-  if not errorlevel 1 (
-    echo .venv already ready, skipping pip.
-    echo %DATE% %TIME% venv ok skip ensure_env>> logs\start.log
-    goto :launch
-  )
-)
-
-echo Checking .venv (only if cryptography is missing^)...
-%PY% ensure_env.py
+where python >nul 2>&1
 if errorlevel 1 (
-  echo.
-  echo Failed. Log: logs\start.log
-  echo Delete the folder .venv on the flash drive and run run.bat again.
+  echo Python not found. Install Python 3 from python.org and tick "Add python.exe to PATH".
+  echo Then double-click run.bat again, or run: python app.py
   pause
   exit /b 1
 )
+
+echo Creating .venv ...
+python -m venv .venv
+if errorlevel 1 (
+  echo venv create failed. Launching with system Python.
+  goto :launch
+)
+
+echo [%date% %time%] pip install>> "%HUB_LOG%"
+".venv\Scripts\python.exe" -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org >> "%HUB_LOG%" 2>&1
+".venv\Scripts\python.exe" -m pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org >> "%HUB_LOG%" 2>&1
 
 :launch
-if not exist "%VPY%" (
-  echo Missing %VPY%
-  pause
-  exit /b 1
+if exist "%~dp0.venv\Scripts\pythonw.exe" (
+  start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0app.py"
+  goto :ok
+)
+if exist "%~dp0.venv\Scripts\python.exe" (
+  start "" "%~dp0.venv\Scripts\python.exe" "%~dp0app.py"
+  goto :ok
+)
+where pythonw >nul 2>&1
+if not errorlevel 1 (
+  start "" pythonw "%~dp0app.py"
+  goto :ok
+)
+where python >nul 2>&1
+if not errorlevel 1 (
+  start "" python "%~dp0app.py"
+  goto :ok
 )
 
-echo Starting Hub...
-echo %DATE% %TIME% launching app.py>> logs\start.log
-if exist "%VPW%" (
-  start "Changan Hub" /D "%CD%" "%VPW%" app.py
-) else (
-  "%VPY%" app.py
-  if errorlevel 1 (
-    echo Hub exited with an error. See logs\hub.log and logs\start.log
-    pause
-  )
-)
+echo Python not found. Install Python 3 and tick "Add python.exe to PATH".
+pause
+exit /b 1
+
+:ok
+echo [%date% %time%] launched>> "%HUB_LOG%"
 exit /b 0
