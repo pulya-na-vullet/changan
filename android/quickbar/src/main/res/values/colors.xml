@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#E60B1220</color>
+    <color name="bg_solid">#FF101828</color>
+    <color name="accent">#FF3DDC97</color>
+    <color name="accent_dim">#FF1F6F4A</color>
+    <color name="text">#FFF3F6FB</color>
+    <color name="muted">#FF9AA7B8</color>
+    <color name="handle">#CC3DDC97</color>
+    <color name="danger">#FFFF6B6B</color>
+    <color name="icon_bg">#3328E07A</color>
+</resources>

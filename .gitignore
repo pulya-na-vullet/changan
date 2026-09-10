@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+.pytest_cache/
+hub/certs/
+*.p12
+*.jks
+screenshots/
+.idea/
+.vscode/
+logs/*.log
+data/
+*.idsig
+apps/QuickBar-v1.apk
