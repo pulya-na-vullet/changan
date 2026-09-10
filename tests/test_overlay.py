@@ -138,7 +138,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.2"' in mf
+    assert 'android:versionName="1.3.4"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -206,8 +206,22 @@ def test_quickbar_groups_and_usb_install() -> None:
         encoding="utf-8"
     )
     assert 'sectionHeader("Сторонние")' in src
-    assert 'sectionHeader("Системные")' in src
-    assert "R.drawable.ic_delete" in src
+    assert 'foldHeader("Системные"' in src
+    assert 'sectionHeader("Скрытые")' in src
+    assert "R.drawable.ic_delete" not in src
+    assert "R.drawable.ic_eye_off" in src
+    assert "R.drawable.ic_check" in src
+    assert "R.drawable.ic_close" in src
+    assert "R.drawable.ic_reorder" in src
+    assert "R.drawable.ic_arrow_up" in src
+    assert "R.drawable.ic_arrow_down" in src
+    assert "KEY_HIDDEN" in src
+    assert "KEY_ORDER" in src
+    assert "pendingHidePkg" in src
+    assert "setHidden" in src
+    assert "moveUserApp" in src
+    assert "reorderMode" in src
+    assert "systemExpanded" in src
     assert "R.drawable.ic_usb" in src
     assert "R.drawable.logo_itm" not in src
     assert "expandToIcons" not in src
@@ -227,7 +241,8 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "KEY_RECENT" in src
     assert "UsbStorage.apkFiles" in src
     assert "PackageActions.copyToCache" in src
-    assert "PackageActions.uninstall" in src
+    assert "uninstallUserApp" not in src
+    assert "PackageActions.uninstall" not in src
     assert "PackageActions.install" in src
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java")).is_file()
     job = Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java").read_text(
@@ -247,7 +262,12 @@ def test_quickbar_icons_exist() -> None:
         "ic_logo.xml",
         "ic_menu.xml",
         "ic_usb.xml",
-        "ic_delete.xml",
+        "ic_eye_off.xml",
+        "ic_check.xml",
+        "ic_close.xml",
+        "ic_reorder.xml",
+        "ic_arrow_up.xml",
+        "ic_arrow_down.xml",
         "ic_collapse.xml",
         "ic_refresh.xml",
         "ic_install.xml",

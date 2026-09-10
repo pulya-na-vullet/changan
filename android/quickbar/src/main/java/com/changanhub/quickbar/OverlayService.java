@@ -91,6 +91,8 @@ public class OverlayService extends Service {
     private static final String CH = "quickbar";
     private static final String PREFS = "quickbar";
     private static final String KEY_FAV = "favorites";
+    private static final String KEY_HIDDEN = "hidden";
+    private static final String KEY_ORDER = "order";
     private static final String KEY_COLLAPSED = "collapsed";
     private static final String KEY_WIDE = "wide";
     private static final String KEY_RECENT = "recent";
@@ -125,9 +127,15 @@ public class OverlayService extends Service {
     private long overlayPausedUntil;
     private long lastReattachElapsed;
     private View usbToggle;
+    private View reorderToggle;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<AppItem> apps = new ArrayList<>();
     private String query = "";
+    /** Package waiting for hide/unhide confirm (checkmark / close). */
+    private String pendingHidePkg;
+    private boolean reorderMode;
+    /** System apps stay folded until the user opens the section this session. */
+    private boolean systemExpanded;
     private BroadcastReceiver lifeReceiver;
 
     private final Runnable attachWatch = new Runnable() {
@@ -381,6 +389,7 @@ public class OverlayService extends Service {
     }
 
     private void attachOverlay() {
+        systemExpanded = false;
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         relayout();
         reloadApps();
@@ -747,6 +756,7 @@ public class OverlayService extends Service {
             public void onClick(View v) {
                 usbMode = !usbMode;
                 if (usbMode) {
+                    reorderMode = false;
                     wide = true;
                     persist();
                     applySize();
@@ -756,6 +766,19 @@ public class OverlayService extends Service {
             }
         });
         tools.addView(usbToggle);
+        reorderToggle = toolIcon(R.drawable.ic_reorder, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                reorderMode = !reorderMode;
+                pendingHidePkg = null;
+                if (reorderMode) {
+                    usbMode = false;
+                }
+                refreshChrome();
+                renderApps();
+            }
+        });
+        tools.addView(reorderToggle);
         panel.addView(tools);
 
         usbStatus = new TextView(this);
@@ -842,6 +865,7 @@ public class OverlayService extends Service {
         int chrome = collapsed ? View.GONE : View.VISIBLE;
         if (titleView != null) {
             titleView.setVisibility(chrome);
+            titleView.setText(reorderMode ? "Порядок списка" : getString(R.string.app_name));
         }
         if (tools != null) {
             tools.setVisibility(chrome);
@@ -853,6 +877,11 @@ public class OverlayService extends Service {
         if (usbToggle instanceof ImageView) {
             ((ImageView) usbToggle).setImageResource(usbMode ? R.drawable.ic_apps : R.drawable.ic_usb);
             usbToggle.setVisibility(chrome);
+        }
+        if (reorderToggle instanceof ImageView) {
+            ((ImageView) reorderToggle).setColorFilter(
+                    reorderMode ? Color.parseColor("#3DDC97") : Color.WHITE);
+            reorderToggle.setVisibility(usbMode || collapsed ? View.GONE : chrome);
         }
         if (collapsed) {
             root.setPadding(dp(2), dp(4), dp(2), dp(4));
@@ -948,6 +977,134 @@ public class OverlayService extends Service {
         renderApps();
     }
 
+    private Set<String> hidden() {
+        return new HashSet<String>(getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getStringSet(KEY_HIDDEN, new HashSet<String>()));
+    }
+
+    private void setHidden(String pkg, boolean hide) {
+        if (pkg == null || pkg.equals(getPackageName()) || isLegacyPackage(pkg)) {
+            return;
+        }
+        Set<String> hideSet = hidden();
+        if (hide) {
+            hideSet.add(pkg);
+        } else {
+            hideSet.remove(pkg);
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putStringSet(KEY_HIDDEN, hideSet).apply();
+    }
+
+    private List<String> loadOrder() {
+        List<String> out = new ArrayList<>();
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ORDER, "");
+        if (raw == null || raw.length() == 0) {
+            return out;
+        }
+        String[] parts = raw.split(",");
+        for (int i = 0; i < parts.length; i++) {
+            if (parts[i].length() > 0) {
+                out.add(parts[i]);
+            }
+        }
+        return out;
+    }
+
+    private void saveOrder(List<String> order) {
+        StringBuilder joined = new StringBuilder();
+        for (int i = 0; i < order.size(); i++) {
+            if (i > 0) {
+                joined.append(',');
+            }
+            joined.append(order.get(i));
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_ORDER, joined.toString()).apply();
+    }
+
+    private void mergeOrder(List<AppItem> items) {
+        Set<String> user = new HashSet<>();
+        List<String> discovered = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            AppItem item = items.get(i);
+            if (!item.system && user.add(item.pkg)) {
+                discovered.add(item.pkg);
+            }
+        }
+        List<String> prev = loadOrder();
+        List<String> next = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < prev.size(); i++) {
+            String pkg = prev.get(i);
+            if (user.contains(pkg) && seen.add(pkg)) {
+                next.add(pkg);
+            }
+        }
+        for (int i = 0; i < discovered.size(); i++) {
+            String pkg = discovered.get(i);
+            if (seen.add(pkg)) {
+                next.add(pkg);
+            }
+        }
+        saveOrder(next);
+    }
+
+    private void sortApps(List<AppItem> items) {
+        final List<String> order = loadOrder();
+        Collections.sort(items, new Comparator<AppItem>() {
+            @Override
+            public int compare(AppItem a, AppItem b) {
+                if (a.system != b.system) {
+                    return a.system ? 1 : -1;
+                }
+                if (!a.system && !b.system) {
+                    int ia = order.indexOf(a.pkg);
+                    int ib = order.indexOf(b.pkg);
+                    if (ia < 0) {
+                        ia = Integer.MAX_VALUE;
+                    }
+                    if (ib < 0) {
+                        ib = Integer.MAX_VALUE;
+                    }
+                    if (ia != ib) {
+                        return ia - ib;
+                    }
+                }
+                return a.label.compareToIgnoreCase(b.label);
+            }
+        });
+    }
+
+    private void moveUserApp(String pkg, int dir) {
+        if (pkg == null || dir == 0) {
+            return;
+        }
+        Set<String> hideSet = hidden();
+        List<String> visible = new ArrayList<>();
+        for (int i = 0; i < apps.size(); i++) {
+            AppItem item = apps.get(i);
+            if (!item.system && !hideSet.contains(item.pkg)) {
+                visible.add(item.pkg);
+            }
+        }
+        int from = visible.indexOf(pkg);
+        int to = from + dir;
+        if (from < 0 || to < 0 || to >= visible.size()) {
+            return;
+        }
+        String other = visible.get(to);
+        List<String> order = loadOrder();
+        int a = order.indexOf(pkg);
+        int b = order.indexOf(other);
+        if (a < 0 || b < 0) {
+            return;
+        }
+        order.set(a, other);
+        order.set(b, pkg);
+        saveOrder(order);
+        sortApps(apps);
+        renderApps();
+    }
+
     private void reloadApps() {
         PackageManager pm = getPackageManager();
         Intent intent = new Intent(Intent.ACTION_MAIN, null);
@@ -997,6 +1154,8 @@ public class OverlayService extends Service {
                 return a.label.compareToIgnoreCase(b.label);
             }
         });
+        mergeOrder(items);
+        sortApps(items);
         apps = items;
         if (collapsed && !keyboardPeek) {
             if (dockRecent != null) {
@@ -1023,26 +1182,58 @@ public class OverlayService extends Service {
         }
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         Set<String> fav = favorites();
+        Set<String> hideSet = hidden();
         int shown = 0;
         boolean userHeader = false;
-        boolean systemHeader = false;
+        List<AppItem> hiddenItems = new ArrayList<>();
+        List<AppItem> systemItems = new ArrayList<>();
+        boolean searching = q.length() > 0;
+        boolean showSystemRows = systemExpanded || searching;
         for (final AppItem item : apps) {
             if (q.length() > 0 && !item.label.toLowerCase(Locale.ROOT).contains(q)
                     && !item.pkg.toLowerCase(Locale.ROOT).contains(q)) {
                 continue;
             }
-            if (!item.system && !userHeader) {
+            if (hideSet.contains(item.pkg)) {
+                hiddenItems.add(item);
+                continue;
+            }
+            if (item.system) {
+                systemItems.add(item);
+                continue;
+            }
+            if (!userHeader) {
                 appList.addView(sectionHeader("Сторонние"));
                 userHeader = true;
             }
-            if (item.system && !systemHeader) {
-                appList.addView(sectionHeader("Системные"));
-                systemHeader = true;
-            }
-            appList.addView(row(item, fav.contains(item.pkg)));
+            appList.addView(row(item, fav.contains(item.pkg), false));
             shown++;
         }
-        if (shown == 0) {
+        if (systemItems.size() > 0) {
+            appList.addView(foldHeader("Системные", systemItems.size(), showSystemRows, new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    systemExpanded = !systemExpanded;
+                    renderApps();
+                }
+            }));
+            if (showSystemRows) {
+                for (int i = 0; i < systemItems.size(); i++) {
+                    AppItem item = systemItems.get(i);
+                    appList.addView(row(item, fav.contains(item.pkg), false));
+                    shown++;
+                }
+            }
+        }
+        if (hiddenItems.size() > 0 && !reorderMode) {
+            appList.addView(sectionHeader("Скрытые"));
+            for (int i = 0; i < hiddenItems.size(); i++) {
+                AppItem item = hiddenItems.get(i);
+                appList.addView(row(item, fav.contains(item.pkg), true));
+                shown++;
+            }
+        }
+        if (shown == 0 && systemItems.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("нет приложений");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
@@ -1160,6 +1351,17 @@ public class OverlayService extends Service {
         return header;
     }
 
+    private View foldHeader(String text, int count, boolean expanded, View.OnClickListener click) {
+        TextView header = new TextView(this);
+        header.setText((expanded ? "▾  " : "▸  ") + text + "  ·  " + count);
+        header.setTextColor(Color.parseColor("#3DDC97"));
+        header.setTextSize(13);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(dp(4), dp(14), dp(4), dp(6));
+        header.setOnClickListener(click);
+        return header;
+    }
+
     private View apkRow(final File apk) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -1226,42 +1428,27 @@ public class OverlayService extends Service {
         }
     }
 
-    private void uninstallUserApp(String pkg) {
-        if (pkg == null || pkg.equals(getPackageName()) || isLegacyPackage(pkg)) {
-            return;
-        }
-        pauseForDialog(this);
-        setCollapsed(true);
-        try {
-            PackageActions.uninstall(this, pkg);
-        } catch (Exception ignored) {
-            setCollapsed(false);
-        }
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                reloadApps();
-            }
-        }, 1200);
-    }
-
-    private View row(final AppItem item, boolean favorite) {
+    private View row(final AppItem item, boolean favorite, final boolean hidden) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(4), dp(ROW_PAD_V_DP), dp(4), dp(ROW_PAD_V_DP));
         row.setMinimumHeight(dp(ICON_DP + ROW_PAD_V_DP));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(favorite ? Color.parseColor("#3328E07A") : Color.TRANSPARENT);
+        bg.setColor(hidden
+                ? Color.parseColor("#22FF6B6B")
+                : (favorite ? Color.parseColor("#3328E07A") : Color.TRANSPARENT));
         bg.setCornerRadius(dp(12));
         row.setBackground(bg);
 
         ImageView icon = new ImageView(this);
         icon.setImageDrawable(item.icon);
+        icon.setAlpha(hidden ? 0.45f : 1f);
         int iconW = dp(ICON_DP);
         LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(iconW, dp(ICON_DP));
         row.addView(icon, ip);
 
+        boolean pending = item.pkg.equals(pendingHidePkg);
         if (wide) {
             LinearLayout textCol = new LinearLayout(this);
             textCol.setOrientation(LinearLayout.VERTICAL);
@@ -1272,7 +1459,15 @@ public class OverlayService extends Service {
             name.setTextSize(14);
             name.setMaxLines(2);
             TextView mark = new TextView(this);
-            mark.setText(favorite ? "★ избранное" : "удерживайте ★");
+            if (pending) {
+                mark.setText(hidden ? "галочка — вернуть, крестик — оставить" : "галочка — скрыть, крестик — отмена");
+            } else if (hidden) {
+                mark.setText("скрыто в панели");
+            } else if (reorderMode && !item.system) {
+                mark.setText("стрелки — порядок в списке");
+            } else {
+                mark.setText(favorite ? "★ избранное" : "удерживайте ★");
+            }
             mark.setTextColor(Color.parseColor("#9AA7B8"));
             mark.setTextSize(10);
             textCol.addView(name);
@@ -1280,18 +1475,18 @@ public class OverlayService extends Service {
             row.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
 
-        if (!item.system) {
-            row.addView(actionIcon(R.drawable.ic_delete, Color.parseColor("#FF6B6B"), new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    uninstallUserApp(item.pkg);
-                }
-            }));
+        if (reorderMode && !hidden && !item.system) {
+            row.addView(reorderAction(item));
+        } else {
+            row.addView(hideAction(item, hidden, pending));
         }
 
         row.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (hidden || reorderMode) {
+                    return;
+                }
                 launch(item.pkg);
             }
         });
@@ -1303,6 +1498,59 @@ public class OverlayService extends Service {
             }
         });
         return row;
+    }
+
+    private View hideAction(final AppItem item, final boolean hidden, boolean pending) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setClickable(true);
+        if (pending) {
+            box.addView(actionIcon(R.drawable.ic_check, Color.parseColor("#3DDC97"), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    setHidden(item.pkg, !hidden);
+                    pendingHidePkg = null;
+                    renderApps();
+                }
+            }));
+            box.addView(actionIcon(R.drawable.ic_close, Color.parseColor("#FF6B6B"), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    pendingHidePkg = null;
+                    renderApps();
+                }
+            }));
+        } else {
+            box.addView(actionIcon(R.drawable.ic_eye_off, Color.parseColor("#5A6A80"), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    pendingHidePkg = item.pkg;
+                    renderApps();
+                }
+            }));
+        }
+        return box;
+    }
+
+    private View reorderAction(final AppItem item) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setClickable(true);
+        box.addView(actionIcon(R.drawable.ic_arrow_up, Color.parseColor("#31405C"), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                moveUserApp(item.pkg, -1);
+            }
+        }));
+        box.addView(actionIcon(R.drawable.ic_arrow_down, Color.parseColor("#31405C"), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                moveUserApp(item.pkg, 1);
+            }
+        }));
+        return box;
     }
 
     private void launch(String pkg) {
@@ -1425,6 +1673,9 @@ public class OverlayService extends Service {
 
     private void addRecent(LinkedHashSet<String> out, String pkg) {
         if (pkg == null || pkg.equals(getPackageName())) {
+            return;
+        }
+        if (hidden().contains(pkg)) {
             return;
         }
         if (getPackageManager().getLaunchIntentForPackage(pkg) == null) {
