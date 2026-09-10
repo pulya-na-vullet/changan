@@ -328,30 +328,18 @@ class HubApp:
             style="Muted.TLabel",
         ).pack(anchor="w")
         body = (
-            "QuickBar — колонка справа на 13.2″ вертикальном экране, поверх навигации и видео. "
-            "Высота иконок и свёрнутой полоски ×3. Тап — запуск, удержание — избранное. "
-            "Кнопки панели — иконки: свернуть, список, обновление, флешка. "
-            "Свёрнутый край шире в 2 раза и из двух равных зон: полное меню и 3 последних приложения "
-            "(иконки recents с равными отступами до краёв и между собой). "
-            "У сторонних — корзина. «флешка» — APK с USB в разъёме ГУ.\n"
-            "При «Установить и запустить» Hub ставит новый пакет com.changanhub.quickdock. "
-            "Старую com.changanhub.quickbar Feiyu не даёт удалить (提示 «is auth app, not allow delete») — "
-            "Hub её отключает (disable), не uninstall. "
-            "Окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
-            "Один способ: push в /data/local/tmp + pm install -r -t -g. "
-            "После выключения/включения машины панель поднимается сама: BOOT, ACC, "
-            "питание, экран и таймер каждые 30 с. Hub ещё добавляет пакет в белый список "
-            "deviceidle, чтобы Feiyu не замораживал процесс. Пока крутится лоадер — не жмите "
-            "повторно. Окно 提示 «is not auth, install failed!» — ГУ не приняла подпись. "
-            "Иконки в штатном меню Feiyu не будет. После установки: QuickBar · "
-            "com.changanhub.quickdock. На экране — зелёная колонка СПРАВА. "
-            "Если панель уже стояла — нажмите «Установить и запустить» ещё раз, нужна новая сборка. "
-            "Старую com.changanhub.quickbar Feiyu не даёт удалить (提示 not allow delete) — "
-            "Hub ставит новый пакет и отключает старый."
+            "Feiyu не удаляет уже авторизованный пакет (提示 «is auth app, not allow delete!»). "
+            "Hub больше не вызывает pm uninstall: ставит новый com.changanhub.quickdock "
+            "и отключает старую com.changanhub.quickbar. Скачайте новый ZIP. "
+            "На экране — зелёная колонка СПРАВА, не иконка в меню."
         )
-        tk.Label(page, text=body, bg=BG, fg=TEXT, justify="left", wraplength=820, font=FONT).pack(
-            anchor="w", pady=12
-        )
+        ttk.Label(
+            page,
+            text=body,
+            style="Muted.TLabel",
+            wraplength=640,
+            justify="left",
+        ).pack(anchor="w", pady=12, fill=tk.X)
         return page
 
     def _page_apps(self) -> ttk.Frame:
