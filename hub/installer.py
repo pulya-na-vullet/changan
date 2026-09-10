@@ -148,10 +148,11 @@ def install_apk(
     report.signed_apk = signed
     report.package = package
 
-    if package:
-        uninstall_package(adb, package, step)
+    # Do not uninstall first. Feiyu 提示 «is not auth» is an *install* whitelist
+    # rejection: if we delete the old panel and then the new APK fails -118,
+    # the HU is left with nothing. Try replace in place; only uninstall when
+    # PackageManager says the signatures do not match.
 
-    # Feiyu: `adb install` with anything on stdin hangs until timeout (180s).
     # Working path from the HU log: push → /data/local/tmp + pm install -r -t -g.
     step("Шаг 2/5: копирую APK на ГУ (push). adb install пропускаю — на Feiyu он зависает.", 35)
     remote_apk = None
@@ -214,8 +215,8 @@ def install_apk(
     if "not auth" in blob or "-118" in blob:
         step(
             "ГУ показала «is not auth, install failed» (код -118). Это отказ белого "
-            "списка Feiyu: пакет разобрали, сертификат не приняли. В журнале выше — "
-            "serial с уже стоящих приложений и способ подписи (apksigner или python).",
+            "списка Feiyu при установке, не при удалении. Старую панель Hub не снимал. "
+            "В журнале выше — serial с уже стоящих приложений и способ подписи.",
             100,
         )
         return report
