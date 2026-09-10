@@ -59,6 +59,14 @@ def test_quickbar_is_three_times_taller() -> None:
     assert "48 * HEIGHT_SCALE" in src
     assert "VERTICAL_MARGIN = 0.20f" in src
     assert "COLLAPSED_W_DP = 64" in src
+    assert "keyboardPeek" in src
+    assert "imeHeight()" in src
+    assert "buildPeekButton" in src
+    assert "dockMenu" in src
+    assert "dockRecent" in src
+    assert "collapsedRecentY" in src
+    assert "ignoreImePeek" in src
+    assert "FLAG_NOT_TOUCH_MODAL" in src
     assert "displayHeight()" in src
     assert "overlayHeight()" in src
     assert "scheduleWatchdog" in src
@@ -70,7 +78,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.1.0"' in mf
+    assert 'android:versionName="1.2.0"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -104,11 +112,15 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "expandToIcons" not in src
     assert "R.drawable.ic_grid" not in src
     assert "expandToFull" in src
-    assert "collapsedZones" in src
     assert "recentZone" in src
     assert "evenSpacer" in src
     assert "COLLAPSED_W_DP = 64" in src
     assert "COLLAPSED_ICON_DP" in src
+    assert "collapsedZones" not in src
+    assert "buildPeekButton" in src
+    assert "keyboardPeek" in src
+    assert "collapsedMenuY" in src
+    assert "collapsedRecentY" in src
     assert 'tools.addView(toolIcon(R.drawable.ic_menu' not in src
     assert "LEGACY_PACKAGE" in src
     assert "KEY_RECENT" in src
@@ -147,3 +159,38 @@ def test_quickbar_icons_exist() -> None:
     joined = "\n".join(PERSIST_SHELL)
     assert "REQUEST_INSTALL_PACKAGES" in joined
     assert "GET_USAGE_STATS" in joined
+
+
+# Keep in sync with OverlayService VERTICAL_MARGIN / collapsedRecentY / overlayTop.
+_MARGIN = 0.20
+
+
+def _collapsed_layout(screen: int, menu_h: int, recent_h: int) -> tuple[int, int, int, int]:
+    gap = round(screen * _MARGIN)
+    menu_y = gap
+    recent_y = max(screen - gap - recent_h, menu_y + menu_h + gap)
+    between = recent_y - (menu_y + menu_h)
+    peek_y = gap
+    return menu_y, recent_y, between, peek_y
+
+
+def test_collapsed_gap_leaves_yandex_passthrough() -> None:
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "no WindowManager view" in src
+    assert "getInputMethodWindowVisibleHeight" in src
+    for screen, menu_h, recent_h in (
+        (1920, 112, 280),
+        (1920, 168, 400),
+        (1600, 100, 240),
+        (1280, 84, 200),
+    ):
+        menu_y, recent_y, between, peek_y = _collapsed_layout(screen, menu_h, recent_h)
+        gap = round(screen * _MARGIN)
+        assert menu_y == gap
+        assert peek_y == gap
+        assert between >= gap - 1
+        if menu_h + recent_h + 3 * gap <= screen:
+            assert recent_y + recent_h == screen - gap
+            assert menu_y + menu_h + between + recent_h + gap == screen

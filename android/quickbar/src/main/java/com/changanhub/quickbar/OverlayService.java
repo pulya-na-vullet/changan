@@ -19,6 +19,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -34,6 +35,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -41,6 +43,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -69,7 +72,10 @@ public class OverlayService extends Service {
     public static final int HEIGHT_SCALE = 3;
     private static final int ICON_DP = 48 * HEIGHT_SCALE;
     private static final int ROW_PAD_V_DP = 8 * HEIGHT_SCALE;
-    /** Leave the top and bottom fifths of the screen free (Yandex / climate). */
+    /**
+     * Top/bottom fifths stay clear. Collapsed mode uses two windows with at least
+     * this much empty screen between them so Yandex Navigator keeps its right-side taps.
+     */
     private static final float VERTICAL_MARGIN = 0.20f;
 
     private static final String CH = "quickbar";
@@ -87,7 +93,13 @@ public class OverlayService extends Service {
 
     private WindowManager windowManager;
     private View root;
+    private View dockMenu;
+    private View dockRecent;
+    private View peekView;
     private WindowManager.LayoutParams params;
+    private WindowManager.LayoutParams menuParams;
+    private WindowManager.LayoutParams recentParams;
+    private WindowManager.LayoutParams peekParams;
     private LinearLayout appList;
     private LinearLayout tools;
     private EditText search;
@@ -96,6 +108,10 @@ public class OverlayService extends Service {
     private boolean collapsed;
     private boolean wide;
     private boolean usbMode;
+    private boolean keyboardPeek;
+    private boolean collapsedBeforePeek;
+    /** After the user opens the bar while IME is up, do not peek again until IME hides. */
+    private boolean ignoreImePeek;
     private long overlayPausedUntil;
     private View usbToggle;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -106,10 +122,18 @@ public class OverlayService extends Service {
     private final Runnable attachWatch = new Runnable() {
         @Override
         public void run() {
-        if (SystemClock.elapsedRealtime() >= overlayPausedUntil && root == null) {
+        if (SystemClock.elapsedRealtime() >= overlayPausedUntil && !hasOverlay()) {
             attachOverlay();
         }
         handler.postDelayed(this, 15_000);
+        }
+    };
+
+    private final Runnable imeWatch = new Runnable() {
+        @Override
+        public void run() {
+            syncKeyboardPeek();
+            handler.postDelayed(this, 400);
         }
     };
 
@@ -197,6 +221,7 @@ public class OverlayService extends Service {
         suppressLegacy();
         attachOverlay();
         handler.postDelayed(attachWatch, 15_000);
+        handler.postDelayed(imeWatch, 400);
     }
 
     @Override
@@ -209,7 +234,7 @@ public class OverlayService extends Service {
             detachOverlay();
             return START_STICKY;
         }
-        if (root == null) {
+        if (!hasOverlay()) {
             attachOverlay();
         }
         suppressLegacy();
@@ -239,6 +264,7 @@ public class OverlayService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacks(attachWatch);
+        handler.removeCallbacks(imeWatch);
         unregisterLifeReceiver();
         detachOverlay();
         super.onDestroy();
@@ -258,7 +284,7 @@ public class OverlayService extends Service {
         lifeReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if (root == null) {
+                if (!hasOverlay()) {
                     attachOverlay();
                 } else {
                     applySize();
@@ -318,31 +344,159 @@ public class OverlayService extends Service {
     }
 
     private void attachOverlay() {
-        if (root != null) {
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        relayout();
+        reloadApps();
+    }
+
+    private boolean hasOverlay() {
+        return root != null || dockMenu != null || dockRecent != null || peekView != null;
+    }
+
+    private void relayout() {
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        }
+        if (keyboardPeek) {
+            removeView(root);
+            root = null;
+            removeView(dockMenu);
+            dockMenu = null;
+            removeView(dockRecent);
+            dockRecent = null;
+            if (peekView == null) {
+                peekView = buildPeekButton();
+                peekParams = addOverlay(peekView, dp(COLLAPSED_W_DP), dp(56), overlayTop());
+            } else {
+                applyChip(peekView, peekParams, dp(COLLAPSED_W_DP), dp(56), overlayTop());
+            }
             return;
         }
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        root = buildView();
+        removeView(peekView);
+        peekView = null;
+        if (collapsed) {
+            removeView(root);
+            root = null;
+            int menuH = collapsedMenuHeight();
+            int recentH = collapsedRecentHeight();
+            int topY = collapsedMenuY();
+            int bottomY = collapsedRecentY(recentH);
+            if (dockMenu == null) {
+                dockMenu = wrapChip(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        expandToFull();
+                    }
+                }));
+                menuParams = addOverlay(dockMenu, dp(COLLAPSED_W_DP), menuH, topY);
+            } else {
+                applyChip(dockMenu, menuParams, dp(COLLAPSED_W_DP), menuH, topY);
+            }
+            if (dockRecent == null) {
+                dockRecent = wrapChip(recentZone());
+                recentParams = addOverlay(dockRecent, dp(COLLAPSED_W_DP), recentH, bottomY);
+            } else {
+                applyChip(dockRecent, recentParams, dp(COLLAPSED_W_DP), recentH, bottomY);
+            }
+            return;
+        }
+        removeView(dockMenu);
+        dockMenu = null;
+        removeView(dockRecent);
+        dockRecent = null;
+        if (root == null) {
+            root = buildView();
+            params = addOverlay(root, dp(380), overlayHeight(), overlayTop());
+        }
+        applySize();
+        refreshChrome();
+    }
+
+    private View wrapChip(View inner) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setBackground(panelBackground(true));
+        box.setPadding(dp(2), dp(4), dp(2), dp(4));
+        box.addView(inner, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        return box;
+    }
+
+    private View buildPeekButton() {
+        LinearLayout box = new LinearLayout(this);
+        box.setGravity(Gravity.CENTER);
+        box.setBackground(panelBackground(true));
+        ImageView image = new ImageView(this);
+        image.setImageResource(R.drawable.ic_logo);
+        image.setColorFilter(Color.parseColor("#CC3DDC97"));
+        box.addView(image, new LinearLayout.LayoutParams(dp(COLLAPSED_ICON_DP), dp(COLLAPSED_ICON_DP)));
+        box.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ignoreImePeek = true;
+                keyboardPeek = false;
+                expandToFull();
+            }
+        });
+        return box;
+    }
+
+    private WindowManager.LayoutParams addOverlay(View view, int width, int height, int y) {
         int[] types = overlayTypes();
         Exception last = null;
         for (int i = 0; i < types.length; i++) {
-            params = buildParams(types[i]);
+            WindowManager.LayoutParams lp = chipParams(types[i], width, height, y);
             try {
-                windowManager.addView(root, params);
-                applySize();
-                reloadApps();
-                return;
+                windowManager.addView(view, lp);
+                return lp;
             } catch (Exception e) {
                 last = e;
-                try {
-                    windowManager.removeView(root);
-                } catch (Exception ignored) {
-                }
+                removeView(view);
             }
         }
-        root = null;
         if (last != null) {
             last.printStackTrace();
+        }
+        return chipParams(types[0], width, height, y);
+    }
+
+    private WindowManager.LayoutParams chipParams(int type, int width, int height, int y) {
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                width,
+                height,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.END | Gravity.TOP;
+        lp.x = 0;
+        lp.y = y;
+        return lp;
+    }
+
+    private void applyChip(View view, WindowManager.LayoutParams lp, int width, int height, int y) {
+        if (view == null || lp == null || windowManager == null) {
+            return;
+        }
+        lp.width = width;
+        lp.height = height;
+        lp.y = y;
+        try {
+            windowManager.updateViewLayout(view, lp);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void removeView(View view) {
+        if (view == null || windowManager == null) {
+            return;
+        }
+        try {
+            windowManager.removeView(view);
+        } catch (Exception ignored) {
         }
     }
 
@@ -363,50 +517,30 @@ public class OverlayService extends Service {
         };
     }
 
-    private WindowManager.LayoutParams buildParams(int type) {
-        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                dp(96),
-                overlayHeight(),
-                type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.END | Gravity.TOP;
-        lp.x = 0;
-        lp.y = overlayTop();
-        return lp;
-    }
-
     private void detachOverlay() {
-        if (root != null && windowManager != null) {
-            try {
-                windowManager.removeView(root);
-            } catch (Exception ignored) {
-            }
-        }
+        removeView(root);
         root = null;
-    }
-
-    private WindowManager.LayoutParams buildParams() {
-        return buildParams(overlayTypes()[0]);
+        removeView(dockMenu);
+        dockMenu = null;
+        removeView(dockRecent);
+        dockRecent = null;
+        removeView(peekView);
+        peekView = null;
     }
 
     private void applySize() {
-        if (params == null || windowManager == null || root == null) {
+        if (keyboardPeek || collapsed) {
+            relayout();
             return;
         }
-        int height = overlayHeight();
-        params.height = height;
+        if (params == null || windowManager == null || root == null) {
+            relayout();
+            return;
+        }
+        params.width = dp(380);
+        params.height = overlayHeight();
         params.y = overlayTop();
         params.gravity = Gravity.END | Gravity.TOP;
-        if (collapsed) {
-            params.width = dp(COLLAPSED_W_DP);
-            params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-        } else {
-            params.width = dp(380);
-        }
         try {
             windowManager.updateViewLayout(root, params);
         } catch (Exception ignored) {
@@ -423,6 +557,88 @@ public class OverlayService extends Service {
 
     private int overlayTop() {
         return Math.round(displayHeight() * VERTICAL_MARGIN);
+    }
+
+    private int collapsedMenuHeight() {
+        return dp(56);
+    }
+
+    private int collapsedRecentHeight() {
+        return dp(COLLAPSED_ICON_DP) * RECENT_MAX + dp(28);
+    }
+
+    private int collapsedMenuY() {
+        return overlayTop();
+    }
+
+    /**
+     * Recents chip sits above the bottom 20%. The hole between the two chips is a
+     * real gap with no WindowManager view, so navigator buttons receive taps.
+     */
+    private int collapsedRecentY(int recentH) {
+        int screen = displayHeight();
+        int gap = overlayTop();
+        int y = screen - gap - recentH;
+        int minY = collapsedMenuY() + collapsedMenuHeight() + gap;
+        return Math.max(y, minY);
+    }
+
+    private void syncKeyboardPeek() {
+        if (SystemClock.elapsedRealtime() < overlayPausedUntil) {
+            return;
+        }
+        boolean typingHere = search != null && search.hasFocus();
+        boolean open = !typingHere && imeHeight() > dp(80);
+        if (!open) {
+            ignoreImePeek = false;
+        }
+        if (open && ignoreImePeek) {
+            return;
+        }
+        if (open == keyboardPeek) {
+            return;
+        }
+        if (open) {
+            collapsedBeforePeek = collapsed;
+            keyboardPeek = true;
+        } else {
+            keyboardPeek = false;
+            collapsed = collapsedBeforePeek;
+        }
+        relayout();
+        if (!keyboardPeek && !collapsed) {
+            reloadApps();
+        }
+    }
+
+    private int imeHeight() {
+        try {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            Method method = InputMethodManager.class.getMethod("getInputMethodWindowVisibleHeight");
+            Object value = method.invoke(imm);
+            if (value instanceof Integer) {
+                int height = ((Integer) value).intValue();
+                if (height > dp(80)) {
+                    return height;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Rect visible = new Rect();
+            View sample = peekView != null ? peekView : (root != null ? root : dockMenu);
+            if (sample != null) {
+                sample.getWindowVisibleDisplayFrame(visible);
+                int screen = displayHeight();
+                int covered = screen - visible.bottom;
+                // Ignore the nav bar; a real IME covers a chunk of the screen.
+                if (visible.bottom > 0 && covered > Math.round(screen * 0.12f)) {
+                    return covered;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
     }
 
     private int displayHeight() {
@@ -446,7 +662,7 @@ public class OverlayService extends Service {
     private View buildView() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(panelBackground());
+        panel.setBackground(panelBackground(false));
         panel.setPadding(dp(6), dp(8), dp(6), dp(8));
 
         titleView = new TextView(this);
@@ -596,7 +812,7 @@ public class OverlayService extends Service {
         } else {
             root.setPadding(dp(6), dp(8), dp(6), dp(8));
         }
-        root.setBackground(panelBackground());
+        root.setBackground(panelBackground(false));
     }
 
     private ImageView toolIcon(int drawable, View.OnClickListener click) {
@@ -627,9 +843,9 @@ public class OverlayService extends Service {
         return image;
     }
 
-    private GradientDrawable panelBackground() {
+    private GradientDrawable panelBackground(boolean chip) {
         GradientDrawable d = new GradientDrawable();
-        if (collapsed) {
+        if (chip) {
             d.setColor(Color.parseColor("#990B1220"));
             d.setCornerRadii(new float[]{dp(10), dp(10), 0, 0, 0, 0, dp(10), dp(10)});
             d.setStroke(Math.max(1, dp(1) / 2), Color.parseColor("#333DDC97"));
@@ -642,18 +858,22 @@ public class OverlayService extends Service {
     }
 
     private void setCollapsed(boolean value) {
+        keyboardPeek = false;
         collapsed = value;
         persist();
-        applySize();
-        renderApps();
+        relayout();
+        if (!collapsed) {
+            renderApps();
+        }
     }
 
     private void expandToFull() {
         usbMode = false;
         wide = true;
         collapsed = false;
+        keyboardPeek = false;
         persist();
-        applySize();
+        relayout();
         renderApps();
     }
 
@@ -731,18 +951,25 @@ public class OverlayService extends Service {
             }
         });
         apps = items;
-        renderApps();
+        if (collapsed && !keyboardPeek) {
+            if (dockRecent != null) {
+                removeView(dockRecent);
+                dockRecent = null;
+            }
+            relayout();
+        } else {
+            renderApps();
+        }
     }
 
     private void renderApps() {
         if (appList == null) {
             return;
         }
-        appList.removeAllViews();
-        if (collapsed) {
-            appList.addView(collapsedZones());
+        if (collapsed || keyboardPeek) {
             return;
         }
+        appList.removeAllViews();
         if (usbMode) {
             renderUsb();
             return;
@@ -776,32 +1003,6 @@ public class OverlayService extends Service {
             empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
         }
-    }
-
-    private View collapsedZones() {
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setOrientation(LinearLayout.VERTICAL);
-        wrap.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        wrap.addView(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                expandToFull();
-            }
-        }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        wrap.addView(collapseDivider(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
-        wrap.addView(recentZone(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        return wrap;
-    }
-
-    private View collapseDivider() {
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.parseColor("#663DDC97"));
-        return divider;
     }
 
     private View collapseZone(int icon, View.OnClickListener click) {
