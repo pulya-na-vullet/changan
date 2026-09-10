@@ -32,6 +32,15 @@ CATALOG: list[CatalogApp] = [
         notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickkeep. Старые quickbar / quickdock / quicklane Feiyu не удаляет (auth).",
     ),
     CatalogApp(
+        id="player",
+        name="Lamore Player",
+        summary="Музыка и видео с флешки ГУ: визуалайзер, эквалайзер, крупные кнопки.",
+        package="com.changanhub.lamoreplayer",
+        kind="media",
+        source="bundled",
+        notes="Ставится из раздела «Плеер». Читает USB ГУ (не ноутбука). Форматы, которые умеет декодер Feiyu: MP3/AAC/FLAC/WAV/OGG, MP4/MKV/WebM и др.",
+    ),
+    CatalogApp(
         id="files",
         name="Material Files",
         summary="Файловый менеджер — штатный проводник на английской ГУ часто спрятан.",

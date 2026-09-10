@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lamore Player</string>
+    <string name="usb">Флешка ГУ</string>
+    <string name="scan">Все файлы на диске</string>
+    <string name="up">Назад</string>
+    <string name="empty">На флешке нет музыки и видео.\nВставьте USB в разъём ГУ.</string>
+    <string name="eq">Эквалайзер</string>
+    <string name="now_playing">Сейчас играет</string>
+</resources>

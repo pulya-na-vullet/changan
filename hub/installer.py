@@ -343,6 +343,8 @@ def apk_package_name(apk: Path) -> str | None:
     stem = apk.name.lower()
     if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep")):
         return "com.changanhub.quickkeep"
+    if any(token in stem for token in ("player", "lamoreplayer")):
+        return "com.changanhub.lamoreplayer"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")

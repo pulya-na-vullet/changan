@@ -23,11 +23,11 @@
 
 Прямая ссылка на ZIP этой ветки:
 
-https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/quickbar-hide-apps-0bfc.zip
+https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/lamore-player-0bfc.zip
 
 Зеркало без промежуточной страницы:
 
-https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/quickbar-hide-apps-0bfc
+https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/lamore-player-0bfc
 
 Распакуйте архив и запустите `app.py`.
 
@@ -98,6 +98,20 @@ python -m hub apps
 
 Экран Lamore 2023 — **13.2″ вертикальный**. Панель узкая по ширине (карта не
 съедается); сверху и снизу по 20% экрана свободны, иконки крупные.
+
+## Плеер с флешки ГУ (Lamore Player)
+
+Приложение `com.changanhub.lamoreplayer` ставится из Hub, раздел **Плеер**.
+Оно смотрит USB **в головном устройстве**, не на ноутбуке.
+
+- музыка: очередь папки, визуалайзер по FFT, эквалайзер (пресеты чипа + полосы);
+- видео: на весь экран, тап показывает кнопки;
+- кнопка «Все файлы на диске» собирает аудио и видео с выбранного тома;
+- форматы, которые реально играет **декодер Feiyu/MediaTek**: MP3, AAC, M4A,
+  FLAC, WAV, OGG, MP4 (H.264), MKV/WebM если внутри тот же кодек. WMA/AVI/FLV
+  часто не открываются — это не баг плеера.
+
+Сборка: `python scripts/build_player.py` → `apps/Player.apk`.
 
 ## Подпись без сертификата завода
 
