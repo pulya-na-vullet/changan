@@ -141,7 +141,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.6"' in mf
+    assert 'android:versionName="1.3.7"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -198,7 +198,11 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "startTrampoline" in access
     assert "ACTION_RESUME" in overlay
     assert "reattachOverlay" in overlay
-    assert "lastReattachElapsed < 800L" in overlay
+    assert "lastReattachElapsed < 8_000L" in overlay
+    assert "pokeOverlay" in overlay
+    assert "getWindowVisibleDisplayFrame" not in overlay
+    assert "hiddenExpanded || searching" not in overlay
+    assert "pendingHidden" in overlay
     assert "RTC_WAKEUP" in overlay
     actions = Path(
         "android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java"
@@ -230,6 +234,8 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "reorderMode" in src
     assert "systemExpanded" in src
     assert "hiddenExpanded" in src
+    assert "pendingHidden" in src
+    assert "hiddenExpanded || searching" not in src
     assert "TEXT_SCALE = 2" in src
     assert "setTextSize(textSp(" in src
     assert "R.drawable.ic_usb" in src

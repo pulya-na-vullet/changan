@@ -19,7 +19,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -405,12 +404,47 @@ public class OverlayService extends Service {
 
     private void reattachOverlay() {
         long now = SystemClock.elapsedRealtime();
-        if (now - lastReattachElapsed < 800L) {
+        if (hasOverlay()) {
+            if (now - lastReattachElapsed < 8_000L) {
+                return;
+            }
+            lastReattachElapsed = now;
+            if (pokeOverlay()) {
+                return;
+            }
+        } else if (now - lastReattachElapsed < 1_500L) {
             return;
         }
         lastReattachElapsed = now;
         detachOverlay();
         attachOverlay();
+    }
+
+    /** Re-assert existing WindowManager views after ACC without remove+add flicker. */
+    private boolean pokeOverlay() {
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        }
+        if (windowManager == null) {
+            return false;
+        }
+        try {
+            if (root != null && params != null) {
+                windowManager.updateViewLayout(root, params);
+            }
+            if (dockMenu != null && menuParams != null) {
+                windowManager.updateViewLayout(dockMenu, menuParams);
+            }
+            if (dockRecent != null && recentParams != null) {
+                windowManager.updateViewLayout(dockRecent, recentParams);
+            }
+            if (peekView != null && peekParams != null) {
+                windowManager.updateViewLayout(peekView, peekParams);
+            }
+            return hasOverlay();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private boolean hasOverlay() {
@@ -652,7 +686,16 @@ public class OverlayService extends Service {
             return;
         }
         boolean typingHere = search != null && search.hasFocus();
-        boolean open = !typingHere && imeHeight() > dp(80);
+        int ime = imeHeight();
+        // Hysteresis: overlay only covers the middle 60%, so a naïve
+        // "covered pixels" check treats the free 20% as a keyboard and flickers.
+        boolean open;
+        if (keyboardPeek) {
+            open = ime > dp(48);
+        } else {
+            open = ime > dp(120);
+        }
+        open = !typingHere && open;
         if (!open) {
             ignoreImePeek = false;
         }
@@ -681,24 +724,7 @@ public class OverlayService extends Service {
             Method method = InputMethodManager.class.getMethod("getInputMethodWindowVisibleHeight");
             Object value = method.invoke(imm);
             if (value instanceof Integer) {
-                int height = ((Integer) value).intValue();
-                if (height > dp(80)) {
-                    return height;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        try {
-            Rect visible = new Rect();
-            View sample = peekView != null ? peekView : (root != null ? root : dockMenu);
-            if (sample != null) {
-                sample.getWindowVisibleDisplayFrame(visible);
-                int screen = displayHeight();
-                int covered = screen - visible.bottom;
-                // Ignore the nav bar; a real IME covers a chunk of the screen.
-                if (visible.bottom > 0 && covered > Math.round(screen * 0.12f)) {
-                    return covered;
-                }
+                return Math.max(0, ((Integer) value).intValue());
             }
         } catch (Exception ignored) {
         }
@@ -1001,6 +1027,9 @@ public class OverlayService extends Service {
             hideSet.remove(pkg);
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putStringSet(KEY_HIDDEN, hideSet).apply();
+        if (hide) {
+            hiddenExpanded = false;
+        }
     }
 
     private List<String> loadOrder() {
@@ -1234,7 +1263,8 @@ public class OverlayService extends Service {
             }
         }
         if (hiddenItems.size() > 0 && !reorderMode) {
-            boolean showHiddenRows = hiddenExpanded || searching;
+            boolean pendingHidden = pendingHidePkg != null && hideSet.contains(pendingHidePkg);
+            boolean showHiddenRows = hiddenExpanded || pendingHidden;
             appList.addView(foldHeader("Скрытые", hiddenItems.size(), showHiddenRows, new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
