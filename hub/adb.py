@@ -296,14 +296,18 @@ class Adb:
             timeout=timeout,
         )
 
-    def screenshot(self, dest: Path) -> CommandResult:
-        remote = "/sdcard/Download/changan_hub_shot.png"
-        shot = self.shell(f"screencap -p {remote}")
+    def screenshot(self, dest: Path, remote: str | None = None) -> CommandResult:
+        # Feiyu has no /sdcard/Download (user log: "No such file or directory").
+        # /data/local/tmp already works for APK push on this HU.
+        remote = remote or "/data/local/tmp/changan_hub_shot.png"
+        folder = remote.rsplit("/", 1)[0]
+        self.shell(f"mkdir -p {folder}", timeout=8)
+        shot = self.shell(f"screencap -p {remote}", timeout=20)
         if not shot.ok:
             return shot
         dest.parent.mkdir(parents=True, exist_ok=True)
         pulled = self.raw(["pull", remote, str(dest)], timeout=30)
-        self.shell(f"rm {remote}")
+        self.shell(f"rm -f {remote}", timeout=8)
         return pulled
 
     def packages(self) -> list[str]:

@@ -44,6 +44,9 @@ def test_demo_capture_in_hub() -> None:
     assert "Сделать скриншот" in src
     assert "Запись 60 с" in src
     assert "from hub.capture import" in src
+    adb_src = Path("hub/adb.py").read_text(encoding="utf-8")
+    assert "/data/local/tmp/changan_hub_shot.png" in adb_src
+    assert "/sdcard/Download/changan_hub_shot.png" not in adb_src
     cli = Path("hub/cli.py").read_text(encoding="utf-8")
     assert 'sub.add_parser("screenshot"' in cli
     assert 'sub.add_parser("record"' in cli

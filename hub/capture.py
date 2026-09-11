@@ -2,6 +2,9 @@
 
 No extra APK on the HU: ``screencap`` and ``screenrecord`` already live in
 ``/system/bin``. Files land in ``captures/`` next to Hub (the flash drive).
+
+Lamore Feiyu has no ``/sdcard/Download`` — write under ``/data/local/tmp``,
+the same folder Hub already uses to push APKs.
 """
 
 from __future__ import annotations
@@ -15,7 +18,15 @@ from typing import Callable
 from hub.adb import SHELL_PASSWORD, Adb, AdbError
 from hub.paths import captures_dir
 
-REMOTE_REC = "/sdcard/Download/changan_hub_rec.mp4"
+REMOTE_DIRS = (
+    "/data/local/tmp",
+    "/sdcard",
+    "/sdcard/Download",
+    "/storage/emulated/0",
+)
+SHOT_NAME = "changan_hub_shot.png"
+REC_NAME = "changan_hub_rec.mp4"
+REMOTE_REC = f"{REMOTE_DIRS[0]}/{REC_NAME}"
 MAX_SECONDS = 180
 DEFAULT_SECONDS = 60
 BITRATE = 8_000_000
@@ -35,13 +46,53 @@ def new_mp4() -> Path:
     return captures_dir() / f"hu-{stamp()}.mp4"
 
 
+def _clean_adb_text(text: str) -> str:
+    lines = []
+    for line in text.splitlines():
+        low = line.lower()
+        if "verify password" in low or "please input" in low:
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _write_failed(result) -> bool:
+    blob = f"{result.stdout}\n{result.stderr}".lower()
+    return (not result.ok) or any(
+        mark in blob
+        for mark in ("no such file", "read-only", "permission denied", "can't create", "cannot create")
+    )
+
+
+def pick_remote_dir(adb: Adb) -> str:
+    """First directory on the HU that shell can actually create a file in."""
+    last = ""
+    for folder in REMOTE_DIRS:
+        adb.shell(f"mkdir -p {folder}", timeout=8)
+        probe = f"{folder}/.changan_hub_w"
+        wrote = adb.shell(f"touch {probe}", timeout=8)
+        if _write_failed(wrote):
+            last = _clean_adb_text(wrote.text or wrote.stderr)
+            continue
+        adb.shell(f"rm -f {probe}", timeout=8)
+        return folder
+    raise AdbError(
+        "На ГУ нет папки для снимка. /sdcard/Download отсутствует, "
+        f"/data/local/tmp тоже не записался. {last}".strip()
+    )
+
+
 def take_screenshot(adb: Adb, dest: Path | None = None) -> Path:
     dest = dest or new_png()
-    result = adb.screenshot(dest)
+    folder = pick_remote_dir(adb)
+    remote = f"{folder}/{SHOT_NAME}"
+    result = adb.screenshot(dest, remote=remote)
     if not result.ok:
-        raise AdbError(result.text or result.stderr or "Не удалось снять экран ГУ")
+        raise AdbError(
+            _clean_adb_text(result.text or result.stderr) or "Не удалось снять экран ГУ"
+        )
     if not dest.is_file() or dest.stat().st_size < 64:
-        raise AdbError("Файл скриншота пустой. Проверьте ADB и доступ к /sdcard/Download.")
+        raise AdbError("Файл скриншота пустой. Проверьте ADB — снимок пишется в /data/local/tmp на ГУ.")
     return dest
 
 
@@ -96,6 +147,8 @@ class Recorder:
                 "На ГУ нет /system/bin/screenrecord. Видео эта прошивка не пишет — "
                 "снимите скриншот."
             )
+        folder = pick_remote_dir(self.adb)
+        self.remote = f"{folder}/{REC_NAME}"
         self.adb.shell(f"rm -f {self.remote}", timeout=8)
         dest = dest or new_mp4()
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +180,9 @@ class Recorder:
                 except OSError:
                     err = b""
             text = err.decode("utf-8", "replace") if isinstance(err, (bytes, bytearray)) else str(err)
-            raise AdbError(text.strip() or f"screenrecord сразу вышел (code {code})")
+            raise AdbError(
+                _clean_adb_text(text) or f"screenrecord сразу вышел (code {code})"
+            )
         self.proc = proc
         self.local = dest
         self.limit = seconds
@@ -161,7 +216,7 @@ class Recorder:
             pass
         self.started_at = 0.0
         if not pulled.ok:
-            raise AdbError(pulled.text or "Не удалось скачать видео с ГУ")
+            raise AdbError(_clean_adb_text(pulled.text or pulled.stderr) or "Не удалось скачать видео с ГУ")
         if not dest.is_file() or dest.stat().st_size < 256:
             raise AdbError(
                 "Видеофайл пустой. Запись короче секунды часто не успевает закрыться — "

@@ -4,9 +4,12 @@ from hub.adb import SHELL_PASSWORD, AdbError, CommandResult
 from hub.capture import (
     BITRATE,
     MAX_SECONDS,
+    REC_NAME,
+    REMOTE_DIRS,
     REMOTE_REC,
     Recorder,
     interrupt_screenrecord,
+    pick_remote_dir,
     screenrecord_available,
     take_screenshot,
 )
@@ -14,7 +17,12 @@ from hub.paths import ROOT, captures_dir, logs_dir
 
 
 class FakeAdb:
-    def __init__(self, has_record: bool = True, shot_bytes: bytes | None = None) -> None:
+    def __init__(
+        self,
+        has_record: bool = True,
+        shot_bytes: bytes | None = None,
+        blocked: set[str] | None = None,
+    ) -> None:
         self.cmds: list[str] = []
         self.raws: list[list[str]] = []
         self.has_record = has_record
@@ -23,13 +31,18 @@ class FakeAdb:
         self.pull_bytes = b"ftypisom" + b"0" * 400
         self.binary = Path("/usr/bin/adb")
         self.serial = "HU123"
+        self.blocked = blocked or set()
 
     def prefix(self) -> list[str]:
         return ["adb", "-s", self.serial]
 
-    def screenshot(self, dest: Path) -> CommandResult:
+    def _blocked_path(self, path: str) -> bool:
+        return any(path == item or path.startswith(item + "/") for item in self.blocked)
+
+    def screenshot(self, dest: Path, remote: str | None = None) -> CommandResult:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(self.shot_bytes)
+        self.cmds.append(f"screencap -p {remote or ''}")
         return CommandResult(True, f"pulled {dest}", "", 0, ["pull"])
 
     def shell(self, command: str, timeout: int = 12) -> CommandResult:
@@ -40,6 +53,11 @@ class FakeAdb:
             return CommandResult(False, "", "No such file or directory", 1, ["shell"])
         if command.startswith("pidof screenrecord"):
             return CommandResult(True, self.pidof, "", 0, ["shell"])
+        target = command.split()[-1] if command.split() else ""
+        if self._blocked_path(target) and (
+            command.startswith("mkdir") or command.startswith("touch")
+        ):
+            return CommandResult(False, "", "No such file or directory", 1, ["shell"])
         return CommandResult(True, "", "", 0, ["shell"])
 
     def raw(self, args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
@@ -100,6 +118,30 @@ def test_screenshot_writes_png(tmp_path: Path) -> None:
     out = take_screenshot(adb, dest)  # type: ignore[arg-type]
     assert out == dest
     assert dest.stat().st_size >= 64
+    assert any("screencap -p /data/local/tmp/" in cmd for cmd in adb.cmds)
+
+
+def test_screenshot_rejects_empty(tmp_path: Path) -> None:
+    adb = FakeAdb(shot_bytes=b"tiny")
+    dest = tmp_path / "empty.png"
+    try:
+        take_screenshot(adb, dest)  # type: ignore[arg-type]
+        raise AssertionError("empty shot must fail")
+    except AdbError as exc:
+        assert "пустой" in str(exc)
+
+
+def test_pick_remote_dir_skips_missing_download() -> None:
+    adb = FakeAdb(blocked={"/sdcard/Download"})
+    assert pick_remote_dir(adb) == "/data/local/tmp"  # type: ignore[arg-type]
+    assert REMOTE_DIRS[0] == "/data/local/tmp"
+    assert "/sdcard/Download" in REMOTE_DIRS
+
+
+def test_pick_remote_dir_falls_back_when_tmp_missing() -> None:
+    adb = FakeAdb(blocked={"/data/local/tmp", "/sdcard"})
+    # /sdcard/Download sits under /sdcard, so the next independent path wins.
+    assert pick_remote_dir(adb) == "/storage/emulated/0"  # type: ignore[arg-type]
 
 
 def test_screenshot_rejects_empty(tmp_path: Path) -> None:
@@ -129,6 +171,8 @@ def test_recorder_start_stop(tmp_path: Path) -> None:
         assert f"--time-limit {MAX_SECONDS}" not in argv[4]
         assert f"--bit-rate {BITRATE}" in argv[4]
         assert REMOTE_REC in argv[4]
+        assert f"/data/local/tmp/{REC_NAME}" in argv[4]
+        assert "/sdcard/Download" not in argv[4]
         assert "--time-limit 30" in argv[4]
         proc = DummyProc()
         procs.append(proc)
