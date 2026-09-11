@@ -13,7 +13,10 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "quickbar/photos/02-reorder.png" in html
     assert "quickbar/photos/03-hidden-folded.png" in html
     assert "quickbar/photos/04-collapsed.png" in html
-    assert 'id="hidFold"' in html
+    assert "5 000" in html
+    assert "один раз" in html
+    assert "сами" in html
+    assert 'id="price"' in html
     assert "Скрытые" in html
     photos = ROOT / "quickbar" / "photos"
     for name in (

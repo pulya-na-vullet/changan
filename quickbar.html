@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>QuickBar — правая панель для Changan Lamore</title>
-  <meta name="description" content="QuickBar — колонка быстрого доступа поверх всех окон на ГУ Changan Lamore 2023. Разработано в ИТ-Мастерской.">
+  <meta name="description" content="QuickBar для Changan Lamore 2023. Установка 5 000 ₽ один раз — дальше приложения ставите сами. Разработано в ИТ-Мастерской.">
   <style>
     :root {
       --bg: #070b14;
@@ -41,13 +41,27 @@
       box-shadow: 0 30px 80px rgba(0,0,0,.45);
       background: var(--card);
     }
-    .shot img { width: 100%; height: 620px; object-fit: cover; object-position: 50% 40%; }
+    .shot img { width: 100%; height: auto; max-height: 720px; object-fit: contain; background: #101a2c; }
     section { padding: 28px 0 64px; }
     h2 { font-size: 28px; margin-bottom: 8px; }
     .sub { color: var(--muted); margin-bottom: 28px; }
     .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     figure { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
-    figure img { width: 100%; height: 420px; object-fit: cover; object-position: center 35%; }
+    figure img { width: 100%; height: 520px; object-fit: contain; object-position: center; background: #101a2c; }
+    .price {
+      display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: stretch;
+      background: linear-gradient(160deg, #143326 0%, #121a2b 45%, #0b1220 100%);
+      border: 1px solid rgba(61,220,151,.35); border-radius: 24px; padding: 32px;
+    }
+    .price .tag { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .price .sum { font-size: clamp(42px, 6vw, 64px); font-weight: 700; letter-spacing: -0.03em; margin: 8px 0 6px; }
+    .price .sum span { color: var(--accent); }
+    .price ul { color: var(--muted); margin: 16px 0 0 18px; line-height: 1.55; }
+    .badge {
+      background: var(--card); border-radius: 18px; padding: 22px; border: 1px solid var(--line);
+    }
+    .badge h3 { font-size: 20px; margin-bottom: 10px; }
+    .badge p { color: var(--muted); line-height: 1.5; }
     figcaption { padding: 14px 16px 16px; color: var(--muted); font-size: 14px; line-height: 1.4; }
     figcaption strong { color: var(--text); display: block; margin-bottom: 4px; }
     .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -119,7 +133,7 @@
     footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 13px; }
     footer strong { color: var(--accent); }
     @media (max-width: 900px) {
-      .hero, .demo, .gallery, .grid { grid-template-columns: 1fr; }
+      .hero, .demo, .gallery, .grid, .price { grid-template-columns: 1fr; }
       .shot img, figure img { height: auto; }
       .nav { display: none; }
       .gap-hint { display: none; }
@@ -135,8 +149,8 @@
         <div class="credit">разработано в ИТ-Мастерской</div>
       </div>
       <nav class="nav">
-        <a href="#photos">Фото</a>
-        <a href="#live">Панель</a>
+        <a href="#photos">Интерфейс</a>
+        <a href="#price">Тариф</a>
         <a href="#features">Возможности</a>
       </nav>
     </header>
@@ -145,52 +159,74 @@
       <div>
         <h1>Правая панель<br>поверх <span>всех окон</span></h1>
         <p class="lead">
-          QuickBar живёт на штатной ГУ Changan Lamore 2023: узкая колонка справа,
-          крупные кнопки, запуск приложений не уходя с карты. Не прошивка и не взлом —
-          своя машина и штатное инженерное меню.
+          QuickBar — узкая колонка справа на штатной ГУ Changan Lamore 2023.
+          Запуск приложений поверх карты. Не прошивка и не взлом: своя машина,
+          штатное инженерное меню.
         </p>
         <div class="pills">
+          <span class="pill">5 000 ₽ один раз</span>
+          <span class="pill">дальше приложения сами</span>
           <span class="pill">Lamore 2023 · Feiyu</span>
           <span class="pill">13.2″ вертикальный экран</span>
-          <span class="pill">поверх навигатора</span>
-          <span class="pill">после ACC поднимается сама</span>
         </div>
       </div>
       <figure class="shot">
-        <img src="quickbar/photos/01-panel-navigator.png" alt="QuickBar справа от Яндекс.Навигатора на ГУ Lamore">
+        <img src="quickbar/photos/01-panel-navigator.png" alt="QuickBar: колонка 380 dp справа, системные и скрытые свёрнуты">
       </figure>
     </div>
 
+    <section id="price">
+      <h2>Тариф</h2>
+      <p class="sub">Один платёж. Без абонентки и без платы за каждое новое приложение.</p>
+      <div class="price">
+        <div>
+          <div class="tag">установка</div>
+          <div class="sum"><span>5 000 ₽</span></div>
+          <p style="font-size:20px;line-height:1.35">Один раз платите 5 000 ₽ — и сами ставите нужные приложения.</p>
+          <ul>
+            <li>Ставим QuickBar на вашу ГУ и даём Changan Hub.</li>
+            <li>Дальше навигатор, Telegram, YouTube, плеер — ставите сами, сколько нужно.</li>
+            <li>Не платите за каждое новое приложение и не приезжаете повторно.</li>
+          </ul>
+        </div>
+        <div class="badge">
+          <h3>Что входит в 5 000 ₽</h3>
+          <p>Подключение ГУ по ADB, установка правой панели, запуск Hub на вашем ноутбуке. После этого любые APK вы ставите сами: положили файл в Hub — он переподписывает под белый список Feiyu и ставит на машину.</p>
+          <p style="margin-top:12px">Повторные визиты и «ещё одно приложение за доплату» не нужны.</p>
+        </div>
+      </div>
+    </section>
+
     <section id="photos">
-      <h2>Как это выглядит в машине</h2>
-      <p class="sub">Кадры панели на вертикальной ГУ: карта остаётся слева, колонка — только справа.</p>
+      <h2>Интерфейс панели</h2>
+      <p class="sub">Снимки по реальной вёрстке QuickBar: колонка 380 dp справа, сверху и снизу по 20% экрана свободны, иконки ×3, подписи ×2.</p>
       <div class="gallery">
         <figure>
-          <img src="quickbar/photos/01-panel-navigator.png" alt="Развёрнутая панель QuickBar поверх навигатора">
+          <img src="quickbar/photos/01-panel-navigator.png" alt="Развёрнутая панель QuickBar, системные и скрытые свёрнуты">
           <figcaption>
-            <strong>Развёрнутая колонка</strong>
-            Сторонние приложения, поиск, скрытие. Системные свёрнуты, карта не перекрыта.
+            <strong>Список приложений</strong>
+            Сторонние, поиск, скрытие. Системные и скрытые закрыты, пока не откроете заголовок.
           </figcaption>
         </figure>
         <figure>
-          <img src="quickbar/photos/02-reorder.png" alt="Режим порядка списка в QuickBar">
+          <img src="quickbar/photos/02-reorder.png" alt="Режим порядка списка QuickBar">
           <figcaption>
             <strong>Свой порядок</strong>
-            Стрелки ▲▼ двигают сторонние приложения. Навигатор и мессенджер всегда первыми.
+            Заголовок «Порядок списка», стрелки ▲▼ у сторонних приложений.
           </figcaption>
         </figure>
         <figure>
-          <img src="quickbar/photos/03-hidden-folded.png" alt="Свёрнутые разделы Системные и Скрытые">
+          <img src="quickbar/photos/03-hidden-folded.png" alt="Подтверждение скрытия приложения в QuickBar">
           <figcaption>
-            <strong>Системные и скрытые закрыты</strong>
-            По умолчанию видны только нужные ярлыки. Тап по заголовку раскрывает список.
+            <strong>Скрытие</strong>
+            Глаз → галочка скрывает из панели, крестик отменяет. С ГУ приложение не удаляется.
           </figcaption>
         </figure>
         <figure>
-          <img src="quickbar/photos/04-collapsed.png" alt="Свёрнутый QuickBar: меню и недавние справа от карты">
+          <img src="quickbar/photos/04-collapsed.png" alt="Свёрнутый QuickBar: меню сверху и недавние снизу">
           <figcaption>
             <strong>Свёрнутый режим</strong>
-            Меню сверху, недавние снизу. Между ними свободная зона — навигатор принимает нажатия справа.
+            Меню у верхних 20%, три недавних у нижних 20%. Между ними карта принимает нажатия.
           </figcaption>
         </figure>
       </div>
@@ -299,13 +335,13 @@
         </article>
       </div>
       <p class="note">
-        Ставится с ноутбука через Changan Hub (раздел «Правая панель»). Смотреть нужно зелёную колонку справа,
-        не ярлык старого плагина в меню приложений.
+        Ставится один раз за 5 000 ₽. Дальше приложения — через Hub, сами.
+        Смотреть нужно зелёную колонку справа, не ярлык старого плагина в меню.
       </p>
     </section>
 
     <footer>
-      <p><strong>QUICKBAR</strong> · разработано в ИТ-Мастерской</p>
+      <p><strong>QUICKBAR</strong> · разработано в ИТ-Мастерской · установка 5 000 ₽</p>
       <p style="margin-top:8px">Для владельцев Changan Lamore 2023 с английской ГУ Feiyu. Не для чужих машин и не для отключения штатной безопасности.</p>
     </footer>
   </div>
