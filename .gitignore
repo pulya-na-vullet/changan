@@ -8,6 +8,9 @@ hub/certs/
 *.p12
 *.jks
 screenshots/
+captures/*.png
+captures/*.mp4
+captures/*.gif
 .idea/
 .vscode/
 logs/*.log

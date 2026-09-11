@@ -12,6 +12,7 @@ from hub.adb import Adb, CommandResult
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.quickrise",
     "com.changanhub.quickkeep",
     "com.changanhub.quicklane",
     "com.changanhub.quickdock",
@@ -222,7 +223,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
-                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickkeep.",
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickrise.",
                 72,
             )
             if conflict:
@@ -252,7 +253,7 @@ def install_apk(
                     step(
                         "Feiyu не сняла пакет (提示 not allow delete или timeout). "
                         "Старую панель не трогаю. Новая QuickBar ставится отдельным "
-                        "пакетом com.changanhub.quickkeep.",
+                        "пакетом com.changanhub.quickrise.",
                         75,
                     )
     if _ok_install(result):
@@ -268,7 +269,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quickkeep не появится.",
+            "в списке com.changanhub.quickrise не появится.",
             100,
         )
         return report
@@ -341,8 +342,10 @@ def apk_package_name(apk: Path) -> str | None:
     from hub.catalog import CATALOG
 
     stem = apk.name.lower()
-    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep")):
-        return "com.changanhub.quickkeep"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise")):
+        return "com.changanhub.quickrise"
+    if any(token in stem for token in ("player", "lamoreplayer")):
+        return "com.changanhub.lamoreplayer"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")

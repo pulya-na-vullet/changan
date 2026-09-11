@@ -53,12 +53,14 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert f"pm disable-user --user 0 {LEGACY_PACKAGE}" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickdock" in joined
     assert f"pm disable-user --user 0 com.changanhub.quicklane" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quickkeep" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
     assert f"pm disable {LEGACY_PACKAGE}" not in joined
-    assert PACKAGE == "com.changanhub.quickkeep"
+    assert PACKAGE == "com.changanhub.quickrise"
     assert "com.changanhub.quickdock" in LEGACY_PACKAGES
     assert "com.changanhub.quicklane" in LEGACY_PACKAGES
+    assert "com.changanhub.quickkeep" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -116,6 +118,7 @@ def test_quickbar_is_three_times_taller() -> None:
         encoding="utf-8"
     )
     assert "HEIGHT_SCALE = 3" in src
+    assert "TEXT_SCALE = 2" in src
     assert "48 * HEIGHT_SCALE" in src
     assert "VERTICAL_MARGIN = 0.20f" in src
     assert "COLLAPSED_W_DP = 64" in src
@@ -138,14 +141,14 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.4"' in mf
+    assert 'android:versionName="1.3.7"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.quickkeep"' in mf
+    assert 'package="com.changanhub.quickrise"' in mf
     assert "android:persistent" not in mf
     assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
@@ -179,6 +182,8 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "finish();" in main
     assert "com.changanhub.quickdock" in overlay
     assert "com.changanhub.quicklane" in overlay
+    assert "com.changanhub.quickkeep" in overlay
+    assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
     assert "ACTION_KEEPALIVE" in overlay
     assert "getService" in overlay
     assert "KeepAliveAccessibility" in mf
@@ -193,6 +198,11 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "startTrampoline" in access
     assert "ACTION_RESUME" in overlay
     assert "reattachOverlay" in overlay
+    assert "lastReattachElapsed < 8_000L" in overlay
+    assert "pokeOverlay" in overlay
+    assert "getWindowVisibleDisplayFrame" not in overlay
+    assert "hiddenExpanded || searching" not in overlay
+    assert "pendingHidden" in overlay
     assert "RTC_WAKEUP" in overlay
     actions = Path(
         "android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java"
@@ -207,7 +217,8 @@ def test_quickbar_groups_and_usb_install() -> None:
     )
     assert 'sectionHeader("Сторонние")' in src
     assert 'foldHeader("Системные"' in src
-    assert 'sectionHeader("Скрытые")' in src
+    assert 'foldHeader("Скрытые"' in src
+    assert 'sectionHeader("Скрытые")' not in src
     assert "R.drawable.ic_delete" not in src
     assert "R.drawable.ic_eye_off" in src
     assert "R.drawable.ic_check" in src
@@ -222,6 +233,11 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "moveUserApp" in src
     assert "reorderMode" in src
     assert "systemExpanded" in src
+    assert "hiddenExpanded" in src
+    assert "pendingHidden" in src
+    assert "hiddenExpanded || searching" not in src
+    assert "TEXT_SCALE = 2" in src
+    assert "setTextSize(textSp(" in src
     assert "R.drawable.ic_usb" in src
     assert "R.drawable.logo_itm" not in src
     assert "expandToIcons" not in src
@@ -249,6 +265,8 @@ def test_quickbar_groups_and_usb_install() -> None:
         encoding="utf-8"
     )
     assert "setPersisted(true)" in job
+    assert "LATENCY_MS = 3_000L" in job
+    assert "DEADLINE_MS = 12_000L" in job
     assert "setMinimumLatency" in job
     assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/UsbStorage.java").is_file()
     assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/PackageActions.java").is_file()
@@ -330,7 +348,7 @@ def test_accessibility_dedupes_and_skips_huge_lists() -> None:
     assert ACCESS_COMPONENT in value.split(":")
     assert len(f"settings put secure enabled_accessibility_services {value}") < 500
     huge = ":".join(f"com.pkg{i}/.Svc" for i in range(400))
-    assert accessibility_services_value(huge, ACCESS_COMPONENT) is None
+    assert accessibility_services_value(huge, ACCESS_COMPONENT) == ACCESS_COMPONENT
 
     fake = FakeAdb()
 
@@ -348,6 +366,35 @@ def test_accessibility_dedupes_and_skips_huge_lists() -> None:
     assert len(puts) == 1
     assert len(puts[0]) < 500
     assert "accessibility_enabled 1" in "\n".join(fake.shells)
+
+    huge_fake = FakeAdb()
+
+    def huge_shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        huge_fake.shells.append(command)
+        if command.startswith("settings get"):
+            return CommandResult(True, huge, "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    huge_fake.shell = huge_shell  # type: ignore[method-assign]
+    lines = enable_accessibility(huge_fake)
+    huge_puts = [
+        c for c in huge_fake.shells if c.startswith("settings put secure enabled_accessibility_services")
+    ]
+    assert len(huge_puts) == 1
+    assert huge_puts[0].endswith(ACCESS_COMPONENT)
+    assert len(huge_puts[0]) < 500
+    assert any("только компонент" in line for line in lines)
+
+
+def test_launch_overlay_target_uses_working_package() -> None:
+    from hub.overlay import PACKAGE, launch_overlay_target
+
+    assert launch_overlay_target(PACKAGE) == PACKAGE
+    assert launch_overlay_target("com.changanhub.quickkeep") == PACKAGE
+    assert launch_overlay_target("com.changanhub.quicklane") == PACKAGE
+    assert launch_overlay_target("mobi.zona") is None
 
 
 def test_disable_overlay_never_uninstalls() -> None:

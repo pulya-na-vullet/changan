@@ -23,3 +23,10 @@ def logs_dir() -> Path:
     path = ROOT / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def captures_dir() -> Path:
+    """PNG/MP4 from the HU live next to Hub (flash drive), not in AppData."""
+    path = ROOT / "captures"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заказать QuickBar — Changan Lamore</title>
+  <meta name="description" content="Заявка на установку QuickBar на Changan Lamore. 5 000 ₽ один раз. ИТ-Мастерская.">
+  <link rel="stylesheet" href="quickbar/page.css">
+</head>
+<body class="has-hero orders-page">
+  <div class="page-bg" aria-hidden="true"></div>
+  <div class="page-shade" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <header>
+      <div>
+        <a class="brand" href="quickbar.html">QUICKBAR</a>
+        <div class="credit">разработано в ИТ-Мастерской</div>
+      </div>
+      <nav class="nav">
+        <a href="quickbar.html">О панели</a>
+        <a href="quickbar.html#price">5 000 ₽</a>
+      </nav>
+    </header>
+
+    <section class="order-hero">
+      <p class="eyebrow">Заявка · Changan Lamore</p>
+      <h1>Поставьте панель<br>на <span>свою Lamore</span></h1>
+      <p class="lead">
+        5 000 ₽ один раз. Навигатор остаётся на экране, приложения — справа.
+        Дальше ставите сами, без абонентки и без поездок в сервис за каждым приложением.
+      </p>
+    </section>
+
+    <section class="order-section">
+      <div class="order-grid">
+        <form class="order-card" data-order-form>
+          <label>Имя
+            <input name="name" type="text" required autocomplete="name" placeholder="Как к вам обращаться">
+          </label>
+          <label>Телефон
+            <input name="phone" type="tel" required autocomplete="tel" placeholder="+7">
+          </label>
+          <label>Город
+            <input name="city" type="text" autocomplete="address-level2" placeholder="Где смотреть машину">
+          </label>
+          <label>Авто
+            <input name="car" type="text" placeholder="Lamore, год, город покупки">
+          </label>
+          <label class="wide">Комментарий
+            <textarea name="comment" rows="4" placeholder="Удобное время, что хотите поставить в первую очередь"></textarea>
+          </label>
+          <input type="hidden" name="product" value="QuickBar для Changan Lamore">
+          <input type="hidden" name="price" value="5000">
+          <input type="hidden" name="source" value="QuickBar страница заказа">
+          <input type="hidden" name="qty" value="1">
+          <button class="btn" type="submit">Отправить заявку</button>
+          <p class="order-status" data-order-status hidden></p>
+        </form>
+        <div class="badge">
+          <h3>5 000 ₽ · один раз</h3>
+          <p>Заявка складывается в ту же таблицу заказов, что и остальные заявки ИТ-Мастерской. Перезвоним, согласуем время, поставим панель.</p>
+          <p class="badge-gap">После установки приложения добавляете сами. Повторно платить за каждое новое не нужно.</p>
+          <ul class="order-points">
+            <li>Навигатор не пропадает с экрана</li>
+            <li>Свои приложения, свой порядок</li>
+            <li>Без ежемесячной платы</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p><strong>QUICKBAR</strong> · разработано в ИТ-Мастерской · установка 5 000 ₽</p>
+      <p class="foot-note"><a href="quickbar.html">Вернуться на страницу панели</a></p>
+    </footer>
+  </div>
+  <script src="quickbar/orders.js"></script>
+</body>
+</html>

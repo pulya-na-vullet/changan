@@ -14,7 +14,7 @@
 | Проблема | Как Hub это закрывает |
 |---|---|
 | Нет developer-сертификата Changan | Локальный ключ с серийником `0xddb66eefd98476f3`. Именно его проверяет `CertificateManager` Feiyu/Wutong, заводской ключ не нужен |
-| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: короткий `pm uninstall --user 0`. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.quickkeep` |
+| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: короткий `pm uninstall --user 0`. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.quickrise` |
 | Приложения не видны в лаунчере | Сбрасывается кэш `com.iflytek.autofly.launcher` |
 | Нужен быстрый доступ поверх всего | QuickBar — правый док на 13.2″ вертикальном экране |
 | USB-A в USB-A Windows не видит машину | Пошаговый мастер + перезапуск adb server + подсказки по драйверу |
@@ -23,11 +23,11 @@
 
 Прямая ссылка на ZIP этой ветки:
 
-https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/quickbar-hide-apps-0bfc.zip
+https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/lamore-player-0bfc.zip
 
 Зеркало без промежуточной страницы:
 
-https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/quickbar-hide-apps-0bfc
+https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/lamore-player-0bfc
 
 Распакуйте архив и запустите `app.py`.
 
@@ -66,11 +66,13 @@ python -m hub connect
 python -m hub overlay
 python -m hub install path\to\app.apk
 python -m hub apps
+python -m hub screenshot
+python -m hub record --seconds 30
 ```
 
 ## Правая панель (QuickBar)
 
-Приложение `com.changanhub.quickkeep` держит поверх всех Activity узкую колонку
+Приложение `com.changanhub.quickrise` держит поверх всех Activity узкую колонку
 справа:
 
 - тап — запуск;
@@ -86,7 +88,7 @@ python -m hub apps
 - автозапуск после ACC off→on: Feiyu часто **не шлёт** `BOOT_COMPLETED` и
   force-stop ставит пакет в FLAG_STOPPED. Панель поднимает служба спец.
   возможностей (Hub пишет `enabled_accessibility_services`), JobScheduler
-  (15–40 с, persisted), AlarmManager RTC+elapsed, FYT/Incall `ACC_ON` и
+  (3–12 с, persisted), AlarmManager RTC+elapsed, FYT/Incall `ACC_ON` и
   невидимый `BootActivity`. Если процесс пережил сон, а окна WindowManager
   умерли — `ACTION_RESUME` пересоздаёт колонку. Свёрнутую панель сеть/USB
   сами не раскрывают;
@@ -98,6 +100,35 @@ python -m hub apps
 
 Экран Lamore 2023 — **13.2″ вертикальный**. Панель узкая по ширине (карта не
 съедается); сверху и снизу по 20% экрана свободны, иконки крупные.
+
+## Плеер с флешки ГУ (Lamore Player)
+
+Приложение `com.changanhub.lamoreplayer` ставится из Hub, раздел **Плеер**.
+Оно смотрит USB **в головном устройстве**, не на ноутбуке.
+
+- музыка: очередь папки, визуалайзер по FFT, эквалайзер (пресеты чипа + полосы);
+- видео: на весь экран, тап показывает кнопки;
+- кнопка «Все файлы на диске» собирает аудио и видео с выбранного тома;
+- форматы, которые реально играет **декодер Feiyu/MediaTek**: MP3, AAC, M4A,
+  FLAC, WAV, OGG, MP4 (H.264), MKV/WebM если внутри тот же кодек. WMA/AVI/FLV
+  часто не открываются — это не баг плеера.
+
+Сборка: `python scripts/build_player.py` → `apps/Player.apk`.
+
+## Демо для клиентов (скриншот и видео)
+
+Отдельное приложение на ГУ не нужно: снимок и ролик идут с ноутбука по ADB.
+
+В Hub раздел **Демо**:
+
+1. Подключите ГУ.
+2. **Сделать скриншот** — PNG в `captures\hu-….png` (обычно вместе с панелью QuickBar).
+3. **Запись 30 с / 60 с / 3 мин** и **Стоп** — MP4, если кодек ГУ умеет; иначе GIF из кадров (скриншоты умеет).
+4. **Открыть папку captures** — файлы на флешке рядом с `app.py`.
+
+На ГУ снимок сначала пишется в `/data/local/tmp` (у Feiyu нет `/sdcard/Download`), затем Hub забирает файл в `captures/` на флешке.
+
+Видео: системный `screenrecord` на Lamore (1440×1920) отвечает `Encoder failed -38`. Hub пробует 1280×720 и другие размеры. Если кодек всё равно молчит — снимает кадры скриншотами и собирает GIF. Скриншот захватывает и панель QuickBar.
 
 ## Подпись без сертификата завода
 
@@ -120,10 +151,12 @@ Java — из Android Studio `jbr`, даже если `java` нет в PATH. И�
 Поставленные так приложения система считает «авторизованными». Белое окно
 **提示** `xx is auth app, not allow delete!` — Feiyu **не удаляет** такой пакет
 (`pm uninstall` зависает ~8 с и ничего не снимает). Панель QuickBar поэтому
-ставится новым id `com.changanhub.quickkeep`; старые `quickbar` / `quickdock` /
-`quicklane` остаются на ГУ, Hub их отключает (`pm disable-user` + снимает overlay).
-Кнопка «Удалить с ГУ» тоже только отключает панель — после этого «Установить и
-запустить» ставит `quickkeep`. Сброс ГУ до заводских — единственный полный uninstall.
+ставится новым id `com.changanhub.quickrise`; старые `quickbar` / `quickdock` /
+`quicklane` / `quickkeep` остаются на ГУ, Hub их отключает (`pm disable-user` +
+снимает overlay). Ярлыки старых плагинов **не содержат** скрытие и сортировку —
+это колонка справа у новой панели. Кнопка «Удалить с ГУ» тоже только отключает
+панель — после этого «Установить и запустить» ставит `quickrise`. Сброс ГУ до
+заводских — единственный полный uninstall.
 
 **Нельзя:** ставить это на чужую машину, отключать Vecentek целиком, шить
 случайные `system` образы. `adb root` Hub **не вызывает** — на Feiyu он

@@ -10,13 +10,13 @@ import android.content.Context;
 /**
  * One-shot persisted job that reschedules itself. Periodic 15-minute jobs are
  * too slow after ACC: Feiyu drops BOOT_COMPLETED and the panel must come back
- * within seconds. setPersisted survives a real reboot; the short deadline
- * forces JobScheduler to run soon after the HU wakes.
+ * within seconds. setPersisted survives a real reboot; a 3s latency / 12s
+ * deadline forces JobScheduler to run soon after the HU wakes.
  */
 public class KeepAliveJob extends JobService {
     private static final int JOB_ID = 71;
-    private static final long LATENCY_MS = 15_000L;
-    private static final long DEADLINE_MS = 40_000L;
+    private static final long LATENCY_MS = 3_000L;
+    private static final long DEADLINE_MS = 12_000L;
 
     public static void schedule(Context context) {
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);

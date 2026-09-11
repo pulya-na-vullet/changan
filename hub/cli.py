@@ -1,13 +1,15 @@
-"""Command-line entry: python -m hub connect|install|overlay|apps."""
+"""Command-line entry: python -m hub connect|install|overlay|apps|screenshot|record."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from hub.adb import Adb, AdbError
+from hub.capture import Recorder, take_screenshot
 from hub.installer import install_apk
 from hub.overlay import install_overlay, start_overlay, stop_overlay
 from hub.signer import certificate_info, ensure_keystore, sign_apk_with_method
@@ -36,6 +38,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("overlay-start")
     sub.add_parser("overlay-stop")
     sub.add_parser("apps", help="Список пакетов на ГУ")
+    sub.add_parser("screenshot", help="Снимок экрана ГУ в папку captures/")
+    p_rec = sub.add_parser("record", help="Запись экрана ГУ в папку captures/")
+    p_rec.add_argument("--seconds", type=int, default=30, help="Длительность, максимум 180")
 
     args = parser.parse_args(argv)
     if args.cmd == "gui":
@@ -78,6 +83,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "apps":
         print("\n".join(adb.packages()))
+        return 0
+    if args.cmd == "screenshot":
+        dest = take_screenshot(adb)
+        print(dest)
+        return 0
+    if args.cmd == "record":
+        rec = Recorder(adb)
+        dest = rec.start(args.seconds)
+        print(f"recording {args.seconds}s → {dest}", flush=True)
+        try:
+            while rec.running:
+                time.sleep(0.4)
+        except KeyboardInterrupt:
+            print("stop", flush=True)
+        out = rec.stop()
+        print(out)
         return 0
     return 1
 

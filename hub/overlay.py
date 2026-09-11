@@ -9,13 +9,14 @@ from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
 
 # New applicationId: Feiyu forbids deleting already-installed auth packages
-# (提示 «is auth app, not allow delete!»). quickbar / quickdock / quicklane stay
-# on the HU; this id is a first install so a new signature can land.
-PACKAGE = "com.changanhub.quickkeep"
+# (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
+# is a first install so a new signature (and hide/reorder UI) can land.
+PACKAGE = "com.changanhub.quickrise"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
     "com.changanhub.quicklane",
+    "com.changanhub.quickkeep",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
@@ -85,12 +86,24 @@ def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
     return log
 
 
-def accessibility_services_value(raw: str, component: str, max_cmd: int = _MAX_SETTINGS_CMD) -> str | None:
-    """Deduped ``enabled_accessibility_services`` value, or None if still too long.
+def is_overlay_package(package: str) -> bool:
+    return package == PACKAGE or package in LEGACY_PACKAGES
+
+
+def launch_overlay_target(package: str) -> str | None:
+    """Leftover overlay launcher icons start the working panel, not the old APK."""
+    if is_overlay_package(package):
+        return PACKAGE
+    return None
+
+
+def accessibility_services_value(raw: str, component: str, max_cmd: int = _MAX_SETTINGS_CMD) -> str:
+    """Deduped ``enabled_accessibility_services`` value that always fits ``max_cmd``.
 
     Feiyu repeats incall/iflytek components dozens of times. Rewriting that
     string with ``settings put`` blows the Windows command line (WinError 206).
-    Putting only our component would wipe Incall — skip the rewrite instead.
+    If the deduped list is still too long, keep only our component: ACC start
+    of the overlay beats preserving a duplicated vendor string we cannot write.
     """
     parts: list[str] = []
     seen: set[str] = set()
@@ -107,7 +120,7 @@ def accessibility_services_value(raw: str, component: str, max_cmd: int = _MAX_S
     value = ":".join(parts)
     cmd = f"settings put secure enabled_accessibility_services {value}"
     if len(cmd) > max_cmd:
-        return None
+        return component
     return value
 
 
@@ -118,13 +131,13 @@ def enable_accessibility(adb: Adb, progress: Progress | None = None) -> list[str
     raw = (current.stdout or "").strip()
     value = accessibility_services_value(raw, ACCESS_COMPONENT)
     cmds: list[str] = []
-    if value is None:
+    if value == ACCESS_COMPONENT and raw not in ("", "null", "0") and ACCESS_COMPONENT not in raw.split(":"):
         log.append(
             "enabled_accessibility_services слишком длинный даже после дедупа — "
-            "не вызываю settings put (WinError 206). Только accessibility_enabled 1."
+            "записываю только компонент панели (иначе WinError 206 и колонка "
+            "не поднимется при первом ACC)."
         )
-    else:
-        cmds.append(f"settings put secure enabled_accessibility_services {value}")
+    cmds.append(f"settings put secure enabled_accessibility_services {value}")
     cmds.append("settings put secure accessibility_enabled 1")
     for cmd in cmds:
         if progress:
@@ -143,7 +156,7 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
         if progress:
             progress(message, percent)
 
-    if package == PACKAGE or package in LEGACY_PACKAGES:
+    if is_overlay_package(package):
         step(
             f"{package} — auth-панель, pm uninstall покажет 提示 not allow delete. "
             "Отключаю без удаления.",
@@ -252,7 +265,9 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
     lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
     lines.append(
-        "Старые com.changanhub.quickbar / quickdock / quicklane Feiyu не даёт удалить "
-        "(auth, not allow delete) — Hub их отключает и ставит новую com.changanhub.quickkeep."
+        "Старые com.changanhub.quickbar / quickdock / quicklane / quickkeep Feiyu не даёт "
+        "удалить (auth, not allow delete) — Hub их отключает и ставит новую "
+        f"{PACKAGE}. Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
+        "Плеер ставится отдельно из раздела «Плеер»."
     )
     return lines

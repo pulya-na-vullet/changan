@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile QuickBar APK with the Android SDK (aapt2 + javac + d8)."""
+"""Compile Lamore Player APK with the Android SDK (aapt2 + javac + d8)."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "android" / "quickbar" / "src" / "main"
-OUT = ROOT / "build" / "quickbar"
-APK_OUT = ROOT / "apps" / "QuickBar.apk"
+SRC = ROOT / "android" / "player" / "src" / "main"
+OUT = ROOT / "build" / "player"
+APK_OUT = ROOT / "apps" / "Player.apk"
 
 
 def sdk_root() -> Path:
@@ -31,7 +31,6 @@ def sdk_root() -> Path:
 
 
 def javac_bin() -> str:
-    """d8 34 NPEs on JDK 21 nestmate attributes. Prefer 17 when present."""
     homes = [
         "/usr/lib/jvm/java-17-openjdk-amd64",
         "/usr/lib/jvm/java-17-openjdk",
@@ -67,7 +66,6 @@ def main() -> None:
     build_tools = latest(sdk / "build-tools")
     android_jar = sdk / "platforms" / "android-28" / "android.jar"
     if not android_jar.exists():
-        # fall back to any installed platform
         platforms = sorted((sdk / "platforms").glob("android-*"), reverse=True)
         if not platforms:
             raise SystemExit("No android.jar")
@@ -104,11 +102,11 @@ def main() -> None:
             "--java",
             str(gen),
             "--custom-package",
-            "com.changanhub.quickbar",
+            "com.changanhub.player",
             "--version-code",
-            "11",
+            "2",
             "--version-name",
-            "1.3.7",
+            "1.0.1",
             "--auto-add-overlay",
             str(res_zip),
         ]
@@ -151,7 +149,6 @@ def main() -> None:
 
     unsigned = OUT / "unsigned.apk"
     shutil.copy2(linked, unsigned)
-    # Inject classes.dex into the APK zip
     import zipfile
 
     dex = dex_dir / "classes.dex"
@@ -166,7 +163,6 @@ def main() -> None:
     aligned = OUT / "aligned.apk"
     run([str(zipalign), "-f", "4", str(tmp), str(aligned)])
 
-    # Temporary debug sign; hub signer will re-sign with Changan serial.
     sys.path.insert(0, str(ROOT))
     from hub.signer import ensure_keystore, sign_apk
 

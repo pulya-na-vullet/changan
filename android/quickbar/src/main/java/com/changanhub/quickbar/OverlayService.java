@@ -19,7 +19,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -75,11 +74,14 @@ public class OverlayService extends Service {
             "com.changanhub.quickbar",
             "com.changanhub.quickdock",
             "com.changanhub.quicklane",
+            "com.changanhub.quickkeep",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
     /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
     public static final int HEIGHT_SCALE = 3;
+    /** Overlay labels are 2× the original sp so captions match the tall layout. */
+    public static final int TEXT_SCALE = 2;
     private static final int ICON_DP = 48 * HEIGHT_SCALE;
     private static final int ROW_PAD_V_DP = 8 * HEIGHT_SCALE;
     /**
@@ -101,7 +103,7 @@ public class OverlayService extends Service {
     private static final int COLLAPSED_ICON_DP = 36;
     private static final int WATCHDOG_REQ = 7;
     private static final long WATCHDOG_MS = 20_000L;
-    private static final int[] BOOT_RETRY_SEC = {3, 10, 30, 60, 120};
+    private static final int[] BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120};
 
     private WindowManager windowManager;
     private View root;
@@ -136,6 +138,8 @@ public class OverlayService extends Service {
     private boolean reorderMode;
     /** System apps stay folded until the user opens the section this session. */
     private boolean systemExpanded;
+    /** Hidden apps stay folded until the user opens the section this session. */
+    private boolean hiddenExpanded;
     private BroadcastReceiver lifeReceiver;
 
     private final Runnable attachWatch = new Runnable() {
@@ -143,8 +147,10 @@ public class OverlayService extends Service {
         public void run() {
         if (SystemClock.elapsedRealtime() >= overlayPausedUntil && !hasOverlay()) {
             attachOverlay();
+            handler.postDelayed(this, 3_000);
+        } else {
+            handler.postDelayed(this, 15_000);
         }
-        handler.postDelayed(this, 15_000);
         }
     };
 
@@ -217,7 +223,7 @@ public class OverlayService extends Service {
         }
         for (int i = 0; i < BOOT_RETRY_SEC.length; i++) {
             Intent intent = new Intent(app, WatchdogReceiver.class);
-            intent.setAction(ACTION_KEEPALIVE);
+            intent.setAction(ACTION_RESUME);
             PendingIntent elapsedPi = pending(app, 100 + i, intent);
             PendingIntent rtcPi = pending(app, 200 + i, intent);
             long elapsedAt = SystemClock.elapsedRealtime() + BOOT_RETRY_SEC[i] * 1000L;
@@ -257,7 +263,7 @@ public class OverlayService extends Service {
         KeepAliveJob.schedule(this);
         suppressLegacy();
         attachOverlay();
-        handler.postDelayed(attachWatch, 15_000);
+        handler.postDelayed(attachWatch, 2_000);
         handler.postDelayed(imeWatch, 400);
     }
 
@@ -390,6 +396,7 @@ public class OverlayService extends Service {
 
     private void attachOverlay() {
         systemExpanded = false;
+        hiddenExpanded = false;
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         relayout();
         reloadApps();
@@ -397,12 +404,47 @@ public class OverlayService extends Service {
 
     private void reattachOverlay() {
         long now = SystemClock.elapsedRealtime();
-        if (now - lastReattachElapsed < 2500L) {
+        if (hasOverlay()) {
+            if (now - lastReattachElapsed < 8_000L) {
+                return;
+            }
+            lastReattachElapsed = now;
+            if (pokeOverlay()) {
+                return;
+            }
+        } else if (now - lastReattachElapsed < 1_500L) {
             return;
         }
         lastReattachElapsed = now;
         detachOverlay();
         attachOverlay();
+    }
+
+    /** Re-assert existing WindowManager views after ACC without remove+add flicker. */
+    private boolean pokeOverlay() {
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        }
+        if (windowManager == null) {
+            return false;
+        }
+        try {
+            if (root != null && params != null) {
+                windowManager.updateViewLayout(root, params);
+            }
+            if (dockMenu != null && menuParams != null) {
+                windowManager.updateViewLayout(dockMenu, menuParams);
+            }
+            if (dockRecent != null && recentParams != null) {
+                windowManager.updateViewLayout(dockRecent, recentParams);
+            }
+            if (peekView != null && peekParams != null) {
+                windowManager.updateViewLayout(peekView, peekParams);
+            }
+            return hasOverlay();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private boolean hasOverlay() {
@@ -644,7 +686,16 @@ public class OverlayService extends Service {
             return;
         }
         boolean typingHere = search != null && search.hasFocus();
-        boolean open = !typingHere && imeHeight() > dp(80);
+        int ime = imeHeight();
+        // Hysteresis: overlay only covers the middle 60%, so a naïve
+        // "covered pixels" check treats the free 20% as a keyboard and flickers.
+        boolean open;
+        if (keyboardPeek) {
+            open = ime > dp(48);
+        } else {
+            open = ime > dp(120);
+        }
+        open = !typingHere && open;
         if (!open) {
             ignoreImePeek = false;
         }
@@ -673,24 +724,7 @@ public class OverlayService extends Service {
             Method method = InputMethodManager.class.getMethod("getInputMethodWindowVisibleHeight");
             Object value = method.invoke(imm);
             if (value instanceof Integer) {
-                int height = ((Integer) value).intValue();
-                if (height > dp(80)) {
-                    return height;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        try {
-            Rect visible = new Rect();
-            View sample = peekView != null ? peekView : (root != null ? root : dockMenu);
-            if (sample != null) {
-                sample.getWindowVisibleDisplayFrame(visible);
-                int screen = displayHeight();
-                int covered = screen - visible.bottom;
-                // Ignore the nav bar; a real IME covers a chunk of the screen.
-                if (visible.bottom > 0 && covered > Math.round(screen * 0.12f)) {
-                    return covered;
-                }
+                return Math.max(0, ((Integer) value).intValue());
             }
         } catch (Exception ignored) {
         }
@@ -724,7 +758,7 @@ public class OverlayService extends Service {
         titleView = new TextView(this);
         titleView.setText(R.string.app_name);
         titleView.setTextColor(Color.parseColor("#3DDC97"));
-        titleView.setTextSize(18);
+        titleView.setTextSize(textSp(18));
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
         titleView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
@@ -783,7 +817,7 @@ public class OverlayService extends Service {
 
         usbStatus = new TextView(this);
         usbStatus.setTextColor(Color.parseColor("#3DDC97"));
-        usbStatus.setTextSize(12);
+        usbStatus.setTextSize(textSp(12));
         usbStatus.setVisibility(View.GONE);
         usbStatus.setPadding(dp(4), dp(4), dp(4), dp(4));
         panel.addView(usbStatus);
@@ -792,7 +826,7 @@ public class OverlayService extends Service {
         search.setHint("поиск");
         search.setHintTextColor(Color.parseColor("#9AA7B8"));
         search.setTextColor(Color.WHITE);
-        search.setTextSize(13);
+        search.setTextSize(textSp(13));
         search.setSingleLine(true);
         search.setBackgroundColor(Color.parseColor("#3328E07A"));
         search.setPadding(dp(8), dp(8 * HEIGHT_SCALE), dp(8), dp(8 * HEIGHT_SCALE));
@@ -993,6 +1027,9 @@ public class OverlayService extends Service {
             hideSet.remove(pkg);
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putStringSet(KEY_HIDDEN, hideSet).apply();
+        if (hide) {
+            hiddenExpanded = false;
+        }
     }
 
     private List<String> loadOrder() {
@@ -1226,17 +1263,28 @@ public class OverlayService extends Service {
             }
         }
         if (hiddenItems.size() > 0 && !reorderMode) {
-            appList.addView(sectionHeader("Скрытые"));
-            for (int i = 0; i < hiddenItems.size(); i++) {
-                AppItem item = hiddenItems.get(i);
-                appList.addView(row(item, fav.contains(item.pkg), true));
-                shown++;
+            boolean pendingHidden = pendingHidePkg != null && hideSet.contains(pendingHidePkg);
+            boolean showHiddenRows = hiddenExpanded || pendingHidden;
+            appList.addView(foldHeader("Скрытые", hiddenItems.size(), showHiddenRows, new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    hiddenExpanded = !hiddenExpanded;
+                    renderApps();
+                }
+            }));
+            if (showHiddenRows) {
+                for (int i = 0; i < hiddenItems.size(); i++) {
+                    AppItem item = hiddenItems.get(i);
+                    appList.addView(row(item, fav.contains(item.pkg), true));
+                    shown++;
+                }
             }
         }
         if (shown == 0 && systemItems.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("нет приложений");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
+            empty.setTextSize(textSp(14));
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
@@ -1298,13 +1346,14 @@ public class OverlayService extends Service {
         TextView hint = new TextView(this);
         hint.setText("APK с флешки в USB ГУ. Тап по строке или зелёной кнопке — установка.");
         hint.setTextColor(Color.parseColor("#9AA7B8"));
-        hint.setTextSize(11);
+        hint.setTextSize(textSp(11));
         hint.setPadding(dp(4), 0, dp(4), dp(8));
         appList.addView(hint);
         if (usbStatus != null && usbStatus.getVisibility() == View.VISIBLE) {
             TextView copy = new TextView(this);
             copy.setText(usbStatus.getText());
             copy.setTextColor(Color.parseColor("#3DDC97"));
+            copy.setTextSize(textSp(12));
             copy.setPadding(dp(4), 0, dp(4), dp(8));
             appList.addView(copy);
         }
@@ -1335,6 +1384,7 @@ public class OverlayService extends Service {
                     ? "APK не найдены.\nВставьте USB в разъём ГУ.\n" + paths
                     : "нет APK по поиску");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
+            empty.setTextSize(textSp(14));
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(12), 0, dp(12));
             appList.addView(empty);
@@ -1345,7 +1395,7 @@ public class OverlayService extends Service {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(Color.parseColor("#3DDC97"));
-        header.setTextSize(13);
+        header.setTextSize(textSp(13));
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(dp(4), dp(14), dp(4), dp(6));
         return header;
@@ -1355,7 +1405,7 @@ public class OverlayService extends Service {
         TextView header = new TextView(this);
         header.setText((expanded ? "▾  " : "▸  ") + text + "  ·  " + count);
         header.setTextColor(Color.parseColor("#3DDC97"));
-        header.setTextSize(13);
+        header.setTextSize(textSp(13));
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(dp(4), dp(14), dp(4), dp(6));
         header.setOnClickListener(click);
@@ -1378,12 +1428,12 @@ public class OverlayService extends Service {
         TextView name = new TextView(this);
         name.setText(apk.getName());
         name.setTextColor(Color.WHITE);
-        name.setTextSize(14);
+        name.setTextSize(textSp(14));
         name.setMaxLines(2);
         TextView meta = new TextView(this);
         meta.setText(apk.getParent() + " · " + (apk.length() / 1024) + " КБ");
         meta.setTextColor(Color.parseColor("#9AA7B8"));
-        meta.setTextSize(10);
+        meta.setTextSize(textSp(10));
         meta.setMaxLines(2);
         text.addView(name);
         text.addView(meta);
@@ -1456,7 +1506,7 @@ public class OverlayService extends Service {
             TextView name = new TextView(this);
             name.setText(item.label);
             name.setTextColor(Color.WHITE);
-            name.setTextSize(14);
+            name.setTextSize(textSp(14));
             name.setMaxLines(2);
             TextView mark = new TextView(this);
             if (pending) {
@@ -1469,7 +1519,7 @@ public class OverlayService extends Service {
                 mark.setText(favorite ? "★ избранное" : "удерживайте ★");
             }
             mark.setTextColor(Color.parseColor("#9AA7B8"));
-            mark.setTextSize(10);
+            mark.setTextSize(textSp(10));
             textCol.addView(name);
             textCol.addView(mark);
             row.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -1695,6 +1745,10 @@ public class OverlayService extends Service {
     private int dp(int value) {
         DisplayMetrics m = getResources().getDisplayMetrics();
         return Math.round(value * m.density);
+    }
+
+    private float textSp(int size) {
+        return size * TEXT_SCALE;
     }
 
     /** Old overlay ids cannot be uninstalled on Feiyu (auth, not allow delete). */
