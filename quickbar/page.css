@@ -16,15 +16,15 @@ img { max-width: 100%; display: block; }
 .page-bg {
   position: fixed; inset: 0; z-index: 0;
   background:
-    url("photos/lamore-hero.jpg") center 42% / cover no-repeat;
-  transform: scale(1.04);
-  filter: saturate(1.05);
+    url("photos/lamore-hero.jpg") 62% 48% / cover no-repeat;
+  transform: scale(1.06);
+  filter: saturate(1.12) contrast(1.06);
 }
 .page-shade {
   position: fixed; inset: 0; z-index: 0;
   background:
-    linear-gradient(90deg, rgba(7,11,20,.92) 0%, rgba(7,11,20,.78) 42%, rgba(7,11,20,.55) 100%),
-    linear-gradient(180deg, rgba(7,11,20,.35) 0%, rgba(7,11,20,.55) 70%, rgba(7,11,20,.92) 100%);
+    linear-gradient(90deg, rgba(7,11,20,.78) 0%, rgba(7,11,20,.45) 46%, rgba(7,11,20,.18) 100%),
+    linear-gradient(180deg, rgba(7,11,20,.22) 0%, rgba(7,11,20,.28) 62%, rgba(7,11,20,.78) 100%);
 }
 .wrap { position: relative; z-index: 1; width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
 header {
