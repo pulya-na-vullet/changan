@@ -81,6 +81,8 @@ public class OverlayService extends Service {
 
     /** Vertical UI is 3× the original dp so tap targets match a 13.2″ HU. */
     public static final int HEIGHT_SCALE = 3;
+    /** Overlay labels are 2× the original sp so captions match the tall layout. */
+    public static final int TEXT_SCALE = 2;
     private static final int ICON_DP = 48 * HEIGHT_SCALE;
     private static final int ROW_PAD_V_DP = 8 * HEIGHT_SCALE;
     /**
@@ -137,6 +139,8 @@ public class OverlayService extends Service {
     private boolean reorderMode;
     /** System apps stay folded until the user opens the section this session. */
     private boolean systemExpanded;
+    /** Hidden apps stay folded until the user opens the section this session. */
+    private boolean hiddenExpanded;
     private BroadcastReceiver lifeReceiver;
 
     private final Runnable attachWatch = new Runnable() {
@@ -393,6 +397,7 @@ public class OverlayService extends Service {
 
     private void attachOverlay() {
         systemExpanded = false;
+        hiddenExpanded = false;
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         relayout();
         reloadApps();
@@ -727,7 +732,7 @@ public class OverlayService extends Service {
         titleView = new TextView(this);
         titleView.setText(R.string.app_name);
         titleView.setTextColor(Color.parseColor("#3DDC97"));
-        titleView.setTextSize(18);
+        titleView.setTextSize(textSp(18));
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
         titleView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
@@ -786,7 +791,7 @@ public class OverlayService extends Service {
 
         usbStatus = new TextView(this);
         usbStatus.setTextColor(Color.parseColor("#3DDC97"));
-        usbStatus.setTextSize(12);
+        usbStatus.setTextSize(textSp(12));
         usbStatus.setVisibility(View.GONE);
         usbStatus.setPadding(dp(4), dp(4), dp(4), dp(4));
         panel.addView(usbStatus);
@@ -795,7 +800,7 @@ public class OverlayService extends Service {
         search.setHint("поиск");
         search.setHintTextColor(Color.parseColor("#9AA7B8"));
         search.setTextColor(Color.WHITE);
-        search.setTextSize(13);
+        search.setTextSize(textSp(13));
         search.setSingleLine(true);
         search.setBackgroundColor(Color.parseColor("#3328E07A"));
         search.setPadding(dp(8), dp(8 * HEIGHT_SCALE), dp(8), dp(8 * HEIGHT_SCALE));
@@ -1229,17 +1234,27 @@ public class OverlayService extends Service {
             }
         }
         if (hiddenItems.size() > 0 && !reorderMode) {
-            appList.addView(sectionHeader("Скрытые"));
-            for (int i = 0; i < hiddenItems.size(); i++) {
-                AppItem item = hiddenItems.get(i);
-                appList.addView(row(item, fav.contains(item.pkg), true));
-                shown++;
+            boolean showHiddenRows = hiddenExpanded || searching;
+            appList.addView(foldHeader("Скрытые", hiddenItems.size(), showHiddenRows, new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    hiddenExpanded = !hiddenExpanded;
+                    renderApps();
+                }
+            }));
+            if (showHiddenRows) {
+                for (int i = 0; i < hiddenItems.size(); i++) {
+                    AppItem item = hiddenItems.get(i);
+                    appList.addView(row(item, fav.contains(item.pkg), true));
+                    shown++;
+                }
             }
         }
         if (shown == 0 && systemItems.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("нет приложений");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
+            empty.setTextSize(textSp(14));
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
@@ -1301,13 +1316,14 @@ public class OverlayService extends Service {
         TextView hint = new TextView(this);
         hint.setText("APK с флешки в USB ГУ. Тап по строке или зелёной кнопке — установка.");
         hint.setTextColor(Color.parseColor("#9AA7B8"));
-        hint.setTextSize(11);
+        hint.setTextSize(textSp(11));
         hint.setPadding(dp(4), 0, dp(4), dp(8));
         appList.addView(hint);
         if (usbStatus != null && usbStatus.getVisibility() == View.VISIBLE) {
             TextView copy = new TextView(this);
             copy.setText(usbStatus.getText());
             copy.setTextColor(Color.parseColor("#3DDC97"));
+            copy.setTextSize(textSp(12));
             copy.setPadding(dp(4), 0, dp(4), dp(8));
             appList.addView(copy);
         }
@@ -1338,6 +1354,7 @@ public class OverlayService extends Service {
                     ? "APK не найдены.\nВставьте USB в разъём ГУ.\n" + paths
                     : "нет APK по поиску");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
+            empty.setTextSize(textSp(14));
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(12), 0, dp(12));
             appList.addView(empty);
@@ -1348,7 +1365,7 @@ public class OverlayService extends Service {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(Color.parseColor("#3DDC97"));
-        header.setTextSize(13);
+        header.setTextSize(textSp(13));
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(dp(4), dp(14), dp(4), dp(6));
         return header;
@@ -1358,7 +1375,7 @@ public class OverlayService extends Service {
         TextView header = new TextView(this);
         header.setText((expanded ? "▾  " : "▸  ") + text + "  ·  " + count);
         header.setTextColor(Color.parseColor("#3DDC97"));
-        header.setTextSize(13);
+        header.setTextSize(textSp(13));
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(dp(4), dp(14), dp(4), dp(6));
         header.setOnClickListener(click);
@@ -1381,12 +1398,12 @@ public class OverlayService extends Service {
         TextView name = new TextView(this);
         name.setText(apk.getName());
         name.setTextColor(Color.WHITE);
-        name.setTextSize(14);
+        name.setTextSize(textSp(14));
         name.setMaxLines(2);
         TextView meta = new TextView(this);
         meta.setText(apk.getParent() + " · " + (apk.length() / 1024) + " КБ");
         meta.setTextColor(Color.parseColor("#9AA7B8"));
-        meta.setTextSize(10);
+        meta.setTextSize(textSp(10));
         meta.setMaxLines(2);
         text.addView(name);
         text.addView(meta);
@@ -1459,7 +1476,7 @@ public class OverlayService extends Service {
             TextView name = new TextView(this);
             name.setText(item.label);
             name.setTextColor(Color.WHITE);
-            name.setTextSize(14);
+            name.setTextSize(textSp(14));
             name.setMaxLines(2);
             TextView mark = new TextView(this);
             if (pending) {
@@ -1472,7 +1489,7 @@ public class OverlayService extends Service {
                 mark.setText(favorite ? "★ избранное" : "удерживайте ★");
             }
             mark.setTextColor(Color.parseColor("#9AA7B8"));
-            mark.setTextSize(10);
+            mark.setTextSize(textSp(10));
             textCol.addView(name);
             textCol.addView(mark);
             row.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -1698,6 +1715,10 @@ public class OverlayService extends Service {
     private int dp(int value) {
         DisplayMetrics m = getResources().getDisplayMetrics();
         return Math.round(value * m.density);
+    }
+
+    private float textSp(int size) {
+        return size * TEXT_SCALE;
     }
 
     /** Old overlay ids cannot be uninstalled on Feiyu (auth, not allow delete). */

@@ -118,6 +118,7 @@ def test_quickbar_is_three_times_taller() -> None:
         encoding="utf-8"
     )
     assert "HEIGHT_SCALE = 3" in src
+    assert "TEXT_SCALE = 2" in src
     assert "48 * HEIGHT_SCALE" in src
     assert "VERTICAL_MARGIN = 0.20f" in src
     assert "COLLAPSED_W_DP = 64" in src
@@ -140,7 +141,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.5"' in mf
+    assert 'android:versionName="1.3.6"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -212,7 +213,8 @@ def test_quickbar_groups_and_usb_install() -> None:
     )
     assert 'sectionHeader("Сторонние")' in src
     assert 'foldHeader("Системные"' in src
-    assert 'sectionHeader("Скрытые")' in src
+    assert 'foldHeader("Скрытые"' in src
+    assert 'sectionHeader("Скрытые")' not in src
     assert "R.drawable.ic_delete" not in src
     assert "R.drawable.ic_eye_off" in src
     assert "R.drawable.ic_check" in src
@@ -227,6 +229,9 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "moveUserApp" in src
     assert "reorderMode" in src
     assert "systemExpanded" in src
+    assert "hiddenExpanded" in src
+    assert "TEXT_SCALE = 2" in src
+    assert "setTextSize(textSp(" in src
     assert "R.drawable.ic_usb" in src
     assert "R.drawable.logo_itm" not in src
     assert "expandToIcons" not in src
