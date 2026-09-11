@@ -1,11 +1,10 @@
 (function () {
   /**
-   * Webhook еврокубов / этой таблицы (URL заканчивается на /exec).
-   * Лист: https://docs.google.com/spreadsheets/d/1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw/edit?usp=sharing
-   * Колонки как eurocubes.html: дата, имя, телефон, текст заказа, страница, статус.
+   * Тот же webhook, что eurocubes.html на fhk-designs.ru:
+   * GET query → лист «Заявки».
    */
-  var QUICKBAR_ORDERS_URL = "";
-  var SHEET_ID = "1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw";
+  var GOOGLE_SHEET_URL =
+    "https://script.google.com/macros/s/AKfycbxOqN9tHBz587AD47Q7L05aIIz3HlKlncoGg-v40GfLIrr6WyDn3CWZbzTQ9QDRTIe0/exec";
 
   function ready(fn) {
     if (document.readyState === "loading") {
@@ -29,18 +28,6 @@
     node.textContent = text || "";
   }
 
-  function pad(n) {
-    return n < 10 ? "0" + n : String(n);
-  }
-
-  function formatDate() {
-    var d = new Date();
-    return (
-      pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear() +
-      ", " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds())
-    );
-  }
-
   function pageName() {
     var file = (location.pathname.split("/").pop() || "").trim();
     return file || "quickbar.html";
@@ -59,44 +46,24 @@
     return parts.filter(Boolean).join(" ");
   }
 
-  function payload(form) {
-    var name = (form.elements.name && form.elements.name.value) || "";
-    var phone = (form.elements.phone && form.elements.phone.value) || "";
-    var message = orderMessage(form);
-    var page = pageName();
-    var date = formatDate();
-    var data = new FormData();
-    data.set("date", date);
-    data.set("timestamp", date);
-    data.set("name", name);
-    data.set("phone", phone);
-    data.set("message", message);
-    data.set("comment", message);
-    data.set("page", page);
-    data.set("source", page);
-    data.set("Имя", name);
-    data.set("Телефон", phone);
-    data.set("Комментарий", message);
-    data.set("Источник", page);
-    return { form: data, json: {
-      date: date,
-      name: name,
-      phone: phone,
-      message: message,
-      page: page,
-      sheet: SHEET_ID
-    }};
+  function submitParams(form) {
+    var name = ((form.elements.name && form.elements.name.value) || "").trim();
+    var phone = ((form.elements.phone && form.elements.phone.value) || "").replace(/\D/g, "");
+    var params = new URLSearchParams();
+    params.append(
+      "timestamp",
+      new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })
+    );
+    params.append("name", name);
+    params.append("phone", phone);
+    params.append("message", orderMessage(form));
+    params.append("source", pageName());
+    return params;
   }
 
   function submitOrder(form) {
-    var url = QUICKBAR_ORDERS_URL.trim();
-    var packed = payload(form);
-    if (!url) {
-      return Promise.reject(new Error("no-webhook"));
-    }
-    return fetch(url, {
-      method: "POST",
-      body: packed.form,
+    return fetch(GOOGLE_SHEET_URL + "?" + submitParams(form).toString(), {
+      method: "GET",
       mode: "no-cors"
     });
   }

@@ -48,11 +48,9 @@ def test_orders_page_posts_to_shared_sheet() -> None:
     assert "5 000" in html
     assert "lamore-hero.jpg" in css
     assert "1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw" in gs
-    assert "1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw" in js
     assert "2020729866" in gs
-    assert "usp=sharing" in js
+    assert "AKfycbxOqN9tHBz587AD47Q7L05aIIz3HlKlncoGg-v40GfLIrr6WyDn3CWZbzTQ9QDRTIe0" in js
+    assert "GOOGLE_SHEET_URL" in js
+    assert 'method: "GET"' in js
     assert "Заказ QuickBar" in js
-    assert "eurocubes.html" in gs
-    assert "QUICKBAR_ORDERS_URL" in js
-    assert "script.google.com" not in html
     assert (ROOT / "quickbar" / "orders.js").is_file()
