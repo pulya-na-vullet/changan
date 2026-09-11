@@ -3,145 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>QuickBar — правая панель для Changan Lamore</title>
-  <meta name="description" content="QuickBar для Changan Lamore 2023. Установка 5 000 ₽ один раз — дальше приложения ставите сами. Разработано в ИТ-Мастерской.">
-  <style>
-    :root {
-      --bg: #070b14;
-      --panel: #0b1220;
-      --card: #121a2b;
-      --accent: #3ddc97;
-      --accent-dim: #1f6f4a;
-      --text: #f3f6fb;
-      --muted: #9aa7b8;
-      --line: #243049;
-      --danger: #ff6b6b;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; }
-    a { color: var(--accent); text-decoration: none; }
-    img { max-width: 100%; display: block; }
-    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
-    header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 22px 0 8px;
-    }
-    .brand { font-weight: 700; letter-spacing: .08em; color: var(--accent); font-size: 18px; }
-    .credit { color: var(--accent); font-size: 12px; font-weight: 700; opacity: .9; }
-    .nav a { color: var(--muted); margin-left: 22px; font-size: 14px; }
-    .nav a:hover { color: var(--text); }
-    .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; padding: 36px 0 56px; }
-    h1 { font-size: clamp(36px, 5vw, 58px); line-height: 1.05; letter-spacing: -0.03em; }
-    h1 span { color: var(--accent); }
-    .lead { color: var(--muted); font-size: 18px; line-height: 1.5; margin-top: 18px; max-width: 36em; }
-    .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
-    .pill { border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 7px 12px; font-size: 13px; }
-    .shot {
-      border-radius: 24px; overflow: hidden; border: 1px solid var(--line);
-      box-shadow: 0 30px 80px rgba(0,0,0,.45);
-      background: var(--card);
-    }
-    .shot img { width: 100%; height: auto; max-height: 720px; object-fit: contain; background: #101a2c; }
-    section { padding: 28px 0 64px; }
-    h2 { font-size: 28px; margin-bottom: 8px; }
-    .sub { color: var(--muted); margin-bottom: 28px; }
-    .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    figure { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
-    figure img { width: 100%; height: 520px; object-fit: contain; object-position: center; background: #101a2c; }
-    .price {
-      display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: stretch;
-      background: linear-gradient(160deg, #143326 0%, #121a2b 45%, #0b1220 100%);
-      border: 1px solid rgba(61,220,151,.35); border-radius: 24px; padding: 32px;
-    }
-    .price .tag { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-    .price .sum { font-size: clamp(42px, 6vw, 64px); font-weight: 700; letter-spacing: -0.03em; margin: 8px 0 6px; }
-    .price .sum span { color: var(--accent); }
-    .price ul { color: var(--muted); margin: 16px 0 0 18px; line-height: 1.55; }
-    .badge {
-      background: var(--card); border-radius: 18px; padding: 22px; border: 1px solid var(--line);
-    }
-    .badge h3 { font-size: 20px; margin-bottom: 10px; }
-    .badge p { color: var(--muted); line-height: 1.5; }
-    figcaption { padding: 14px 16px 16px; color: var(--muted); font-size: 14px; line-height: 1.4; }
-    figcaption strong { color: var(--text); display: block; margin-bottom: 4px; }
-    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
-    .card h3 { font-size: 16px; color: var(--accent); margin-bottom: 8px; }
-    .card p { color: var(--muted); font-size: 14px; line-height: 1.5; }
-    .demo {
-      display: grid; grid-template-columns: 1fr 320px; gap: 28px; align-items: start;
-      background: linear-gradient(180deg, #102033, #0b1220); border: 1px solid var(--line);
-      border-radius: 24px; overflow: hidden; min-height: 560px;
-    }
-    .map {
-      position: relative; min-height: 560px;
-      background:
-        radial-gradient(circle at 30% 70%, rgba(61,220,151,.12), transparent 28%),
-        linear-gradient(#1a2740 1px, transparent 1px),
-        linear-gradient(90deg, #1a2740 1px, transparent 1px),
-        #0e1828;
-      background-size: auto, 42px 42px, 42px 42px, auto;
-    }
-    .route {
-      position: absolute; left: 18%; top: 8%; width: 8px; height: 78%;
-      background: #3b82f6; border-radius: 8px; transform: rotate(-8deg);
-      box-shadow: 0 0 0 6px rgba(59,130,246,.18);
-    }
-    .arrow {
-      position: absolute; left: 22%; top: 58%; width: 0; height: 0;
-      border-left: 12px solid transparent; border-right: 12px solid transparent;
-      border-bottom: 22px solid #60a5fa; transform: rotate(-18deg);
-    }
-    .gap-hint {
-      position: absolute; right: 338px; top: 22%; bottom: 22%; width: 18px;
-      border: 1px dashed rgba(61,220,151,.35); border-radius: 8px;
-    }
-    .panel {
-      width: 320px; background: rgba(11,18,32,.90); border-left: 1px solid rgba(61,220,151,.4);
-      border-radius: 18px 0 0 18px; padding: 14px 10px; align-self: stretch;
-    }
-    .panel h4 { color: var(--accent); text-align: center; font-size: 28px; margin-bottom: 10px; }
-    .tools { display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; }
-    .tools span {
-      width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
-      color: #fff; background: #182235; font-size: 16px;
-    }
-    .search {
-      background: #182235; border: 1px solid var(--line); border-radius: 12px;
-      color: var(--muted); padding: 10px 12px; font-size: 16px; margin-bottom: 14px;
-    }
-    .sec { color: var(--accent); font-weight: 700; font-size: 16px; padding: 10px 6px 6px; }
-    .fold { cursor: pointer; user-select: none; }
-    .fold::before { content: "▸  "; }
-    .fold.open::before { content: "▾  "; }
-    .row {
-      display: flex; align-items: center; gap: 10px; padding: 10px 6px;
-      border-radius: 12px;
-    }
-    .row.fav { background: rgba(40,224,122,.12); }
-    .ico {
-      width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
-      font-weight: 700; color: #fff; flex: 0 0 auto;
-    }
-    .name { font-size: 18px; line-height: 1.15; }
-    .meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
-    .eye { margin-left: auto; color: var(--muted); font-size: 18px; }
-    .hidden-row { display: none; opacity: .7; background: rgba(255,107,107,.12); }
-    .open + .hidden-list .hidden-row, .sys-list.open .sys-row { display: flex; }
-    .sys-row { display: none; }
-    .note { color: var(--muted); font-size: 14px; line-height: 1.55; margin-top: 18px; }
-    footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 13px; }
-    footer strong { color: var(--accent); }
-    @media (max-width: 900px) {
-      .hero, .demo, .gallery, .grid, .price { grid-template-columns: 1fr; }
-      .shot img, figure img { height: auto; }
-      .nav { display: none; }
-      .gap-hint { display: none; }
-      .panel { width: 100%; border-radius: 0; }
-    }
-  </style>
+  <title>QuickBar — приложения на экране Changan Lamore</title>
+  <meta name="description" content="Правая панель на штатном экране Changan Lamore. Навигатор не пропадает. Установка 5 000 ₽ один раз — дальше приложения ставите сами. ИТ-Мастерская.">
+  <link rel="stylesheet" href="quickbar/page.css">
 </head>
-<body>
+<body class="has-hero">
+  <div class="page-bg" aria-hidden="true"></div>
+  <div class="page-shade" aria-hidden="true"></div>
+
   <div class="wrap">
     <header>
       <div>
@@ -149,92 +18,98 @@
         <div class="credit">разработано в ИТ-Мастерской</div>
       </div>
       <nav class="nav">
-        <a href="#photos">Интерфейс</a>
-        <a href="#price">Тариф</a>
-        <a href="#features">Возможности</a>
+        <a href="#photos">Как выглядит</a>
+        <a href="#price">5 000 ₽</a>
+        <a href="orders.html">Заказать</a>
       </nav>
     </header>
 
     <div class="hero">
       <div>
-        <h1>Правая панель<br>поверх <span>всех окон</span></h1>
+        <p class="eyebrow">Changan Lamore · штатный экран</p>
+        <h1>Карта ведёт.<br>Приложения — <span>справа</span>.</h1>
         <p class="lead">
-          QuickBar — узкая колонка справа на штатной ГУ Changan Lamore 2023.
-          Запуск приложений поверх карты. Не прошивка и не взлом: своя машина,
-          штатное инженерное меню.
+          Не сворачивайте навигатор, чтобы открыть Telegram.
+          QuickBar живёт поверх всех окон: Яндекс, музыка, YouTube —
+          в один тап, пока вы за рулём.
         </p>
+        <div class="hero-actions">
+          <a class="btn" href="orders.html">Оставить заявку</a>
+          <a class="btn ghost" href="#price">Почему 5 000 ₽</a>
+        </div>
         <div class="pills">
           <span class="pill">5 000 ₽ один раз</span>
           <span class="pill">дальше приложения сами</span>
-          <span class="pill">Lamore 2023 · Feiyu</span>
-          <span class="pill">13.2″ вертикальный экран</span>
+          <span class="pill">без абонентки</span>
+          <span class="pill">Lamore 2023</span>
         </div>
       </div>
       <figure class="shot">
-        <img src="quickbar/photos/01-panel-navigator.png" alt="QuickBar: колонка 380 dp справа, системные и скрытые свёрнуты">
+        <img src="quickbar/photos/01-panel-navigator.png" alt="QuickBar справа на экране: навигатор слева, приложения под рукой">
       </figure>
     </div>
 
     <section id="price">
-      <h2>Тариф</h2>
-      <p class="sub">Один платёж. Без абонентки и без платы за каждое новое приложение.</p>
+      <h2>Один платёж — и машина ваша</h2>
+      <p class="sub">Не за каждое приложение. Не каждый визит в сервис. Один раз поставили панель.</p>
       <div class="price">
         <div>
           <div class="tag">установка</div>
           <div class="sum"><span>5 000 ₽</span></div>
-          <p style="font-size:20px;line-height:1.35">Один раз платите 5 000 ₽ — и сами ставите нужные приложения.</p>
+          <p class="price-line">Платите один раз. Дальше нужные приложения ставите сами — сколько угодно, когда угодно.</p>
           <ul>
-            <li>Ставим QuickBar на вашу ГУ и даём Changan Hub.</li>
-            <li>Дальше навигатор, Telegram, YouTube, плеер — ставите сами, сколько нужно.</li>
-            <li>Не платите за каждое новое приложение и не приезжаете повторно.</li>
+            <li>Ставим панель на вашу Lamore и оставляем программу для установки.</li>
+            <li>Навигатор, мессенджер, видео, плеер — добавляете сами, без доплат.</li>
+            <li>В сервис за «ещё одно приложение» больше не едете.</li>
           </ul>
         </div>
         <div class="badge">
-          <h3>Что входит в 5 000 ₽</h3>
-          <p>Подключение ГУ по ADB, установка правой панели, запуск Hub на вашем ноутбуке. После этого любые APK вы ставите сами: положили файл в Hub — он переподписывает под белый список Feiyu и ставит на машину.</p>
-          <p style="margin-top:12px">Повторные визиты и «ещё одно приложение за доплату» не нужны.</p>
+          <h3>Что получаете за 5 000 ₽</h3>
+          <p>Подключаем экран, ставим QuickBar, запускаем установщик на вашем ноутбуке. После этого любой файл приложения кладёте в программу — она сама ставит его на машину.</p>
+          <p class="badge-gap">Повторные визиты и плата «за каждое новое» не нужны.</p>
+          <a class="btn" href="orders.html">Хочу на свою Lamore</a>
         </div>
       </div>
     </section>
 
     <section id="photos">
-      <h2>Интерфейс панели</h2>
-      <p class="sub">Снимки по реальной вёрстке QuickBar: колонка 380 dp справа, сверху и снизу по 20% экрана свободны, иконки ×3, подписи ×2.</p>
+      <h2>Как это выглядит в машине</h2>
+      <p class="sub">Навигатор остаётся на экране. Панель — узкая полоса справа, крупные иконки, читаемые названия.</p>
       <div class="gallery">
         <figure>
-          <img src="quickbar/photos/01-panel-navigator.png" alt="Развёрнутая панель QuickBar, системные и скрытые свёрнуты">
+          <img src="quickbar/photos/01-panel-navigator.png" alt="Развёрнутая панель QuickBar рядом с навигатором">
           <figcaption>
-            <strong>Список приложений</strong>
-            Сторонние, поиск, скрытие. Системные и скрытые закрыты, пока не откроете заголовок.
+            <strong>Всё нужное справа</strong>
+            Яндекс.Навигатор не прячется. Слева дорога, справа — ваши приложения.
           </figcaption>
         </figure>
         <figure>
-          <img src="quickbar/photos/02-reorder.png" alt="Режим порядка списка QuickBar">
+          <img src="quickbar/photos/02-reorder.png" alt="Свой порядок приложений в QuickBar">
           <figcaption>
-            <strong>Свой порядок</strong>
-            Заголовок «Порядок списка», стрелки ▲▼ у сторонних приложений.
+            <strong>Что чаще — то выше</strong>
+            Расставьте ярлыки как вам удобно. Избранное всегда под рукой.
           </figcaption>
         </figure>
         <figure>
-          <img src="quickbar/photos/03-hidden-folded.png" alt="Подтверждение скрытия приложения в QuickBar">
+          <img src="quickbar/photos/03-hidden-folded.png" alt="Скрытие приложения в панели QuickBar">
           <figcaption>
-            <strong>Скрытие</strong>
-            Глаз → галочка скрывает из панели, крестик отменяет. С ГУ приложение не удаляется.
+            <strong>Лишнее — с глаз долой</strong>
+            Убрали ярлык из панели. С машины ничего не стирается.
           </figcaption>
         </figure>
         <figure>
-          <img src="quickbar/photos/04-collapsed.png" alt="Свёрнутый QuickBar: меню сверху и недавние снизу">
+          <img src="quickbar/photos/04-collapsed.png" alt="Свёрнутый QuickBar: карта на весь экран">
           <figcaption>
-            <strong>Свёрнутый режим</strong>
-            Меню у верхних 20%, три недавних у нижних 20%. Между ними карта принимает нажатия.
+            <strong>Нужна только карта</strong>
+            Панель сворачивается. Экран снова ваш — дорога на всю высоту.
           </figcaption>
         </figure>
       </div>
     </section>
 
     <section id="live">
-      <h2>Сама панель</h2>
-      <p class="sub">Интерактивный макет интерфейса QuickBar. Нажмите «Системные» или «Скрытые».</p>
+      <h2>Попробуйте панель</h2>
+      <p class="sub">Макет интерфейса. Нажмите «Системные» или «Скрытые» — в машине они так же закрыты, пока не откроете.</p>
       <div class="demo">
         <div class="map" aria-hidden="true">
           <div class="route"></div>
@@ -302,49 +177,81 @@
           </div>
         </aside>
       </div>
-      <p class="note">Макет повторяет колонки QuickBar: тёмная панель, зелёный акцент, свёрнутые системные и скрытые. В машине это оверлей поверх окон ГУ, не отдельный экран меню.</p>
     </section>
 
     <section id="features">
-      <h2>Что умеет</h2>
-      <p class="sub">Всё, что нужно на ходу, не пряча навигатор.</p>
+      <h2>Зачем это владельцу Lamore</h2>
+      <p class="sub">Экран большой. Жалко отдавать его одному навигатору — и жалко прятать навигатор ради чата.</p>
       <div class="grid">
         <article class="card">
-          <h3>Запуск поверх всего</h3>
-          <p>Тап открывает приложение. Карта остаётся слева: колонка узкая, сверху и снизу по 20% экрана свободны.</p>
+          <h3>Навигатор не пропадает</h3>
+          <p>Панель узкая, справа. Дорога, стрелка, пробки — на месте, пока вы открываете мессенджер.</p>
         </article>
         <article class="card">
-          <h3>Избранное и порядок</h3>
-          <p>Удержание — в избранное. Режим стрелок ставит сторонние приложения в нужном порядке.</p>
+          <h3>Свой набор, свой порядок</h3>
+          <p>Что ездит с вами каждый день — наверху. Удержали палец — в избранное. Лишнее спрятали.</p>
         </article>
         <article class="card">
-          <h3>Скрытие, не удаление</h3>
-          <p>Глаз → галочка прячет ярлык из панели. Feiyu не даёт удалять auth-приложения — QuickBar это не обещает.</p>
+          <h3>Завели машину — панель на месте</h3>
+          <p>Выключили зажигание, завели снова. QuickBar поднимается сам, без лишних окон поверх карты.</p>
         </article>
         <article class="card">
-          <h3>Системные и скрытые свёрнуты</h3>
-          <p>Штатные 18 пунктов и спрятанные ярлыки не занимают колонку, пока вы сами их не откроете.</p>
+          <h3>Дальше — сами, без сервиса</h3>
+          <p>Один раз поставили. Новые приложения добавляете с ноутбука, когда захотите. Без поездок и без доплат.</p>
         </article>
         <article class="card">
-          <h3>После зажигания</h3>
-          <p>Выключили машину — завели снова. Панель поднимается сама, без окна поверх карты.</p>
+          <h3>Крупно и на ходу</h3>
+          <p>Иконки и подписи читаются с водительского кресла. Не прищуривайтесь на мелкое меню.</p>
         </article>
         <article class="card">
-          <h3>APK с флешки ГУ</h3>
-          <p>USB в головном устройстве, не в ноутбуке. Подпись та же, что у Hub, иначе ГУ покажет «is not auth».</p>
+          <h3>Ваша машина, ваш экран</h3>
+          <p>Для владельцев Changan Lamore 2023. Не прошивка «для всех китайцев» и не отключение защиты чужой машины.</p>
         </article>
       </div>
-      <p class="note">
-        Ставится один раз за 5 000 ₽. Дальше приложения — через Hub, сами.
-        Смотреть нужно зелёную колонку справа, не ярлык старого плагина в меню.
-      </p>
+    </section>
+
+    <section id="order" class="order-section">
+      <h2>Оставить заявку</h2>
+      <p class="sub">Перезвоним, согласуем время. Установка 5 000 ₽ — один раз.</p>
+      <div class="order-grid">
+        <form class="order-card" data-order-form>
+          <label>Имя
+            <input name="name" type="text" required autocomplete="name" placeholder="Как к вам обращаться">
+          </label>
+          <label>Телефон
+            <input name="phone" type="tel" required autocomplete="tel" placeholder="+7">
+          </label>
+          <label>Город
+            <input name="city" type="text" autocomplete="address-level2" placeholder="Где смотреть машину">
+          </label>
+          <label>Авто
+            <input name="car" type="text" placeholder="Lamore, год, город покупки">
+          </label>
+          <label class="wide">Комментарий
+            <textarea name="comment" rows="3" placeholder="Удобное время, что хотите поставить в первую очередь"></textarea>
+          </label>
+          <input type="hidden" name="product" value="QuickBar для Changan Lamore">
+          <input type="hidden" name="price" value="5000">
+          <input type="hidden" name="source" value="QuickBar лендинг">
+          <input type="hidden" name="qty" value="1">
+          <button class="btn" type="submit">Отправить заявку</button>
+          <p class="order-status" data-order-status hidden></p>
+        </form>
+        <div class="badge">
+          <h3>Что будет дальше</h3>
+          <p>Заявка падает в общую таблицу заказов ИТ-Мастерской. Мы видим имя и телефон, перезваниваем, ставим панель на вашу Lamore.</p>
+          <p class="badge-gap">5 000 ₽ — установка. Приложения после этого — ваши, без абонентки.</p>
+          <p><a href="orders.html">Отдельная страница заказа</a></p>
+        </div>
+      </div>
     </section>
 
     <footer>
       <p><strong>QUICKBAR</strong> · разработано в ИТ-Мастерской · установка 5 000 ₽</p>
-      <p style="margin-top:8px">Для владельцев Changan Lamore 2023 с английской ГУ Feiyu. Не для чужих машин и не для отключения штатной безопасности.</p>
+      <p class="foot-note">Для владельцев Changan Lamore 2023. Ваша машина, штатный экран, без абонентской платы.</p>
     </footer>
   </div>
+  <script src="quickbar/orders.js"></script>
   <script>
     const sysFold = document.getElementById("sysFold");
     const hidFold = document.getElementById("hidFold");
