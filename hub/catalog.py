@@ -26,10 +26,10 @@ CATALOG: list[CatalogApp] = [
         id="quickbar",
         name="QuickBar (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
-        package="com.changanhub.quickkeep",
+        package="com.changanhub.quickrise",
         kind="dock",
         source="bundled",
-        notes="Ставится одной кнопкой из раздела «Панель». В списке ГУ: QuickBar · com.changanhub.quickkeep. Старые quickbar / quickdock / quicklane Feiyu не удаляет (auth).",
+        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickrise. Скрытие и сортировка — в зелёной колонке справа. Старые quickbar / quickdock / quicklane / quickkeep Feiyu не удаляет (auth) — это не новая панель.",
     ),
     CatalogApp(
         id="player",
@@ -128,9 +128,10 @@ _EXTRA_LABELS = {
     "ru.yandex.androidkeyboard": "Яндекс Клавиатура",
     "ru.kinopoisk": "Кинопоиск",
     "air.StrelkaHUDFREE": "Стрелка",
-    "com.changanhub.quickbar": "QuickBar (старая, Feiyu не удаляет)",
-    "com.changanhub.quickdock": "QuickBar (предыдущая, Feiyu не удаляет)",
-    "com.changanhub.quicklane": "QuickBar (предыдущая, Feiyu не удаляет)",
+    "com.changanhub.quickbar": "QuickBar (старая, без скрытия/сортировки)",
+    "com.changanhub.quickdock": "QuickBar (старая, без скрытия/сортировки)",
+    "com.changanhub.quicklane": "QuickBar (старая, без скрытия/сортировки)",
+    "com.changanhub.quickkeep": "QuickBar (старая, без скрытия/сортировки)",
 }
 
 

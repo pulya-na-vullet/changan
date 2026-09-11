@@ -206,9 +206,10 @@ def test_matching_signature_replaces_without_uninstall(tmp_path: Path) -> None:
 def test_apk_package_name_quickbar_is_new_id(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickkeep"
-    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickkeep"
-    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.quickkeep"
+    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickrise"
+    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickrise"
+    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.quickrise"
+    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.quickrise"
 
 
 def test_install_skips_uninstall_on_overlay_signature_mismatch(tmp_path: Path) -> None:
@@ -239,11 +240,11 @@ def test_install_skips_uninstall_on_overlay_signature_mismatch(tmp_path: Path) -
 
     fake.shell = shell  # type: ignore[method-assign]
     with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
-        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickkeep")
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickrise")
     assert not report.ok
     assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
     assert installs["n"] == 1
-    assert any("not allow delete" in line.lower() or "quickkeep" in line.lower() for line in report.log)
+    assert any("not allow delete" in line.lower() or "quickrise" in line.lower() for line in report.log)
     assert any("pm disable-user --user 0 com.changanhub.quicklane" in cmd for cmd in fake.shells)
 
 
@@ -309,5 +310,5 @@ def test_install_keeps_auth_package_if_uninstall_blocked(tmp_path: Path) -> None
     assert not report.ok
     assert not any(cmd.startswith("pm uninstall --user 0") for cmd in fake.shells)
     assert sum(1 for cmd in fake.shells if cmd.startswith("pm install")) == 1
-    assert any("quickkeep" in line.lower() or "not allow delete" in line.lower() for line in report.log)
+    assert any("quickrise" in line.lower() or "not allow delete" in line.lower() for line in report.log)
 

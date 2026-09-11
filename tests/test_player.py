@@ -13,6 +13,8 @@ def test_player_sources_and_formats() -> None:
         assert f'"{ext}"' in src
     mf = (root / "android/player/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert 'package="com.changanhub.lamoreplayer"' in mf
+    assert "APP_MUSIC" not in mf
+    assert 'android:versionName="1.0.1"' in mf
     assert "RECORD_AUDIO" in mf
     assert "com.changanhub.player.BrowserActivity" in mf
     assert "com.changanhub.player.PlayerService" in mf

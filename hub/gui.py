@@ -279,9 +279,9 @@ class HubApp:
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
             "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
             "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
-            "Панель QuickBar — отдельный пакет com.changanhub.quickkeep; старые "
-            "quickbar/quickdock/quicklane Hub только отключает, не удаляет "
-            "(иначе 提示 «is auth app, not allow delete!»). "
+            "Панель QuickBar — пакет com.changanhub.quickrise; старые "
+            "quickbar/quickkeep Hub только отключает, не удаляет. "
+            "Скрытие и сортировка — колонка справа из «Правая панель», не раздел «Плеер». "
             "adb install на Feiyu зависает — Hub его не вызывает. "
             "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
@@ -327,11 +327,10 @@ class HubApp:
             style="Muted.TLabel",
         ).pack(anchor="w")
         body = (
-            "После ACC колонка поднимается сама (спец. возможности + Job, без окна на карте). "
-            "Сначала нажмите «Установить и запустить» — это включает автозапуск. "
-            "«Удалить с ГУ» только отключает панель: Feiyu не стирает auth "
-            "(提示 «is auth app, not allow delete!»). Рабочая — com.changanhub.quickkeep. "
-            "Свёрнутую колонку сеть/USB не раскрывают. Зелёная колонка СПРАВА, не иконка в меню."
+            "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
+            "Старые quickbar/quickkeep не удаляются и новых кнопок в них нет. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickrise. "
+            "Плеер — отдельный раздел."
         )
         ttk.Label(
             page,
@@ -360,7 +359,8 @@ class HubApp:
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, "
                 "MP4, MKV, WebM, 3GP и другие, если чип их открывает. "
                 "Экзотика вроде WMA/AVI может не завестись — это ограничение ГУ, не Hub. "
-                "Пакет: com.changanhub.lamoreplayer."
+                "Пакет: com.changanhub.lamoreplayer. Один ярлык в меню "
+                "(не путать с правой панелью и не со штатным магнитофоном)."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -374,10 +374,9 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "После установки панели здесь появится «QuickBar · com.changanhub.quickkeep». "
-                "Старые quickbar/quickdock/quicklane могут остаться — Feiyu не стирает auth. "
-                "«Удалить / отключить»: для панели только hide/disable, без uninstall. "
-                "В фильтре: quickkeep, quicklane, quickbar, zona."
+                "Рабочая панель: QuickBar · com.changanhub.quickrise. "
+                "Ярлыки старых quickbar/quickkeep без скрытия и сортировки. "
+                "«Запустить выбранное» на них поднимает колонку справа."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -927,19 +926,19 @@ class HubApp:
             pkgs = adb.packages()
             self.pkg_all = pkgs
             self.root.after(0, self._apply_pkg_filter)
-            if any(
-                p in pkgs
-                for p in (
-                    "com.changanhub.quickkeep",
-                    "com.changanhub.quicklane",
-                    "com.changanhub.quickdock",
-                    "com.changanhub.quickbar",
+            from hub.overlay import LEGACY_PACKAGES, PACKAGE
+
+            if PACKAGE in pkgs:
+                self.log(f"Рабочая панель в списке: QuickBar · {PACKAGE}")
+            elif any(p in pkgs for p in LEGACY_PACKAGES):
+                leftovers = ", ".join(p for p in LEGACY_PACKAGES if p in pkgs)
+                self.log(
+                    f"На ГУ только старые панели ({leftovers}). Скрытия и сортировки в них нет. "
+                    f"Установите заново из «Правая панель» — пакет {PACKAGE}."
                 )
-            ):
-                self.log("Панель есть в списке: QuickBar · com.changanhub.quickkeep")
             else:
                 self.log(
-                    f"Пакетов: {len(pkgs)}. QuickBar (com.changanhub.quickkeep) нет — "
+                    f"Пакетов: {len(pkgs)}. QuickBar ({PACKAGE}) нет — "
                     "установка не прошла, в меню ГУ его тоже не будет."
                 )
 
@@ -961,8 +960,25 @@ class HubApp:
         pkg = package_from_row(self.pkg_list.get(selection[0]))
 
         def go() -> None:
+            from hub.overlay import launch_overlay_target, start_overlay
+
             adb = self._need_adb()
             if not adb:
+                return
+            target = launch_overlay_target(pkg)
+            if target:
+                if not self._hu_ready(adb):
+                    raise AdbError("Сначала нажмите «Подключить». Без ГУ панель не запущу.")
+
+                def progress(message: str, percent: int) -> None:
+                    self._show_progress(message, percent)
+
+                self.log(
+                    f"{pkg} — ярлык панели. Запускаю рабочую QuickBar ({target}): "
+                    "скрытие и сортировка в зелёной колонке справа, не в меню приложений."
+                )
+                for line in start_overlay(adb, progress=progress):
+                    self.journal.write("INFO", "apps", line)
                 return
             result = adb.launch(pkg)
             self.log(result.text or result.stderr or f"launch {pkg}")

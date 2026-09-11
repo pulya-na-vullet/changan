@@ -75,6 +75,7 @@ public class OverlayService extends Service {
             "com.changanhub.quickbar",
             "com.changanhub.quickdock",
             "com.changanhub.quicklane",
+            "com.changanhub.quickkeep",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -101,7 +102,7 @@ public class OverlayService extends Service {
     private static final int COLLAPSED_ICON_DP = 36;
     private static final int WATCHDOG_REQ = 7;
     private static final long WATCHDOG_MS = 20_000L;
-    private static final int[] BOOT_RETRY_SEC = {3, 10, 30, 60, 120};
+    private static final int[] BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120};
 
     private WindowManager windowManager;
     private View root;
@@ -143,8 +144,10 @@ public class OverlayService extends Service {
         public void run() {
         if (SystemClock.elapsedRealtime() >= overlayPausedUntil && !hasOverlay()) {
             attachOverlay();
+            handler.postDelayed(this, 3_000);
+        } else {
+            handler.postDelayed(this, 15_000);
         }
-        handler.postDelayed(this, 15_000);
         }
     };
 
@@ -217,7 +220,7 @@ public class OverlayService extends Service {
         }
         for (int i = 0; i < BOOT_RETRY_SEC.length; i++) {
             Intent intent = new Intent(app, WatchdogReceiver.class);
-            intent.setAction(ACTION_KEEPALIVE);
+            intent.setAction(ACTION_RESUME);
             PendingIntent elapsedPi = pending(app, 100 + i, intent);
             PendingIntent rtcPi = pending(app, 200 + i, intent);
             long elapsedAt = SystemClock.elapsedRealtime() + BOOT_RETRY_SEC[i] * 1000L;
@@ -257,7 +260,7 @@ public class OverlayService extends Service {
         KeepAliveJob.schedule(this);
         suppressLegacy();
         attachOverlay();
-        handler.postDelayed(attachWatch, 15_000);
+        handler.postDelayed(attachWatch, 2_000);
         handler.postDelayed(imeWatch, 400);
     }
 
@@ -397,7 +400,7 @@ public class OverlayService extends Service {
 
     private void reattachOverlay() {
         long now = SystemClock.elapsedRealtime();
-        if (now - lastReattachElapsed < 2500L) {
+        if (now - lastReattachElapsed < 800L) {
             return;
         }
         lastReattachElapsed = now;
