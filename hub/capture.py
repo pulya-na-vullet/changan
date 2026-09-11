@@ -12,12 +12,14 @@ so we ask screenrecord for 720×960 (same 3:4, multiples of 16).
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from hub.adb import SHELL_PASSWORD, Adb, AdbError
+from hub.gifutil import write_gif
 from hub.paths import captures_dir
 
 REMOTE_DIRS = (
@@ -37,6 +39,7 @@ REMOTE_REC = f"{VIDEO_DIRS[0]}/{REC_NAME}"
 MAX_SECONDS = 180
 DEFAULT_SECONDS = 60
 BITRATE = 4_000_000
+CAPTURE_VERSION = 4
 
 PopenFn = Callable[..., subprocess.Popen]
 
@@ -47,6 +50,10 @@ def stamp() -> str:
 
 def new_png() -> Path:
     return captures_dir() / f"hu-{stamp()}.png"
+
+
+def new_gif() -> Path:
+    return captures_dir() / f"hu-{stamp()}.gif"
 
 
 def new_mp4() -> Path:
@@ -118,14 +125,19 @@ def record_size_candidates(width: int | None, height: int | None) -> list[str]:
     """Sizes the Feiyu H.264 encoder is likely to accept.
 
     Lamore is 1440×1920. Native screenrecord returns Encoder failed (err=-38),
-    INVALID_OPERATION. 720×960 keeps the 3:4 picture and is a multiple of 16.
+    INVALID_OPERATION. Landscape 1280×720 is the usual MTK profile; 720×960
+    keeps the 3:4 picture.
     """
-    pairs: list[tuple[int, int]] = []
+    pairs: list[tuple[int, int]] = [
+        (1280, 720),
+        (800, 480),
+        (720, 960),
+        (640, 480),
+    ]
     if width and height and width > 0 and height > 0:
         for max_side in (1280, 960, 720):
             scale = min(1.0, max_side / max(width, height))
             pairs.append((_align16(int(width * scale)), _align16(int(height * scale))))
-    pairs.extend(((720, 960), (960, 1280), (1280, 720), (720, 1280), (640, 480)))
     out: list[str] = []
     seen: set[str] = set()
     for wide, high in pairs:
@@ -194,9 +206,24 @@ class Recorder:
         self.limit = DEFAULT_SECONDS
         self.started_at = 0.0
         self.size = ""
+        self.mode = "screenrecord"
+        self._stop_frames = False
+        self._frame_thread: threading.Thread | None = None
+        self._frames: list[Path] = []
+        self._shot_remote = f"{REMOTE_DIRS[0]}/{SHOT_NAME}"
+
+    def _note(self, argv: list[str], stderr: str = "") -> None:
+        if self.adb.on_log:
+            self.adb.on_log(argv, f"capture v{CAPTURE_VERSION}", stderr, -1, 0)
 
     @property
     def running(self) -> bool:
+        if self.mode == "frames":
+            return (
+                self._frame_thread is not None
+                and self._frame_thread.is_alive()
+                and not self._stop_frames
+            )
         return self.proc is not None and self.proc.poll() is None
 
     def elapsed(self) -> int:
@@ -214,15 +241,24 @@ class Recorder:
         if self.running:
             raise AdbError("Запись уже идёт. Сначала нажмите «Стоп».")
         seconds = max(5, min(MAX_SECONDS, int(seconds)))
-        if not screenrecord_available(self.adb):
-            raise AdbError(
-                "На ГУ нет /system/bin/screenrecord. Видео эта прошивка не пишет — "
-                "снимите скриншот."
-            )
-        folder = pick_remote_dir(self.adb, VIDEO_DIRS)
-        self.remote = f"{folder}/{REC_NAME}"
         dest = dest or new_mp4()
         dest.parent.mkdir(parents=True, exist_ok=True)
+        self._note(["capture", f"v{CAPTURE_VERSION}", "start", str(seconds)])
+        if screenrecord_available(self.adb):
+            started = self._start_screenrecord(seconds, dest, popen, settle)
+            if started is not None:
+                return started
+        return self._start_frames(seconds, dest.with_suffix(".gif"))
+
+    def _start_screenrecord(
+        self,
+        seconds: int,
+        dest: Path,
+        popen: PopenFn,
+        settle: float,
+    ) -> Path | None:
+        folder = pick_remote_dir(self.adb, VIDEO_DIRS)
+        self.remote = f"{folder}/{REC_NAME}"
         width_height = display_size(self.adb)
         sizes = record_size_candidates(*(width_height or (None, None)))
         bitrates = (BITRATE, 2_000_000)
@@ -241,6 +277,7 @@ class Recorder:
                         f"--time-limit {seconds} {self.remote}"
                     ),
                 ]
+                self._note(argv, "screenrecord start")
                 proc = popen(
                     argv,
                     stdin=subprocess.PIPE,
@@ -258,6 +295,7 @@ class Recorder:
                     time.sleep(settle)
                 code = proc.poll()
                 if code is None:
+                    self.mode = "screenrecord"
                     self.proc = proc
                     self.local = dest
                     self.limit = seconds
@@ -272,16 +310,45 @@ class Recorder:
                         err = b""
                 text = err.decode("utf-8", "replace") if isinstance(err, (bytes, bytearray)) else str(err)
                 last_err = _clean_adb_text(text) or f"screenrecord сразу вышел (code {code})"
+                self._note(argv, last_err)
                 if not _encoder_failed(last_err) and "no such file" not in last_err.lower():
                     raise AdbError(last_err)
-        raise AdbError(
-            "Кодек ГУ не пишет видео (Encoder failed −38). "
-            "Экран Lamore 1440×1920 системный screenrecord не кодирует как есть. "
-            "Поставьте Кинопоиск на паузу и попробуйте ещё раз — или снимите скриншоты, они уже работают. "
-            f"{last_err}"
-        )
+        self._note(["capture", f"v{CAPTURE_VERSION}", "fallback-gif"], last_err)
+        return None
+
+    def _start_frames(self, seconds: int, dest: Path) -> Path:
+        folder = pick_remote_dir(self.adb)
+        self._shot_remote = f"{folder}/{SHOT_NAME}"
+        self.mode = "frames"
+        self.local = dest
+        self.limit = seconds
+        self._stop_frames = False
+        self._frames = []
+        self.started_at = time.monotonic()
+        self._frame_thread = threading.Thread(target=self._loop_frames, daemon=True, name="hub-frames")
+        self._frame_thread.start()
+        return dest
+
+    def _loop_frames(self) -> None:
+        index = 0
+        while not self._stop_frames and self.elapsed() < self.limit:
+            frame = captures_dir() / f".hub-frame-{index:04d}.png"
+            try:
+                result = self.adb.screenshot(frame, remote=self._shot_remote)
+                if result.ok and frame.is_file() and frame.stat().st_size >= 64:
+                    self._frames.append(frame)
+                    index += 1
+                    self._note(["screencap", f"frame {index}"], str(frame.name))
+            except AdbError as exc:
+                self._note(["screencap"], str(exc))
+                break
+            end = time.monotonic() + 0.4
+            while time.monotonic() < end and not self._stop_frames:
+                time.sleep(0.05)
 
     def stop(self, flush_wait: float = 1.2) -> Path:
+        if self.mode == "frames":
+            return self._stop_frames_gif()
         dest = self.local or new_mp4()
         try:
             interrupt_screenrecord(self.adb)
@@ -314,4 +381,27 @@ class Recorder:
                 "Видеофайл пустой. Запись короче секунды часто не успевает закрыться — "
                 "повторите и подождите 2–3 с перед «Стоп»."
             )
+        return dest
+
+    def _stop_frames_gif(self) -> Path:
+        self._stop_frames = True
+        thread = self._frame_thread
+        self._frame_thread = None
+        if thread is not None:
+            thread.join(timeout=40)
+        dest = self.local or new_gif()
+        frames = list(self._frames)
+        self._frames = []
+        self.started_at = 0.0
+        if not frames:
+            raise AdbError("Не удалось снять ни одного кадра для ролика.")
+        delay = max(2, int(100 * self.limit / max(len(frames), 1)))
+        write_gif(frames, dest, delay_cs=min(200, delay))
+        for path in frames:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        if not dest.is_file() or dest.stat().st_size < 32:
+            raise AdbError("GIF ролика пустой.")
         return dest

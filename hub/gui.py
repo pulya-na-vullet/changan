@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
-from hub.capture import Recorder, take_screenshot as capture_screenshot
+from hub.capture import Recorder, take_screenshot as capture_screenshot, CAPTURE_VERSION
 from hub.catalog import CATALOG, package_from_row, package_label
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
@@ -419,10 +419,9 @@ class HubApp:
             page,
             text=(
                 "Скриншот обычно захватывает и правую панель QuickBar. "
-                "Видео: системный screenrecord на Lamore не умеет 1440×1920, Hub просит 720×960. "
-                "Если на экране крутится Кинопоиск — поставьте на паузу, иначе кодек занят. "
-                "Всплывающая панель в ролике может не попасть — для панели лучше фото. "
-                "Максимум ролика 3 минуты. Перед съёмкой нажмите «Подключить»."
+                "Если кодек ГУ не пишет MP4 (Encoder −38), Hub сам снимает кадры в GIF. "
+                "Всплывающая панель в ролике screenrecord может не попасть — для панели лучше фото. "
+                "Максимум 3 минуты. Перед съёмкой нажмите «Подключить»."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -1094,9 +1093,10 @@ class HubApp:
             rec = Recorder(adb)
             dest = rec.start(seconds)
             self.recorder = rec
-            self._ui(lambda: self.record_status.set(f"Идёт запись 0 с / {seconds} с"))
+            kind = "кадры GIF" if rec.mode == "frames" else "MP4"
+            self._ui(lambda: self.record_status.set(f"Идёт запись 0 с / {seconds} с ({kind})"))
             self._ui(lambda p=dest: self.last_capture.set(f"Пишу: {p.name}"))
-            self.log(f"запись видео → {dest.name}, стоп вручную или через {seconds} с")
+            self.log(f"съёмка v{CAPTURE_VERSION} → {dest.name} ({kind})")
 
         self._work(f"Старт записи {seconds} с", go)
 

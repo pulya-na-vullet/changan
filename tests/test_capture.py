@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 from hub.adb import SHELL_PASSWORD, AdbError, CommandResult
 from hub.capture import (
@@ -15,7 +16,20 @@ from hub.capture import (
     screenrecord_available,
     take_screenshot,
 )
+from hub.gifutil import decode_png, encode_png, write_gif
 from hub.paths import ROOT, captures_dir, logs_dir
+
+
+def _sample_png() -> bytes:
+    width = height = 16
+    rgb = bytearray()
+    for y in range(height):
+        for x in range(width):
+            rgb.extend((x * 15, y * 15, 90))
+    return encode_png(width, height, bytes(rgb))
+
+
+SAMPLE_PNG = _sample_png()
 
 
 class FakeAdb:
@@ -28,12 +42,13 @@ class FakeAdb:
         self.cmds: list[str] = []
         self.raws: list[list[str]] = []
         self.has_record = has_record
-        self.shot_bytes = shot_bytes if shot_bytes is not None else b"\x89PNG\r\n" + b"x" * 200
+        self.shot_bytes = shot_bytes if shot_bytes is not None else SAMPLE_PNG
         self.pidof = "4242"
         self.pull_bytes = b"ftypisom" + b"0" * 400
         self.binary = Path("/usr/bin/adb")
         self.serial = "HU123"
         self.blocked = blocked or set()
+        self.on_log = None
 
     def prefix(self) -> list[str]:
         return ["adb", "-s", self.serial]
@@ -155,7 +170,7 @@ def test_lamore_record_sizes_are_encoder_friendly() -> None:
     sizes = record_size_candidates(1440, 1920)
     assert "720x960" in sizes
     assert "960x1280" in sizes
-    assert sizes[0] == "960x1280"
+    assert sizes[0] == "1280x720"
     for item in sizes:
         wide, high = item.split("x")
         assert int(wide) % 16 == 0
@@ -178,7 +193,7 @@ def test_recorder_start_stop(tmp_path: Path) -> None:
         assert argv[3] == "shell"
         assert f"--time-limit {MAX_SECONDS}" not in argv[4]
         assert f"--bit-rate {BITRATE}" in argv[4]
-        assert "--size 960x1280" in argv[4]
+        assert "--size 1280x720" in argv[4]
         assert REC_NAME in argv[4]
         assert VIDEO_DIRS[0] in argv[4]
         assert "/data/local/tmp/" not in argv[4]
@@ -221,17 +236,51 @@ def test_recorder_retries_after_encoder_38(tmp_path: Path) -> None:
     assert rec.running
     assert len(calls) >= 2
     assert "Encoder failed" not in calls[0]
-    assert "--size 960x1280" in calls[0]
+    assert "--size 1280x720" in calls[0]
     assert "--bit-rate 2000000" in calls[1]
 
 
-def test_recorder_missing_binary() -> None:
+def test_recorder_missing_binary_falls_back_to_gif(tmp_path: Path) -> None:
     rec = Recorder(FakeAdb(has_record=False))  # type: ignore[arg-type]
-    try:
-        rec.start(20, popen=lambda *a, **k: DummyProc(), settle=0)
-        raise AssertionError("missing screenrecord must fail")
-    except AdbError as exc:
-        assert "screenrecord" in str(exc)
+    dest = tmp_path / "out.mp4"
+    out = rec.start(8, dest=dest, popen=lambda *a, **k: DummyProc(), settle=0)
+    assert rec.mode == "frames"
+    assert out.suffix == ".gif"
+
+    time.sleep(0.15)
+    saved = rec.stop()
+    assert saved.suffix == ".gif"
+    assert saved.is_file()
+    assert saved.stat().st_size > 32
+
+
+def test_encoder_failure_falls_back_to_gif(tmp_path: Path) -> None:
+    rec = Recorder(FakeAdb())  # type: ignore[arg-type]
+    dest = tmp_path / "fail.mp4"
+
+    def popen(*_a, **_k):
+        return DummyProc(
+            exit_immediately=True,
+            stderr_text=b"Encoder failed (err=-38)\n",
+        )
+
+    out = rec.start(8, dest=dest, popen=popen, settle=0)
+    assert rec.mode == "frames"
+    assert out.suffix == ".gif"
+    time.sleep(0.15)
+    saved = rec.stop()
+    assert saved.is_file()
+
+
+def test_png_roundtrip_gif(tmp_path: Path) -> None:
+    src = tmp_path / "a.png"
+    src.write_bytes(SAMPLE_PNG)
+    width, height, rgb = decode_png(src)
+    assert (width, height) == (16, 16)
+    assert len(rgb) == 16 * 16 * 3
+    gif = tmp_path / "a.gif"
+    write_gif([src, src], gif, delay_cs=10)
+    assert gif.read_bytes()[:6] == b"GIF89a"
 
 
 def test_recorder_exits_immediately() -> None:
