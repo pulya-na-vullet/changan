@@ -128,7 +128,16 @@ class HubApp:
         nav.pack_propagate(False)
         tk.Label(
             nav, text="CHANGAN HUB", bg=PANEL, fg=ACCENT, font=("Segoe UI", 16, "bold")
-        ).pack(anchor="w", padx=20, pady=(24, 4))
+        ).pack(anchor="w", padx=20, pady=(24, 2))
+        tk.Label(
+            nav,
+            text="разработано в ИТ-Мастерской",
+            bg=PANEL,
+            fg=ACCENT,
+            font=("Segoe UI", 9, "bold"),
+            wraplength=180,
+            justify="left",
+        ).pack(anchor="w", padx=20, pady=(0, 6))
         tk.Label(
             nav, text="Lamore 2023 · Feiyu", bg=PANEL, fg=MUTED, font=("Segoe UI", 10)
         ).pack(anchor="w", padx=20, pady=(0, 20))

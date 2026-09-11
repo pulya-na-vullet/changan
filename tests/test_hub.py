@@ -34,3 +34,14 @@ def test_need_adb_dialog_does_not_close_over_exc() -> None:
     src = Path("hub/gui.py").read_text(encoding="utf-8")
     assert 'lambda: messagebox.showerror("ADB", str(exc))' not in src
     assert "lambda m=msg: messagebox.showerror(\"ADB\", m)" in src
+
+
+def test_nav_credit_matches_hub_title_style() -> None:
+    from pathlib import Path
+
+    src = Path("hub/gui.py").read_text(encoding="utf-8")
+    assert 'text="CHANGAN HUB"' in src
+    assert 'text="разработано в ИТ-Мастерской"' in src
+    assert 'fg=ACCENT' in src
+    assert 'font=("Segoe UI", 16, "bold")' in src
+    assert 'font=("Segoe UI", 9, "bold")' in src
