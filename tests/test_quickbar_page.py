@@ -9,10 +9,10 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "<title>QuickBar" in html
     assert "разработано в ИТ-Мастерской" in html
     assert "Changan Lamore" in html
-    assert "quickbar/photos/01-panel-navigator.png" in html
-    assert "quickbar/photos/02-reorder.png" in html
-    assert "quickbar/photos/03-hidden-folded.png" in html
-    assert "quickbar/photos/04-collapsed.png" in html
+    assert "quickbar/photos/01-panel.jpg" in html
+    assert "quickbar/photos/02-reorder.jpg" in html
+    assert "quickbar/photos/03-usb.jpg" in html
+    assert "quickbar/photos/04-collapsed.jpg" in html
     assert "lamore-hero.jpg" in (ROOT / "quickbar" / "page.css").read_text(encoding="utf-8")
     assert "5 000" in html
     assert "один раз" in html
@@ -26,10 +26,10 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "Скрытые" in html
     photos = ROOT / "quickbar" / "photos"
     for name in (
-        "01-panel-navigator.png",
-        "02-reorder.png",
-        "03-hidden-folded.png",
-        "04-collapsed.png",
+        "01-panel.jpg",
+        "02-reorder.jpg",
+        "03-usb.jpg",
+        "04-collapsed.jpg",
         "lamore-hero.jpg",
     ):
         path = photos / name

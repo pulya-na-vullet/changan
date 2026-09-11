@@ -3,8 +3,10 @@
 No extra APK on the HU: ``screencap`` and ``screenrecord`` already live in
 ``/system/bin``. Files land in ``captures/`` next to Hub (the flash drive).
 
-Lamore Feiyu has no ``/sdcard/Download`` — write under ``/data/local/tmp``,
-the same folder Hub already uses to push APKs.
+Screenshots go to ``/data/local/tmp`` (Feiyu has no ``/sdcard/Download``).
+Video prefers ``/storage/emulated/0/Download`` so the media encoder can write.
+Native Lamore pixels are 1440×1920 — that size returns Encoder failed (-38),
+so we ask screenrecord for 720×960 (same 3:4, multiples of 16).
 """
 
 from __future__ import annotations
@@ -24,12 +26,17 @@ REMOTE_DIRS = (
     "/sdcard/Download",
     "/storage/emulated/0",
 )
+VIDEO_DIRS = (
+    "/storage/emulated/0/Download",
+    "/storage/emulated/0",
+    "/data/local/tmp",
+)
 SHOT_NAME = "changan_hub_shot.png"
 REC_NAME = "changan_hub_rec.mp4"
-REMOTE_REC = f"{REMOTE_DIRS[0]}/{REC_NAME}"
+REMOTE_REC = f"{VIDEO_DIRS[0]}/{REC_NAME}"
 MAX_SECONDS = 180
 DEFAULT_SECONDS = 60
-BITRATE = 8_000_000
+BITRATE = 4_000_000
 
 PopenFn = Callable[..., subprocess.Popen]
 
@@ -64,10 +71,10 @@ def _write_failed(result) -> bool:
     )
 
 
-def pick_remote_dir(adb: Adb) -> str:
+def pick_remote_dir(adb: Adb, folders: tuple[str, ...] = REMOTE_DIRS) -> str:
     """First directory on the HU that shell can actually create a file in."""
     last = ""
-    for folder in REMOTE_DIRS:
+    for folder in folders:
         adb.shell(f"mkdir -p {folder}", timeout=8)
         probe = f"{folder}/.changan_hub_w"
         wrote = adb.shell(f"touch {probe}", timeout=8)
@@ -80,6 +87,59 @@ def pick_remote_dir(adb: Adb) -> str:
         "На ГУ нет папки для снимка. /sdcard/Download отсутствует, "
         f"/data/local/tmp тоже не записался. {last}".strip()
     )
+
+
+def parse_wm_size(text: str) -> tuple[int, int] | None:
+    override: tuple[int, int] | None = None
+    physical: tuple[int, int] | None = None
+    for line in text.splitlines():
+        low = line.lower()
+        if "x" not in low:
+            continue
+        part = line.split(":")[-1].strip().lower().replace(" ", "")
+        if "x" not in part:
+            continue
+        left, right = part.split("x", 1)
+        if not (left.isdigit() and right.isdigit()):
+            continue
+        pair = (int(left), int(right))
+        if "override" in low:
+            override = pair
+        else:
+            physical = physical or pair
+    return override or physical
+
+
+def _align16(value: int) -> int:
+    return max(16, value - (value % 16))
+
+
+def record_size_candidates(width: int | None, height: int | None) -> list[str]:
+    """Sizes the Feiyu H.264 encoder is likely to accept.
+
+    Lamore is 1440×1920. Native screenrecord returns Encoder failed (err=-38),
+    INVALID_OPERATION. 720×960 keeps the 3:4 picture and is a multiple of 16.
+    """
+    pairs: list[tuple[int, int]] = []
+    if width and height and width > 0 and height > 0:
+        for max_side in (1280, 960, 720):
+            scale = min(1.0, max_side / max(width, height))
+            pairs.append((_align16(int(width * scale)), _align16(int(height * scale))))
+    pairs.extend(((720, 960), (960, 1280), (1280, 720), (720, 1280), (640, 480)))
+    out: list[str] = []
+    seen: set[str] = set()
+    for wide, high in pairs:
+        key = f"{wide}x{high}"
+        if key in seen or wide < 16 or high < 16:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def display_size(adb: Adb) -> tuple[int, int] | None:
+    result = adb.shell("wm size", timeout=8)
+    return parse_wm_size(f"{result.stdout}\n{result.stderr}")
 
 
 def take_screenshot(adb: Adb, dest: Path | None = None) -> Path:
@@ -114,6 +174,17 @@ def interrupt_screenrecord(adb: Adb) -> None:
     adb.shell("killall -INT screenrecord", timeout=8)
 
 
+def _encoder_failed(text: str) -> bool:
+    low = text.lower()
+    return (
+        "encoder failed" in low
+        or "err=-38" in low
+        or "unable to configure" in low
+        or "error starting encoder" in low
+        or "unable to start encoder" in low
+    )
+
+
 class Recorder:
     def __init__(self, adb: Adb) -> None:
         self.adb = adb
@@ -122,6 +193,7 @@ class Recorder:
         self.local: Path | None = None
         self.limit = DEFAULT_SECONDS
         self.started_at = 0.0
+        self.size = ""
 
     @property
     def running(self) -> bool:
@@ -147,47 +219,67 @@ class Recorder:
                 "На ГУ нет /system/bin/screenrecord. Видео эта прошивка не пишет — "
                 "снимите скриншот."
             )
-        folder = pick_remote_dir(self.adb)
+        folder = pick_remote_dir(self.adb, VIDEO_DIRS)
         self.remote = f"{folder}/{REC_NAME}"
-        self.adb.shell(f"rm -f {self.remote}", timeout=8)
         dest = dest or new_mp4()
         dest.parent.mkdir(parents=True, exist_ok=True)
-        argv = self.adb.prefix() + [
-            "shell",
-            f"screenrecord --bit-rate {BITRATE} --time-limit {seconds} {self.remote}",
-        ]
-        proc = popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        if proc.stdin:
-            try:
-                proc.stdin.write(f"{SHELL_PASSWORD}\n".encode("utf-8"))
-                proc.stdin.flush()
-                proc.stdin.close()
-            except (BrokenPipeError, OSError):
-                pass
-        if settle > 0:
-            time.sleep(settle)
-        code = proc.poll()
-        if code is not None:
-            err = b""
-            if proc.stderr:
+        width_height = display_size(self.adb)
+        sizes = record_size_candidates(*(width_height or (None, None)))
+        bitrates = (BITRATE, 2_000_000)
+        last_err = "screenrecord сразу вышел"
+        for size in sizes:
+            for rate in bitrates:
                 try:
-                    err = proc.stderr.read() or b""
-                except OSError:
-                    err = b""
-            text = err.decode("utf-8", "replace") if isinstance(err, (bytes, bytearray)) else str(err)
-            raise AdbError(
-                _clean_adb_text(text) or f"screenrecord сразу вышел (code {code})"
-            )
-        self.proc = proc
-        self.local = dest
-        self.limit = seconds
-        self.started_at = time.monotonic()
-        return dest
+                    interrupt_screenrecord(self.adb)
+                except AdbError:
+                    pass
+                self.adb.shell(f"rm -f {self.remote}", timeout=8)
+                argv = self.adb.prefix() + [
+                    "shell",
+                    (
+                        f"screenrecord --size {size} --bit-rate {rate} "
+                        f"--time-limit {seconds} {self.remote}"
+                    ),
+                ]
+                proc = popen(
+                    argv,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                )
+                if proc.stdin:
+                    try:
+                        proc.stdin.write(f"{SHELL_PASSWORD}\n".encode("utf-8"))
+                        proc.stdin.flush()
+                        proc.stdin.close()
+                    except (BrokenPipeError, OSError):
+                        pass
+                if settle > 0:
+                    time.sleep(settle)
+                code = proc.poll()
+                if code is None:
+                    self.proc = proc
+                    self.local = dest
+                    self.limit = seconds
+                    self.size = size
+                    self.started_at = time.monotonic()
+                    return dest
+                err = b""
+                if proc.stderr:
+                    try:
+                        err = proc.stderr.read() or b""
+                    except OSError:
+                        err = b""
+                text = err.decode("utf-8", "replace") if isinstance(err, (bytes, bytearray)) else str(err)
+                last_err = _clean_adb_text(text) or f"screenrecord сразу вышел (code {code})"
+                if not _encoder_failed(last_err) and "no such file" not in last_err.lower():
+                    raise AdbError(last_err)
+        raise AdbError(
+            "Кодек ГУ не пишет видео (Encoder failed −38). "
+            "Экран Lamore 1440×1920 системный screenrecord не кодирует как есть. "
+            "Поставьте Кинопоиск на паузу и попробуйте ещё раз — или снимите скриншоты, они уже работают. "
+            f"{last_err}"
+        )
 
     def stop(self, flush_wait: float = 1.2) -> Path:
         dest = self.local or new_mp4()

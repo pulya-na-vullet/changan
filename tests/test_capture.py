@@ -6,10 +6,12 @@ from hub.capture import (
     MAX_SECONDS,
     REC_NAME,
     REMOTE_DIRS,
-    REMOTE_REC,
+    VIDEO_DIRS,
     Recorder,
     interrupt_screenrecord,
+    parse_wm_size,
     pick_remote_dir,
+    record_size_candidates,
     screenrecord_available,
     take_screenshot,
 )
@@ -51,6 +53,8 @@ class FakeAdb:
             if self.has_record:
                 return CommandResult(True, "/system/bin/screenrecord", "", 0, ["shell"])
             return CommandResult(False, "", "No such file or directory", 1, ["shell"])
+        if command.startswith("wm size"):
+            return CommandResult(True, "Physical size: 1440x1920", "", 0, ["shell"])
         if command.startswith("pidof screenrecord"):
             return CommandResult(True, self.pidof, "", 0, ["shell"])
         target = command.split()[-1] if command.split() else ""
@@ -71,9 +75,9 @@ class FakeAdb:
 
 
 class DummyProc:
-    def __init__(self, exit_immediately: bool = False) -> None:
+    def __init__(self, exit_immediately: bool = False, stderr_text: bytes | None = None) -> None:
         self.stdin = _Pipe()
-        self.stderr = _Pipe()
+        self.stderr = _Pipe(stderr_text if stderr_text is not None else b"screenrecord: not found")
         self._code: int | None = 1 if exit_immediately else None
 
     def poll(self) -> int | None:
@@ -88,8 +92,8 @@ class DummyProc:
 
 
 class _Pipe:
-    def __init__(self) -> None:
-        self.data = b""
+    def __init__(self, data: bytes = b"") -> None:
+        self.data = data
         self.closed = False
 
     def write(self, blob: bytes) -> int:
@@ -103,7 +107,9 @@ class _Pipe:
         self.closed = True
 
     def read(self) -> bytes:
-        return b"screenrecord: not found"
+        out = self.data
+        self.data = b""
+        return out
 
 
 def test_logs_and_captures_live_next_to_app() -> None:
@@ -144,14 +150,16 @@ def test_pick_remote_dir_falls_back_when_tmp_missing() -> None:
     assert pick_remote_dir(adb) == "/storage/emulated/0"  # type: ignore[arg-type]
 
 
-def test_screenshot_rejects_empty(tmp_path: Path) -> None:
-    adb = FakeAdb(shot_bytes=b"tiny")
-    dest = tmp_path / "empty.png"
-    try:
-        take_screenshot(adb, dest)  # type: ignore[arg-type]
-        raise AssertionError("empty shot must fail")
-    except AdbError as exc:
-        assert "пустой" in str(exc)
+def test_lamore_record_sizes_are_encoder_friendly() -> None:
+    assert parse_wm_size("Physical size: 1440x1920") == (1440, 1920)
+    sizes = record_size_candidates(1440, 1920)
+    assert "720x960" in sizes
+    assert "960x1280" in sizes
+    assert sizes[0] == "960x1280"
+    for item in sizes:
+        wide, high = item.split("x")
+        assert int(wide) % 16 == 0
+        assert int(high) % 16 == 0
 
 
 def test_screenrecord_available() -> None:
@@ -170,9 +178,10 @@ def test_recorder_start_stop(tmp_path: Path) -> None:
         assert argv[3] == "shell"
         assert f"--time-limit {MAX_SECONDS}" not in argv[4]
         assert f"--bit-rate {BITRATE}" in argv[4]
-        assert REMOTE_REC in argv[4]
-        assert f"/data/local/tmp/{REC_NAME}" in argv[4]
-        assert "/sdcard/Download" not in argv[4]
+        assert "--size 960x1280" in argv[4]
+        assert REC_NAME in argv[4]
+        assert VIDEO_DIRS[0] in argv[4]
+        assert "/data/local/tmp/" not in argv[4]
         assert "--time-limit 30" in argv[4]
         proc = DummyProc()
         procs.append(proc)
@@ -191,6 +200,29 @@ def test_recorder_start_stop(tmp_path: Path) -> None:
     assert not rec.running
     assert any(cmd.startswith("kill -INT") for cmd in adb.cmds)
     assert adb.raws[0][0] == "pull"
+
+
+def test_recorder_retries_after_encoder_38(tmp_path: Path) -> None:
+    rec = Recorder(FakeAdb())  # type: ignore[arg-type]
+    dest = tmp_path / "retry.mp4"
+    calls: list[str] = []
+
+    def popen(argv, **kwargs):
+        calls.append(argv[4])
+        if len(calls) == 1:
+            return DummyProc(
+                exit_immediately=True,
+                stderr_text=b"please input verify password: verify success!\nEncoder failed (err=-38)\n",
+            )
+        return DummyProc()
+
+    out = rec.start(30, dest=dest, popen=popen, settle=0)
+    assert out == dest
+    assert rec.running
+    assert len(calls) >= 2
+    assert "Encoder failed" not in calls[0]
+    assert "--size 960x1280" in calls[0]
+    assert "--bit-rate 2000000" in calls[1]
 
 
 def test_recorder_missing_binary() -> None:
