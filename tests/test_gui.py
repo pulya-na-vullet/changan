@@ -12,11 +12,22 @@ def test_gui_pages_render() -> None:
     app = HubApp()
     try:
         app.root.update()
-        for name in ("connect", "install", "overlay", "apps", "catalog", "tools"):
+        for name in ("connect", "install", "overlay", "player", "demo", "apps", "catalog", "tools"):
             app.show(name)
             app.root.update_idletasks()
             app.root.update()
-        assert app.pages.keys() >= {"connect", "install", "overlay", "apps", "catalog", "tools"}
+        assert app.pages.keys() >= {
+            "connect",
+            "install",
+            "overlay",
+            "player",
+            "demo",
+            "apps",
+            "catalog",
+            "tools",
+        }
+        assert app.demo_shot_btn.winfo_exists()
+        assert app.demo_stop_btn.winfo_exists()
         assert app.progress_bar.winfo_exists()
         assert set(app.stage_labels) == {key for key, _ in PROCESS_STAGES}
         app._show_progress("Шаг 2/5: копирую APK на ГУ (push).", 40)
@@ -75,6 +86,11 @@ def test_install_button_visible_at_laptop_size() -> None:
         app.root.update()
         assert app.overlay_install_btn.winfo_ismapped()
         assert _inside_window(app.overlay_install_btn, app.root)
+        app.show("demo", "Демо")
+        app.root.update()
+        assert app.demo_shot_btn.winfo_ismapped()
+        assert _inside_window(app.demo_shot_btn, app.root)
+        assert app.demo_rec60_btn.winfo_ismapped()
         app.show("apps", "Приложения ГУ")
         app.root.update()
         assert app.launch_btn.winfo_ismapped()

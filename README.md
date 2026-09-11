@@ -66,6 +66,8 @@ python -m hub connect
 python -m hub overlay
 python -m hub install path\to\app.apk
 python -m hub apps
+python -m hub screenshot
+python -m hub record --seconds 30
 ```
 
 ## Правая панель (QuickBar)
@@ -112,6 +114,19 @@ python -m hub apps
   часто не открываются — это не баг плеера.
 
 Сборка: `python scripts/build_player.py` → `apps/Player.apk`.
+
+## Демо для клиентов (скриншот и видео)
+
+Отдельное приложение на ГУ не нужно: снимок и ролик идут с ноутбука по ADB.
+
+В Hub раздел **Демо**:
+
+1. Подключите ГУ.
+2. **Сделать скриншот** — PNG в `captures\hu-….png` (обычно вместе с панелью QuickBar).
+3. **Запись 30 с / 60 с / 3 мин** и **Стоп** — MP4 в ту же папку.
+4. **Открыть папку captures** — файлы на флешке рядом с `app.py`.
+
+Видео пишет системный `screenrecord` (максимум 180 с). Всплывающая панель в ролике может не попасть — для QuickBar лучше фото. Если на прошивке нет `/system/bin/screenrecord`, Hub скажет об этом и оставит скриншот.
 
 ## Подпись без сертификата завода
 

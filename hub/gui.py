@@ -13,12 +13,13 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
+from hub.capture import Recorder, take_screenshot as capture_screenshot
 from hub.catalog import CATALOG, package_from_row, package_label
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
 from hub.player import install_player, player_apk, start_player
-from hub.paths import bundled_apps
+from hub.paths import bundled_apps, captures_dir
 from hub.signer import certificate_info, ensure_keystore
 from hub.usb import list_usb_apks, removable_roots
 
@@ -94,6 +95,10 @@ class HubApp:
         self._last_progress_t = 0.0
         self._active_stage: str | None = None
         self.jobs: queue.Queue[tuple[str, Callable[[], None]]] = queue.Queue()
+        self.recorder: Recorder | None = None
+        self.record_status = tk.StringVar(value="Запись не идёт")
+        self.last_capture = tk.StringVar(value="Файлов ещё нет")
+        self._stopping_record = False
         self._worker = threading.Thread(target=self._job_loop, daemon=True, name="hub-worker")
         self._worker.start()
 
@@ -147,6 +152,7 @@ class HubApp:
             ("install", "Установка APK"),
             ("overlay", "Правая панель"),
             ("player", "Плеер"),
+            ("demo", "Демо"),
             ("apps", "Приложения ГУ"),
             ("catalog", "Каталог"),
             ("tools", "Сервис"),
@@ -240,12 +246,15 @@ class HubApp:
         self.pages["install"] = self._page_install()
         self.pages["overlay"] = self._page_overlay()
         self.pages["player"] = self._page_player()
+        self.pages["demo"] = self._page_demo()
         self.pages["apps"] = self._page_apps()
         self.pages["catalog"] = self._page_catalog()
         self.pages["tools"] = self._page_tools()
         for frame in self.pages.values():
             frame.place(relx=0, rely=0, relwidth=1, relheight=1)
         self.show("connect", "Подключение")
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.after(500, self._tick_record)
 
     def _card(self, parent: tk.Widget, title: str, body: str) -> tk.Frame:
         card = tk.Frame(parent, bg=CARD, padx=16, pady=14)
@@ -377,6 +386,49 @@ class HubApp:
         ).pack(anchor="w", pady=12, fill=tk.X)
         return page
 
+    def _page_demo(self) -> ttk.Frame:
+        page = ttk.Frame(self.stack)
+        ttk.Label(page, text="Демо для клиентов", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            page,
+            text="Снимок и видео экрана ГУ → папка captures на флешке, рядом с Хабом.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(6, 8))
+        grid = ttk.Frame(page)
+        grid.pack(anchor="w", pady=(0, 8))
+        self.demo_shot_btn = ttk.Button(
+            grid, text="Сделать скриншот", style="Accent.TButton", command=self.take_screenshot
+        )
+        self.demo_shot_btn.grid(row=0, column=0, sticky="ew", padx=6, pady=6)
+        self.demo_rec60_btn = ttk.Button(
+            grid, text="Запись 60 с", style="Accent.TButton", command=lambda: self.start_record(60)
+        )
+        self.demo_rec60_btn.grid(row=0, column=1, sticky="ew", padx=6, pady=6)
+        self.demo_stop_btn = ttk.Button(grid, text="Стоп", command=self.stop_record)
+        self.demo_stop_btn.grid(row=0, column=2, sticky="ew", padx=6, pady=6)
+        self.demo_rec30_btn = ttk.Button(grid, text="Запись 30 с", command=lambda: self.start_record(30))
+        self.demo_rec30_btn.grid(row=1, column=0, sticky="ew", padx=6, pady=6)
+        self.demo_rec180_btn = ttk.Button(grid, text="Запись 3 мин", command=lambda: self.start_record(180))
+        self.demo_rec180_btn.grid(row=1, column=1, sticky="ew", padx=6, pady=6)
+        ttk.Button(grid, text="Папка captures", command=self.open_captures_folder).grid(
+            row=1, column=2, sticky="ew", padx=6, pady=6
+        )
+        ttk.Label(page, textvariable=self.record_status, style="H.TLabel").pack(anchor="w", pady=(4, 2))
+        ttk.Label(page, textvariable=self.last_capture, style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(
+            page,
+            text=(
+                "Скриншот обычно захватывает и правую панель QuickBar. "
+                "Видео пишет системный screenrecord: всплывающая панель в ролике может не попасть — "
+                "для панели лучше фото. Максимум ролика на Android — 3 минуты; раньше можно «Стоп». "
+                "Перед съёмкой нажмите «Подключить»."
+            ),
+            style="Muted.TLabel",
+            wraplength=640,
+            justify="left",
+        ).pack(anchor="w", pady=8, fill=tk.X)
+        return page
+
     def _page_apps(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
         ttk.Label(page, text="Что уже стоит на ГУ", style="Title.TLabel").pack(anchor="w")
@@ -432,6 +484,7 @@ class HubApp:
         actions = [
             ("Свойства ГУ", self.refresh_connection),
             ("Снимок экрана", self.take_screenshot),
+            ("Запись видео ГУ", lambda: self.show("demo", "Демо")),
             ("Открыть Android Settings", self.open_settings),
             ("Очистить кэш лаунчера", self.clear_launcher),
             ("Перезагрузить ГУ", self.reboot_hu),
@@ -1019,13 +1072,96 @@ class HubApp:
     def take_screenshot(self) -> None:
         def go() -> None:
             adb = self._need_adb()
-            if not adb:
-                return
-            dest = bundled_apps().parent / "screenshots" / "hu.png"
-            result = adb.screenshot(dest)
-            self.log(result.text or f"сохранено {dest}")
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ снимок не сделаю.")
+            dest = capture_screenshot(adb)
+            self.log(f"скриншот {dest}")
+            self._ui(lambda p=dest: self.last_capture.set(f"Последний файл: {p}"))
+            self._ui(lambda: self._show_progress(f"Скриншот: {dest.name}", 100))
 
         self._work("Скриншот", go)
+
+    def start_record(self, seconds: int) -> None:
+        if self.recorder is not None and self.recorder.running:
+            self.log("запись уже идёт — сначала «Стоп»")
+            return
+
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ запись не начну.")
+            rec = Recorder(adb)
+            dest = rec.start(seconds)
+            self.recorder = rec
+            self._ui(lambda: self.record_status.set(f"Идёт запись 0 с / {seconds} с"))
+            self._ui(lambda p=dest: self.last_capture.set(f"Пишу: {p.name}"))
+            self.log(f"запись видео → {dest.name}, стоп вручную или через {seconds} с")
+
+        self._work(f"Старт записи {seconds} с", go)
+
+    def stop_record(self) -> None:
+        rec = self.recorder
+        if rec is None or self._stopping_record:
+            return
+        self._stopping_record = True
+
+        def go() -> None:
+            try:
+                dest = rec.stop()
+                self.recorder = None
+                self.log(f"видео {dest}")
+                self._ui(lambda: self.record_status.set("Запись не идёт"))
+                self._ui(lambda p=dest: self.last_capture.set(f"Последний файл: {p}"))
+                self._ui(
+                    lambda p=dest: messagebox.showinfo("Видео с ГУ", f"Сохранено:\n{p}")
+                )
+            finally:
+                self._stopping_record = False
+                if self.recorder is rec:
+                    self.recorder = None
+
+        self._work("Стоп записи", go)
+
+    def open_captures_folder(self) -> None:
+        folder = captures_dir()
+        self.journal.action("открыть captures", str(folder))
+        self._open_path(folder)
+
+    def _open_path(self, path: Path) -> None:
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            else:
+                subprocess.run(["xdg-open", str(path)], check=False)
+        except Exception as exc:  # noqa: BLE001
+            self.journal.error("open-path", exc)
+
+    def _tick_record(self) -> None:
+        try:
+            if not self.root.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        rec = self.recorder
+        if rec is not None:
+            if rec.running:
+                self.record_status.set(f"Идёт запись {rec.elapsed()} с / {rec.limit} с")
+            elif not self._stopping_record and not self.busy:
+                self.stop_record()
+        try:
+            self.root.after(500, self._tick_record)
+        except tk.TclError:
+            return
+
+    def _on_close(self) -> None:
+        rec = self.recorder
+        self.recorder = None
+        if rec is not None:
+            try:
+                rec.stop(flush_wait=0.3)
+            except Exception as exc:  # noqa: BLE001
+                self.journal.error("record-close", exc)
+        self.root.destroy()
 
     def open_settings(self) -> None:
         def go() -> None:

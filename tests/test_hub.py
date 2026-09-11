@@ -36,6 +36,19 @@ def test_need_adb_dialog_does_not_close_over_exc() -> None:
     assert "lambda m=msg: messagebox.showerror(\"ADB\", m)" in src
 
 
+def test_demo_capture_in_hub() -> None:
+    from pathlib import Path
+
+    src = Path("hub/gui.py").read_text(encoding="utf-8")
+    assert '("demo", "Демо")' in src
+    assert "Сделать скриншот" in src
+    assert "Запись 60 с" in src
+    assert "from hub.capture import" in src
+    cli = Path("hub/cli.py").read_text(encoding="utf-8")
+    assert 'sub.add_parser("screenshot"' in cli
+    assert 'sub.add_parser("record"' in cli
+
+
 def test_nav_credit_matches_hub_title_style() -> None:
     from pathlib import Path
 
