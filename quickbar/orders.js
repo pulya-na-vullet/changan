@@ -1,14 +1,11 @@
 (function () {
   /**
-   * URL веб-приложения Apps Script (/exec), которое пишет в лист
-   * gid=2020729866 таблицы 1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw.
-   * Тот же webhook, что у страницы еврокубов, если он уже развёрнут.
+   * Webhook еврокубов / этой таблицы (URL заканчивается на /exec).
+   * Лист: https://docs.google.com/spreadsheets/d/1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw/edit?usp=sharing
+   * Колонки как eurocubes.html: дата, имя, телефон, текст заказа, страница, статус.
    */
   var QUICKBAR_ORDERS_URL = "";
-
-  var PRODUCT = "QuickBar для Changan Lamore";
-  var PRICE = "5000";
-  var SOURCE = "QuickBar лендинг";
+  var SHEET_ID = "1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw";
 
   function ready(fn) {
     if (document.readyState === "loading") {
@@ -32,53 +29,74 @@
     node.textContent = text || "";
   }
 
-  function copyAliases(data, from, names) {
-    var value = data.get(from);
-    if (value == null || value === "") {
-      return;
-    }
-    names.forEach(function (name) {
-      data.set(name, value);
-    });
+  function pad(n) {
+    return n < 10 ? "0" + n : String(n);
+  }
+
+  function formatDate() {
+    var d = new Date();
+    return (
+      pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear() +
+      ", " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds())
+    );
+  }
+
+  function pageName() {
+    var file = (location.pathname.split("/").pop() || "").trim();
+    return file || "quickbar.html";
+  }
+
+  function orderMessage(form) {
+    var city = (form.elements.city && form.elements.city.value) || "";
+    var car = (form.elements.car && form.elements.car.value) || "";
+    var comment = (form.elements.comment && form.elements.comment.value) || "";
+    var parts = [
+      "Заказ QuickBar: установка 5 000₽.",
+      city ? "Город: " + city + "." : "",
+      car ? "Авто: " + car + "." : "",
+      comment ? "Комментарий: " + comment : ""
+    ];
+    return parts.filter(Boolean).join(" ");
   }
 
   function payload(form) {
-    var data = new FormData(form);
-    if (!data.get("product")) {
-      data.set("product", PRODUCT);
-    }
-    if (!data.get("price")) {
-      data.set("price", PRICE);
-    }
-    if (!data.get("source")) {
-      data.set("source", SOURCE);
-    }
-    if (!data.get("qty")) {
-      data.set("qty", "1");
-    }
-    data.set("timestamp", new Date().toISOString());
-    copyAliases(data, "name", ["Имя", "ФИО", "Клиент"]);
-    copyAliases(data, "phone", ["Телефон", "Тел"]);
-    copyAliases(data, "city", ["Город"]);
-    copyAliases(data, "car", ["Авто", "Машина", "Модель"]);
-    copyAliases(data, "comment", ["Комментарий", "Сообщение"]);
-    copyAliases(data, "product", ["Товар", "Услуга"]);
-    copyAliases(data, "source", ["Источник", "Страница"]);
-    copyAliases(data, "price", ["Цена", "Сумма"]);
-    copyAliases(data, "qty", ["Количество", "Кол-во"]);
-    copyAliases(data, "timestamp", ["Дата", "Date"]);
-    return data;
+    var name = (form.elements.name && form.elements.name.value) || "";
+    var phone = (form.elements.phone && form.elements.phone.value) || "";
+    var message = orderMessage(form);
+    var page = pageName();
+    var date = formatDate();
+    var data = new FormData();
+    data.set("date", date);
+    data.set("timestamp", date);
+    data.set("name", name);
+    data.set("phone", phone);
+    data.set("message", message);
+    data.set("comment", message);
+    data.set("page", page);
+    data.set("source", page);
+    data.set("Имя", name);
+    data.set("Телефон", phone);
+    data.set("Комментарий", message);
+    data.set("Источник", page);
+    return { form: data, json: {
+      date: date,
+      name: name,
+      phone: phone,
+      message: message,
+      page: page,
+      sheet: SHEET_ID
+    }};
   }
 
   function submitOrder(form) {
     var url = QUICKBAR_ORDERS_URL.trim();
-    var data = payload(form);
+    var packed = payload(form);
     if (!url) {
       return Promise.reject(new Error("no-webhook"));
     }
     return fetch(url, {
       method: "POST",
-      body: data,
+      body: packed.form,
       mode: "no-cors"
     });
   }

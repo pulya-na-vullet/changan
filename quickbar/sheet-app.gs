@@ -1,62 +1,66 @@
 /**
- * Заявки QuickBar → тот же лист, что и еврокубы.
+ * Заявки → тот же лист, что eurocubes.html
+ * https://docs.google.com/spreadsheets/d/1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw/edit?usp=sharing
  *
- * Таблица: https://docs.google.com/spreadsheets/d/1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw
- * Лист gid=2020729866
+ * Строка как у еврокубов, без шапки:
+ * A дата, B имя, C телефон, D текст заказа, E страница, F статус (вручную).
  *
- * Один раз:
- * 1. Откройте таблицу → Расширения → Apps Script.
- * 2. Вставьте этот файл вместо Code.gs.
- * 3. Развернуть → Новое развёртывание → Веб-приложение
- *    «Выполнять от имени: меня», «Кто имеет доступ: все».
- * 4. Скопируйте URL /exec в QUICKBAR_ORDERS_URL в quickbar/orders.js
- *
- * Если веб-приложение еврокубов уже висит на этом листе — подставьте
- * тот же /exec: скрипт кладёт значения в колонки по заголовкам
- * (Имя, Телефон, Город, Товар, Комментарий, Источник…).
+ * Развернуть: таблица → Расширения → Apps Script → вставить →
+ * Веб-приложение, «от моего имени», «все». URL /exec → QUICKBAR_ORDERS_URL.
+ * Либо тот же /exec, что уже стоит в eurocubes.html.
  */
 
 var SPREADSHEET_ID = "1lt7hUCI1Pu2OknbtCjNrUTfpO4iyu1RCjyoRXtSHjpw";
 var SHEET_GID = 2020729866;
 
-var HEADER_ALIASES = {
-  timestamp: ["timestamp", "дата", "date", "время"],
-  source: ["source", "источник", "страница", "канал"],
-  product: ["product", "товар", "услуга", "название", "продукт"],
-  name: ["name", "имя", "фио", "клиент", "заказчик"],
-  phone: ["phone", "телефон", "тел", "мобильный"],
-  city: ["city", "город", "населённый пункт", "нас. пункт", "адрес"],
-  car: ["car", "авто", "машина", "модель", "год"],
-  comment: ["comment", "комментарий", "сообщение", "примечание", "коммент"],
-  price: ["price", "цена", "сумма", "стоимость"],
-  qty: ["qty", "количество", "кол-во", "колво"]
-};
-
-function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, service: "quickbar-orders" }))
-    .setMimeType(ContentService.MimeType.JSON);
+function doGet(e) {
+  if (e && e.parameter && (e.parameter.name || e.parameter.phone)) {
+    return writeRow_(paramsFrom_(e));
+  }
+  return json_({ ok: true, service: "quickbar-orders" });
 }
 
 function doPost(e) {
+  return writeRow_(paramsFrom_(e));
+}
+
+function paramsFrom_(e) {
+  var data = {};
+  if (e && e.postData && e.postData.contents) {
+    try {
+      data = JSON.parse(e.postData.contents) || {};
+    } catch (err) {
+      data = {};
+    }
+  }
+  if (e && e.parameter) {
+    var keys = Object.keys(e.parameter);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (data[key] == null || data[key] === "") {
+        data[key] = e.parameter[key];
+      }
+    }
+  }
+  return data;
+}
+
+function writeRow_(data) {
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    var params = (e && e.parameter) ? e.parameter : {};
     var sheet = sheetByGid_();
-    ensureHeaders_(sheet);
-    var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
-    var row = headers.map(function (header) {
-      return valueForHeader_(header, params);
-    });
-    sheet.appendRow(row);
-    return ContentService
-      .createTextOutput(JSON.stringify({ result: "success" }))
-      .setMimeType(ContentService.MimeType.JSON);
+    sheet.appendRow([
+      data.date || data.timestamp || formatDate_(),
+      data.name || data["Имя"] || "",
+      data.phone || data["Телефон"] || "",
+      data.message || data.comment || data["Комментарий"] || "",
+      data.page || data.source || data["Источник"] || "orders.html",
+      ""
+    ]);
+    return json_({ result: "success" });
   } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ result: "error", error: String(err) }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return json_({ result: "error", error: String(err) });
   } finally {
     lock.releaseLock();
   }
@@ -73,48 +77,12 @@ function sheetByGid_() {
   return ss.getActiveSheet();
 }
 
-function ensureHeaders_(sheet) {
-  if (sheet.getLastRow() > 0 && sheet.getLastColumn() > 0) {
-    var first = String(sheet.getRange(1, 1).getValue() || "").trim();
-    if (first) {
-      return;
-    }
-  }
-  sheet.getRange(1, 1, 1, 9).setValues([[
-    "Дата", "Источник", "Товар", "Имя", "Телефон", "Город", "Авто", "Комментарий", "Цена"
-  ]]);
+function formatDate_() {
+  return Utilities.formatDate(new Date(), "Europe/Moscow", "dd.MM.yyyy, HH:mm:ss");
 }
 
-function valueForHeader_(header, params) {
-  var key = normalize_(header);
-  if (HEADER_ALIASES.timestamp.indexOf(key) !== -1) {
-    return params.timestamp || new Date();
-  }
-  var groups = Object.keys(HEADER_ALIASES);
-  for (var i = 0; i < groups.length; i++) {
-    var group = groups[i];
-    if (HEADER_ALIASES[group].indexOf(key) === -1) {
-      continue;
-    }
-    if (params[group] != null && params[group] !== "") {
-      return params[group];
-    }
-    var aliases = HEADER_ALIASES[group];
-    for (var j = 0; j < aliases.length; j++) {
-      if (params[aliases[j]] != null && params[aliases[j]] !== "") {
-        return params[aliases[j]];
-      }
-    }
-  }
-  if (params[header] != null && params[header] !== "") {
-    return params[header];
-  }
-  return "";
-}
-
-function normalize_(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/ё/g, "е");
+function json_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }
