@@ -9,28 +9,59 @@ def test_player_sources_and_formats() -> None:
     src = (root / "android/player/src/main/java/com/changanhub/player/MediaTypes.java").read_text(
         encoding="utf-8"
     )
-    for ext in ("mp3", "flac", "wav", "ogg", "m4a", "mp4", "mkv", "webm", "avi"):
+    for ext in ("mp3", "flac", "wav", "ogg", "m4a", "opus", "wma", "mp4", "mkv", "webm", "avi", "mov", "ts", "m2ts"):
         assert f'"{ext}"' in src
     mf = (root / "android/player/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert 'package="com.changanhub.lamoreplayer"' in mf
     assert "APP_MUSIC" not in mf
-    assert 'android:versionName="1.0.1"' in mf
+    assert 'android:versionName="1.1.0"' in mf
+    assert 'android:minSdkVersion="28"' in mf
+    assert 'android:targetSdkVersion="28"' in mf
     assert "RECORD_AUDIO" in mf
+    assert "FOREGROUND_SERVICE" in mf
     assert "com.changanhub.player.BrowserActivity" in mf
     assert "com.changanhub.player.PlayerService" in mf
     viz = (root / "android/player/src/main/java/com/changanhub/player/VisualizerView.java").read_text(
         encoding="utf-8"
     )
     assert "Visualizer" in viz
+    assert "MODE_PARTICLES" in viz
+    assert "MODE_RADIAL" in viz
     eq = (root / "android/player/src/main/java/com/changanhub/player/PlayerService.java").read_text(
         encoding="utf-8"
     )
     assert "android.media.audiofx.Equalizer" in eq
     assert "BassBoost" in eq
+    assert "Virtualizer" in eq
+    assert "LoudnessEnhancer" in eq
+    assert "ACTION_EQ_NAMED" in eq
     usb = (root / "android/player/src/main/java/com/changanhub/player/UsbMedia.java").read_text(
         encoding="utf-8"
     )
     assert "/mnt/media_rw" in usb
+    assert "/storage/usb0" in usb
+    assert "scanAll" in usb
+    ui = (root / "android/player/src/main/java/com/changanhub/player/BrowserActivity.java").read_text(
+        encoding="utf-8"
+    )
+    assert "0.20f" in ui
+    assert "0.30f" in ui
+    assert "tab_music" in ui
+    prefs = (root / "android/player/src/main/java/com/changanhub/player/EqPrefs.java").read_text(
+        encoding="utf-8"
+    )
+    assert "Bass Boost" in prefs
+    srt = (root / "android/player/src/main/java/com/changanhub/player/SrtSubtitles.java").read_text(
+        encoding="utf-8"
+    )
+    assert "-->" in srt
+    fog = (root / "android/player/src/main/java/com/changanhub/player/GlFogView.java").read_text(
+        encoding="utf-8"
+    )
+    assert "GLSurfaceView" in fog
+    build = (root / "scripts/build_player.py").read_text(encoding="utf-8")
+    assert '"1.1.0"' in build
+    assert '"28"' in build
     assert PACKAGE == "com.changanhub.lamoreplayer"
 
 

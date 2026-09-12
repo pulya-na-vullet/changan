@@ -7,4 +7,5 @@
     <color name="text">#FFF3F6FB</color>
     <color name="muted">#FF9AA7B8</color>
     <color name="danger">#FFFF6B6B</color>
+    <color name="tab_off">#FF223049</color>
 </resources>

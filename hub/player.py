@@ -68,5 +68,8 @@ def install_player(adb: Adb, progress: Progress | None = None) -> list[str]:
         return lines
     lines.append(f"Пакет установлен. В списке ГУ: Lamore Player · {PACKAGE}")
     lines += start_player(adb, progress=progress)
-    lines.append("Откройте флешку в плеере. Музыка — визуалайзер и эквалайзер; видео — на весь экран.")
+    lines.append(
+        "Откройте флешку в плеере. Вкладки: музыка, видео, эквалайзер, визуализация. "
+        "Видео — SRT рядом с файлом и выбор дорожки."
+    )
     return lines

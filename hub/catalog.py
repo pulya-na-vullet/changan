@@ -34,11 +34,11 @@ CATALOG: list[CatalogApp] = [
     CatalogApp(
         id="player",
         name="Lamore Player",
-        summary="Музыка и видео с флешки ГУ: визуалайзер, эквалайзер, крупные кнопки.",
+        summary="Музыка и видео с флешки ГУ: вкладки, EQ, визуализации, субтитры.",
         package="com.changanhub.lamoreplayer",
         kind="media",
         source="bundled",
-        notes="Ставится из раздела «Плеер». Читает USB ГУ (не ноутбука). Форматы, которые умеет декодер Feiyu: MP3/AAC/FLAC/WAV/OGG, MP4/MKV/WebM и др.",
+        notes="Ставится из раздела «Плеер». Читает USB ГУ (не ноутбука). Вкладки музыка/видео/эквалайзер/визуализация. Форматы Feiyu: MP3/AAC/FLAC/WAV/OGG/OPUS, MP4/MKV/WebM/MOV/TS и др.",
     ),
     CatalogApp(
         id="files",

@@ -26,6 +26,9 @@ public final class UsbMedia {
         public boolean video;
         public String label;
         public String meta;
+        public String artist = "";
+        public String album = "";
+        public int durationMs;
     }
 
     public static List<File> roots(Context context) {
@@ -77,6 +80,70 @@ public final class UsbMedia {
         return uniqueExisting(found);
     }
 
+    public static void fillTags(Entry e) {
+        if (e == null || e.file == null || e.directory) {
+            return;
+        }
+        Tags tags = Tags.read(e.file);
+        if (tags.title.length() > 0) {
+            e.label = tags.title;
+        }
+        e.artist = tags.artist;
+        e.album = tags.album;
+        e.durationMs = tags.durationMs;
+        String kind = e.video ? "видео" : "аудио";
+        String who = e.artist.length() > 0 ? e.artist : (e.file.getParent() == null ? "" : e.file.getParent());
+        String clock = e.durationMs > 0 ? " · " + Tags.clock(e.durationMs) : "";
+        String res = "";
+        if (e.video && tags.width > 0 && tags.height > 0) {
+            res = " · " + tags.width + "×" + tags.height;
+        }
+        e.meta = kind + " · " + who + clock + res;
+    }
+
+    public static void sortEntries(List<Entry> rows, int mode) {
+        Collections.sort(rows, new Comparator<Entry>() {
+            @Override
+            public int compare(Entry a, Entry b) {
+                if (a.directory != b.directory) {
+                    return a.directory ? -1 : 1;
+                }
+                String left;
+                String right;
+                if (mode == 1) {
+                    left = a.artist;
+                    right = b.artist;
+                } else if (mode == 2) {
+                    left = a.album;
+                    right = b.album;
+                } else if (mode == 3) {
+                    left = a.label;
+                    right = b.label;
+                } else {
+                    String pa = a.file != null && a.file.getParent() != null ? a.file.getParent() : "";
+                    String pb = b.file != null && b.file.getParent() != null ? b.file.getParent() : "";
+                    int dirs = pa.compareToIgnoreCase(pb);
+                    if (dirs != 0) {
+                        return dirs;
+                    }
+                    left = a.label;
+                    right = b.label;
+                }
+                if (left == null) {
+                    left = "";
+                }
+                if (right == null) {
+                    right = "";
+                }
+                int cmp = left.compareToIgnoreCase(right);
+                if (cmp != 0) {
+                    return cmp;
+                }
+                return a.label.compareToIgnoreCase(b.label);
+            }
+        });
+    }
+
     public static List<Entry> list(File dir) {
         List<Entry> out = new ArrayList<>();
         if (dir == null || !dir.isDirectory()) {
@@ -106,7 +173,7 @@ public final class UsbMedia {
                 e.audio = MediaTypes.isAudio(name);
                 e.video = MediaTypes.isVideo(name);
                 e.label = name;
-                e.meta = (e.video ? "видео · " : "аудио · ") + (file.length() / 1024) + " КБ";
+                fillTags(e);
                 out.add(e);
             }
         }
@@ -119,6 +186,39 @@ public final class UsbMedia {
                 return a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT));
             }
         });
+        return out;
+    }
+
+    public static List<Entry> scanEntries(File root, boolean video) {
+        List<File> files = scan(root, video);
+        List<Entry> out = new ArrayList<>();
+        for (int i = 0; i < files.size(); i++) {
+            File file = files.get(i);
+            Entry e = new Entry();
+            e.file = file;
+            e.audio = !video;
+            e.video = video;
+            e.label = file.getName();
+            fillTags(e);
+            out.add(e);
+        }
+        return out;
+    }
+
+    public static List<Entry> scanAll(Context context, boolean video) {
+        List<Entry> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        List<File> volumes = roots(context);
+        for (int i = 0; i < volumes.size(); i++) {
+            List<Entry> chunk = scanEntries(volumes.get(i), video);
+            for (int j = 0; j < chunk.size(); j++) {
+                Entry e = chunk.get(j);
+                String key = e.file == null ? "" : e.file.getAbsolutePath();
+                if (seen.add(key)) {
+                    out.add(e);
+                }
+            }
+        }
         return out;
     }
 
