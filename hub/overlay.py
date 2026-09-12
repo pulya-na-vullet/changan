@@ -165,6 +165,10 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
         log += _retire_package(adb, package, progress=progress)
         return log
 
+    from hub.player import is_player_package
+    from hub.aichat import is_aichat_package
+
+    protected = is_player_package(package) or is_aichat_package(package)
     step(f"пробую pm uninstall --user 0 {package} (лимит 8с)", 60)
     gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=8)
     log.append(
@@ -174,6 +178,13 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
     blob = f"{gone.stdout}\n{gone.stderr}".lower()
     if gone.code != 124 and "success" in blob and "failure" not in blob and "not allow" not in blob:
         step(f"{package} снят", 100)
+        return log
+    if protected:
+        step(
+            "Feiyu не удаляет этот пакет. Плеер и чат не отключаю — иначе рабочее "
+            "приложение пропадёт, как при прошлом «Удалении» lamoreplayer.",
+            100,
+        )
         return log
     step("Feiyu не удаляет auth-приложение. Скрываю и отключаю пакет.", 70)
     for cmd in (

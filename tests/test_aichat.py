@@ -7,8 +7,8 @@ from hub.aichat import PACKAGE, aichat_apk
 def test_aichat_sources() -> None:
     root = Path(__file__).resolve().parents[1]
     mf = (root / "android/aichat/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-    assert 'package="com.changanhub.aichat"' in mf
-    assert 'android:versionName="1.0.0"' in mf
+    assert 'package="com.changanhub.chatrise"' in mf
+    assert 'android:versionName="1.0.1"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "INTERNET" in mf
@@ -46,8 +46,13 @@ def test_aichat_sources() -> None:
     )
     assert "export-chat.json" in store
     build = (root / "scripts/build_aichat.py").read_text(encoding="utf-8")
-    assert '"1.0.0"' in build
-    assert PACKAGE == "com.changanhub.aichat"
+    assert '"1.0.1"' in build
+    assert PACKAGE == "com.changanhub.chatrise"
+    assert "SpeechRecognizer.isRecognitionAvailable" in ui
+    assert "setVisibility(View.GONE)" in ui
+    assert "iFlytek" in ui
+    assert "Яндекс-клавиатура" in ui
+    assert "Распознавание речи на этой ГУ недоступно (нет Google STT)" not in ui
 
 
 def test_hub_installs_aichat() -> None:
@@ -57,8 +62,10 @@ def test_hub_installs_aichat() -> None:
     assert "deploy_aichat" in src
     assert '"aichat", "Чат ИИ"' in src
     assert any(app.id == "aichat" for app in CATALOG)
-    row = package_label("com.changanhub.aichat")
+    row = package_label("com.changanhub.chatrise")
     assert "AI Chat" in row
+    leftover = package_label("com.changanhub.aichat")
+    assert "старый" in leftover.lower()
     assert "install_aichat" in Path("hub/aichat.py").read_text(encoding="utf-8")
 
 
@@ -74,7 +81,7 @@ def test_bundled_aichat_apk() -> None:
     assert has_v2_block(data)
     with ZipFile(apk) as zf:
         mf = zf.read("AndroidManifest.xml")
-        assert "com.changanhub.aichat".encode("utf-16-le") in mf
+        assert "com.changanhub.chatrise".encode("utf-16-le") in mf
         certs = pkcs7.load_der_pkcs7_certificates(zf.read("META-INF/CERT.RSA"))
         assert certs[0].serial_number == CHANGAN_SERIAL
 
@@ -82,5 +89,5 @@ def test_bundled_aichat_apk() -> None:
 def test_apk_package_name_aichat(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "AiChat.apk") == "com.changanhub.aichat"
-    assert apk_package_name(tmp_path / "aichat-changan.apk") == "com.changanhub.aichat"
+    assert apk_package_name(tmp_path / "AiChat.apk") == "com.changanhub.chatrise"
+    assert apk_package_name(tmp_path / "aichat-changan.apk") == "com.changanhub.chatrise"

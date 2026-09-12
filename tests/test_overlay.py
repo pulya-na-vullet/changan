@@ -115,6 +115,33 @@ def test_disable_user_package_hides_when_auth_blocks_delete() -> None:
     assert "auth-приложение" in joined
 
 
+def test_disable_user_package_does_not_disable_player_or_chat() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "is auth app, not allow delete!", 1, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    for pkg in (
+        "com.changanhub.playrise",
+        "com.changanhub.lamoreplayer",
+        "com.changanhub.chatrise",
+        "com.changanhub.aichat",
+    ):
+        fake.shells.clear()
+        lines = disable_user_package(fake, pkg)
+        joined = "\n".join(fake.shells + lines)
+        assert f"pm uninstall --user 0 {pkg}" in joined
+        assert f"pm disable-user --user 0 {pkg}" not in joined
+        assert "pm hide" not in joined
+        assert "не отключаю" in joined
+
+
 def test_quickbar_is_three_times_taller() -> None:
     src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
         encoding="utf-8"

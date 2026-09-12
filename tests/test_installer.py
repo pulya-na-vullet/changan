@@ -364,6 +364,91 @@ def test_install_does_not_disable_working_quickrise_on_self_mismatch(tmp_path: P
     assert any("не отключаю" in line.lower() for line in report.log)
 
 
+def test_install_keeps_player_on_signature_mismatch(tmp_path: Path) -> None:
+    apk = tmp_path / "Player.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.playrise signatures do not match previously installed version; ignoring!]",
+                "",
+                1,
+                [],
+            )
+        if command.startswith("pm path"):
+            return CommandResult(
+                True,
+                "package:/data/app/com.changanhub.playrise-lLZnzGpSB-ElSkmJVEBERA==/base.apk",
+                "",
+                0,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with (
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.time.sleep"),
+    ):
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.playrise")
+    assert report.ok
+    assert report.method == "keep-existing"
+    assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
+    assert not any("pm disable-user --user 0 com.changanhub.playrise" in cmd for cmd in fake.shells)
+    assert any("playrise" in line.lower() for line in report.log)
+
+
+def test_install_keeps_legacy_player_without_uninstall(tmp_path: Path) -> None:
+    apk = tmp_path / "Player.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.lamoreplayer signatures do not match previously installed version; ignoring!]",
+                "",
+                1,
+                [],
+            )
+        if command.startswith("pm path"):
+            return CommandResult(
+                True,
+                "package:/data/app/com.changanhub.lamoreplayer-lLZnzGpSB-ElSkmJVEBERA==/base.apk",
+                "",
+                0,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with (
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.time.sleep"),
+    ):
+        report = install_apk(
+            fake, apk, already_signed=True, package="com.changanhub.lamoreplayer"
+        )
+    assert report.ok
+    assert report.method == "keep-existing"
+    assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
+    assert not any(
+        "pm disable-user --user 0 com.changanhub.lamoreplayer" in cmd for cmd in fake.shells
+    )
+
+
 def test_parse_package_paths() -> None:
     from hub.installer import parse_package_paths, parse_pm_path
 
@@ -379,6 +464,15 @@ def test_parse_package_paths() -> None:
     assert parse_pm_path(
         "please input verify password: verify success!\npackage:/data/app/foo.apk\n"
     ) == "/data/app/foo.apk"
+    hashed = (
+        "package:/data/app/com.changanhub.lamoreplayer-"
+        "lLZnzGpSB-ElSkmJVEBERA==/base.apk"
+    )
+    assert parse_pm_path(hashed).endswith("BERA==/base.apk")
+    assert parse_pm_path(
+        "package:/data/app/~~x==/com.foo-y==/base.apk=com.foo"
+    ) == "/data/app/~~x==/com.foo-y==/base.apk"
+    assert "/base.apk" not in parse_package_paths(hashed)
 
 
 def test_hu_serial_cache_is_per_device(tmp_path, monkeypatch) -> None:

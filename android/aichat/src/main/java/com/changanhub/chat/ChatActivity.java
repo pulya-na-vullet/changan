@@ -164,12 +164,17 @@ public class ChatActivity extends Activity {
                 setBusy(false, "остановлено");
             }
         });
-        findViewById(R.id.btn_mic).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listen();
-            }
-        });
+        View mic = findViewById(R.id.btn_mic);
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            mic.setVisibility(View.GONE);
+        } else {
+            mic.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    listen();
+                }
+            });
+        }
         ttsSwitch.setChecked(Prefs.autoTts(this));
         ttsSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
@@ -405,7 +410,7 @@ public class ChatActivity extends Activity {
             return;
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            toast("Распознавание речи на этой ГУ недоступно (нет Google STT).");
+            toast("На этой ГУ нет Android SpeechRecognizer. Пишите текстом.");
             return;
         }
         if (stt == null) {
@@ -640,6 +645,22 @@ public class ChatActivity extends Activity {
             }
         });
         voiceBox.addView(voiceAuto);
+        TextView sttNote = new TextView(this);
+        sttNote.setTextColor(0xFF9AA7B8);
+        sttNote.setTextSize(14);
+        sttNote.setPadding(0, 8, 0, 8);
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            sttNote.setText(
+                "Кнопки микрофона нет: на Feiyu нет Android SpeechRecognizer. "
+                    + "Голосовой помощник машины (iFlytek) к этому чату не подключён. "
+                    + "Пишите текстом — Яндекс-клавиатура работает. "
+                    + "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
+                    + "Озвучка ответов ниже — это TTS, не распознавание речи."
+            );
+        } else {
+            sttNote.setText("Голосовой ввод — кнопка микрофона в чате.");
+        }
+        voiceBox.addView(sttNote);
         addLabel(voiceBox, "Голос");
         voiceSpinner = spinner(new String[]{"по умолчанию (ru-RU)"}, "по умолчанию (ru-RU)");
         voiceBox.addView(voiceSpinner);

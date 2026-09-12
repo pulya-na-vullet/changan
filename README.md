@@ -103,8 +103,9 @@ python -m hub record --seconds 30
 
 ## Плеер с флешки ГУ (Lamore Player)
 
-Приложение `com.changanhub.lamoreplayer` ставится из Hub, раздел **Плеер**.
-Оно смотрит USB **в головном устройстве**, не на ноутбуке.
+Приложение `com.changanhub.playrise` ставится из Hub, раздел **Плеер**.
+Старый `com.changanhub.lamoreplayer` Feiyu не удаляет (тот же auth, что у панели):
+Hub ставит новый id и отключает leftover. Оно смотрит USB **в головном устройстве**, не на ноутбуке.
 
 - главное меню в центре экрана (поля 20% по ширине и 30% по высоте);
 - вкладки: музыка, видео, эквалайзер, визуализация;
@@ -123,7 +124,8 @@ python -m hub record --seconds 30
 
 ## AI Chat (DeepSeek / YandexGPT)
 
-Приложение `com.changanhub.aichat` ставится из Hub, раздел **Чат ИИ**.
+Приложение `com.changanhub.chatrise` ставится из Hub, раздел **Чат ИИ**.
+Старый `com.changanhub.aichat` Feiyu не удаляет — Hub ставит новый id.
 Интернет нужен **на ГУ** (SIM или Wi‑Fi), не на ноутбуке.
 
 - центр экрана: поля 20% по ширине и 30% по высоте;
@@ -131,6 +133,8 @@ python -m hub record --seconds 30
 - DeepSeek (`https://api.deepseek.com/v1`) и YandexGPT, стриминг SSE;
 - ключи в Android Keystore, не в открытом виде;
 - автоозвучка ответов системным TTS (`ru-RU`), стоп и повтор;
+- на Feiyu нет Android SpeechRecognizer (это не iFlytek и не язык системы): пишите текстом;
+- русский интерфейс — из приложения, язык ГУ может остаться китайским;
 - история диалогов — JSON в filesDir.
 
 Сборка: `python scripts/build_aichat.py` → `apps/AiChat.apk`.

@@ -28,6 +28,14 @@ OVERLAY_PACKAGES = (
     "com.changanhub.quickdock",
     "com.changanhub.quickbar",
 )
+# Sideloads Feiyu will not delete. A new Hub ZIP mints a new RSA key, so
+# pm install -r hits UPDATE_INCOMPATIBLE. Do not uninstall or disable these.
+KEEP_EXISTING_PACKAGES = OVERLAY_PACKAGES + (
+    "com.changanhub.playrise",
+    "com.changanhub.lamoreplayer",
+    "com.changanhub.chatrise",
+    "com.changanhub.aichat",
+)
 
 # Logs from Lamore Feiyu: first push to tmp succeeds; extra folders only add noise.
 REMOTE_CANDIDATES = (
@@ -280,7 +288,11 @@ def install_apk(
         overlay_conflict = bool(
             (conflict and conflict in OVERLAY_PACKAGES) or (package and package in OVERLAY_PACKAGES)
         )
-        if overlay_conflict and conflict and package and conflict == package:
+        keep_conflict = bool(
+            (conflict and conflict in KEEP_EXISTING_PACKAGES)
+            or (package and package in KEEP_EXISTING_PACKAGES)
+        )
+        if keep_conflict and conflict and package and conflict == package:
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Рабочий пакет не отключаю.",
                 72,
@@ -294,6 +306,13 @@ def install_apk(
             )
             if conflict:
                 uninstall_package(adb, conflict, step)
+        elif keep_conflict:
+            step(
+                f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
+                "auth-приложение — pm uninstall не вызываю. Плеер и чат не отключаю. "
+                "Новые пакеты: com.changanhub.playrise и com.changanhub.chatrise.",
+                72,
+            )
         else:
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Пробую pm uninstall --user 0 "
@@ -316,8 +335,7 @@ def install_apk(
                 else:
                     step(
                         "Feiyu не сняла пакет (提示 not allow delete или timeout). "
-                        "Старую панель не трогаю. Новая QuickBar ставится отдельным "
-                        "пакетом com.changanhub.quickrise.",
+                        "Не отключаю. Ставьте новый id из этого Hub.",
                         75,
                     )
     if _ok_install(result):
@@ -402,18 +420,41 @@ def _finish_ok(
     return report
 
 
+def _keep_kind(package: str) -> str:
+    if package in OVERLAY_PACKAGES:
+        return "overlay"
+    if package in ("com.changanhub.playrise", "com.changanhub.lamoreplayer"):
+        return "player"
+    return "chat"
+
+
 def _finish_keep_overlay(
-    adb: Adb, report: InstallReport, step: Progress, remote_apk: str | None = None
+    adb: Adb,
+    report: InstallReport,
+    step: Progress,
+    remote_apk: str | None = None,
+    kind: str = "overlay",
 ) -> InstallReport:
     report.ok = True
     report.method = "keep-existing"
     if remote_apk:
         adb.shell(f"rm {remote_apk}", timeout=8)
-    step(
-        "Рабочая панель уже стоит на ГУ. Этот APK не обновляет — подпись другого Hub. "
-        "Колонку не отключаю. Дальше: «Только запустить», не повторная установка.",
-        100,
-    )
+    if kind == "player":
+        msg = (
+            "Плеер с этой подписью уже стоит. Не отключаю. "
+            "Lamore Player 1.1 — пакет com.changanhub.playrise, раздел «Плеер»."
+        )
+    elif kind == "chat":
+        msg = (
+            "Чат с этой подписью уже стоит. Не отключаю. "
+            "AI Chat — пакет com.changanhub.chatrise, раздел «Чат ИИ»."
+        )
+    else:
+        msg = (
+            "Рабочая панель уже стоит на ГУ. Этот APK не обновляет — подпись другого Hub. "
+            "Колонку не отключаю. Дальше: «Только запустить», не повторная установка."
+        )
+    step(msg, 100)
     return report
 
 
@@ -431,15 +472,29 @@ def _keep_working_overlay(
     conflict = _package_from_pm_error(blob) or package
     if not conflict or not package or conflict != package:
         return None
-    if conflict not in OVERLAY_PACKAGES:
+    if conflict not in KEEP_EXISTING_PACKAGES:
         return None
-    step(
-        f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
-        "Рабочую колонку не отключаю.",
-        72,
-    )
+    kind = _keep_kind(conflict)
+    if kind == "overlay":
+        step(
+            f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
+            "Рабочую колонку не отключаю.",
+            72,
+        )
+    elif kind == "player":
+        step(
+            f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
+            "Рабочий плеер не отключаю. Новый пакет — com.changanhub.playrise.",
+            72,
+        )
+    else:
+        step(
+            f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
+            "Рабочий чат не отключаю. Новый пакет — com.changanhub.chatrise.",
+            72,
+        )
     if _confirm_installed(adb, package, step, attempts=2):
-        return _finish_keep_overlay(adb, report, step, remote_apk)
+        return _finish_keep_overlay(adb, report, step, remote_apk, kind=kind)
     return None
 
 
@@ -719,6 +774,14 @@ def merged_output(result: CommandResult) -> str:
     return f"{result.stdout or ''}\n{result.stderr or ''}"
 
 
+def _pm_path_package_suffix(maybe_pkg: str) -> bool:
+    """True when the token after the last '=' is a package id, not an APK path."""
+    token = (maybe_pkg or "").strip()
+    if not token or "/" in token or " " in token:
+        return False
+    return "." in token and token[0].isalpha()
+
+
 def parse_package_paths(text: str) -> dict[str, str]:
     """Parse ``pm list packages -f`` lines: package:/path/base.apk=pkg.name"""
     mapping: dict[str, str] = {}
@@ -731,20 +794,22 @@ def parse_package_paths(text: str) -> dict[str, str]:
             continue
         path, pkg = rest.rsplit("=", 1)
         path, pkg = path.strip(), pkg.strip()
-        if pkg and path:
+        if pkg and path and _pm_path_package_suffix(pkg):
             mapping[pkg] = path
     return mapping
 
 
 def parse_pm_path(text: str) -> str:
+    """Parse ``pm path`` output. Android 9 paths contain ``==`` hashes — keep them."""
     for line in (text or "").splitlines():
         line = line.strip()
         if not line.startswith("package:"):
             continue
         rest = line.split("package:", 1)[-1].strip()
         if "=" in rest:
-            path, _pkg = rest.rsplit("=", 1)
-            return path.strip()
+            path, maybe_pkg = rest.rsplit("=", 1)
+            if _pm_path_package_suffix(maybe_pkg):
+                return path.strip()
         return rest
     return ""
 
@@ -1708,10 +1773,10 @@ def apk_package_name(apk: Path) -> str | None:
     stem = apk.name.lower()
     if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise")):
         return "com.changanhub.quickrise"
-    if any(token in stem for token in ("player", "lamoreplayer")):
-        return "com.changanhub.lamoreplayer"
-    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat")):
-        return "com.changanhub.aichat"
+    if any(token in stem for token in ("player", "lamoreplayer", "playrise")):
+        return "com.changanhub.playrise"
+    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise")):
+        return "com.changanhub.chatrise"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")
@@ -1775,6 +1840,12 @@ def uninstall_package(adb: Adb, package: str, step: Progress | None = None) -> b
         adb.shell(f"am force-stop {package}", timeout=8)
         adb.shell(f"appops set {package} SYSTEM_ALERT_WINDOW ignore", timeout=8)
         adb.shell(f"pm disable-user --user 0 {package}", timeout=8)
+        return False
+    if package in KEEP_EXISTING_PACKAGES:
+        note(
+            f"не вызываю pm uninstall для {package} — на Feiyu это 提示 not allow delete. "
+            "Плеер и чат не отключаю."
+        )
         return False
     note(f"не вызываю pm uninstall для {package} — на Feiyu это 提示 not allow delete")
     return False

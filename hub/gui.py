@@ -389,7 +389,8 @@ class HubApp:
                 "Заставки: спектр, волна, частицы, круг, OpenGL-туман под ритм. "
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
-                "Пакет: com.changanhub.lamoreplayer. Без Google Play и без Compose. "
+                "Пакет: com.changanhub.playrise. Старый lamoreplayer Feiyu не удаляет — "
+                "Hub ставит новый id, как QuickBar → quickrise. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -411,11 +412,14 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "AI Chat 1.0 ходит в интернет с ГУ (SIM/Wi‑Fi), без Google Play. "
+                "AI Chat 1.0.1 ходит в интернет с ГУ (SIM/Wi‑Fi), без Google Play. "
                 "Вкладки: Чат / Настройки / История / Голос. Центр экрана 20%/30%. "
                 "Провайдеры: DeepSeek (api.deepseek.com) и YandexGPT. Ключи в Android Keystore. "
-                "Ответы озвучивает системный TTS (русский). Микрофон — если на ГУ есть STT. "
-                "Пакет: com.changanhub.aichat. Макет: docs\\aichat-layout.html."
+                "Ответы озвучивает системный TTS (русский). Микрофона на Feiyu нет: голосовой "
+                "помощник машины — iFlytek, это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
+                "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
+                "Пакет: com.changanhub.chatrise (старый aichat Feiyu не удаляет). "
+                "Макет: docs\\aichat-layout.html."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -1104,12 +1108,14 @@ class HubApp:
 
         def go() -> None:
             from hub.overlay import launch_overlay_target, start_overlay
+            from hub.player import launch_player_target, start_player
+            from hub.aichat import launch_aichat_target, start_aichat
 
             adb = self._need_adb()
             if not adb:
                 return
-            target = launch_overlay_target(pkg)
-            if target:
+            overlay = launch_overlay_target(pkg)
+            if overlay:
                 if not self._hu_ready(adb):
                     raise AdbError("Сначала нажмите «Подключить». Без ГУ панель не запущу.")
 
@@ -1117,10 +1123,34 @@ class HubApp:
                     self._show_progress(message, percent)
 
                 self.log(
-                    f"{pkg} — ярлык панели. Запускаю рабочую QuickBar ({target}): "
+                    f"{pkg} — ярлык панели. Запускаю рабочую QuickBar ({overlay}): "
                     "скрытие и сортировка в зелёной колонке справа, не в меню приложений."
                 )
                 for line in start_overlay(adb, progress=progress):
+                    self.journal.write("INFO", "apps", line)
+                return
+            player = launch_player_target(pkg)
+            if player:
+                if not self._hu_ready(adb):
+                    raise AdbError("Сначала нажмите «Подключить». Без ГУ плеер не открою.")
+
+                def progress_player(message: str, percent: int) -> None:
+                    self._show_progress(message, percent)
+
+                self.log(f"{pkg} — ярлык плеера. Запускаю {player}.")
+                for line in start_player(adb, progress=progress_player):
+                    self.journal.write("INFO", "apps", line)
+                return
+            chat = launch_aichat_target(pkg)
+            if chat:
+                if not self._hu_ready(adb):
+                    raise AdbError("Сначала нажмите «Подключить». Без ГУ чат не открою.")
+
+                def progress_chat(message: str, percent: int) -> None:
+                    self._show_progress(message, percent)
+
+                self.log(f"{pkg} — ярлык чата. Запускаю {chat}.")
+                for line in start_aichat(adb, progress=progress_chat):
                     self.journal.write("INFO", "apps", line)
                 return
             result = adb.launch(pkg)
