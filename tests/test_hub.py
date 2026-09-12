@@ -16,6 +16,7 @@ def test_catalog_has_quickbar() -> None:
     row = package_label("com.changanhub.quickrise")
     assert "QuickBar" in row
     assert package_from_row(row) == "com.changanhub.quickrise"
+    assert "Лайт" in package_label("com.yandex.browser.lite")
     leftover = package_label("com.changanhub.quickkeep")
     assert "старая" in leftover.lower()
     assert package_from_row(leftover) == "com.changanhub.quickkeep"

@@ -1,86 +1,397 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/bg_solid"
-    android:padding="16dp">
-
-    <TextView
-        android:id="@+id/title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/app_name"
-        android:textColor="@color/accent"
-        android:textSize="26sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/path"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/usb"
-        android:textColor="@color/muted"
-        android:textSize="14sp"
-        android:maxLines="2" />
+    android:background="@color/bg_solid">
 
     <LinearLayout
+        android:id="@+id/stage"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:orientation="horizontal">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@color/panel">
 
-        <Button
-            android:id="@+id/btn_up"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/app_name"
+            android:textColor="@color/accent"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/tabs"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tab_music"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/tab_music"
+                android:textColor="@color/bg_solid"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:background="@color/accent" />
+
+            <TextView
+                android:id="@+id/tab_video"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:gravity="center"
+                android:text="@string/tab_video"
+                android:textColor="@color/text"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:background="@color/tab_off" />
+
+            <TextView
+                android:id="@+id/tab_eq"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:gravity="center"
+                android:text="@string/tab_eq"
+                android:textColor="@color/text"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:background="@color/tab_off" />
+
+            <TextView
+                android:id="@+id/tab_viz"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:gravity="center"
+                android:text="@string/tab_viz"
+                android:textColor="@color/text"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:background="@color/tab_off" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/pages"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
+            android:layout_marginTop="6dp">
+
+            <LinearLayout
+                android:id="@+id/page_media"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_up"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:background="@color/card"
+                        android:text="@string/up"
+                        android:textColor="@color/text"
+                        android:textSize="15sp" />
+
+                    <Button
+                        android:id="@+id/btn_scan"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:background="@color/card"
+                        android:text="@string/scan"
+                        android:textColor="@color/text"
+                        android:textSize="15sp" />
+
+                    <Button
+                        android:id="@+id/btn_sort"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:background="@color/card"
+                        android:text="@string/sort_folder"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/path"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/usb"
+                    android:textColor="@color/muted"
+                    android:textSize="13sp"
+                    android:maxLines="2" />
+
+                <ListView
+                    android:id="@+id/list"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:divider="@color/panel"
+                    android:dividerHeight="1dp" />
+
+                <TextView
+                    android:id="@+id/empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/empty"
+                    android:textColor="@color/muted"
+                    android:textSize="16sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/page_eq"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone"
+                android:fillViewport="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="4dp">
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+
+                        <LinearLayout
+                            android:id="@+id/named_presets"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal" />
+                    </HorizontalScrollView>
+
+                    <TextView
+                        android:id="@+id/eq_bass_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Бас"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_bass"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="1000" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Средние"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_mids"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="1000" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Высокие"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_highs"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="1000" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Громкость"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_volume"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="100" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Баланс L / R"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_balance"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="100" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Virtualizer"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_virt"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="1000" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Loudness"
+                        android:textColor="@color/text"
+                        android:textSize="14sp" />
+
+                    <SeekBar
+                        android:id="@+id/eq_loud"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="1000" />
+
+                    <com.changanhub.player.EqCurveView
+                        android:id="@+id/eq_curve"
+                        android:layout_width="match_parent"
+                        android:layout_height="72dp"
+                        android:layout_marginTop="8dp" />
+
+                    <LinearLayout
+                        android:id="@+id/eq_bands"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </ScrollView>
+
+            <FrameLayout
+                android:id="@+id/page_viz"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <com.changanhub.player.GlFogView
+                    android:id="@+id/gl_fog"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone" />
+
+                <com.changanhub.player.VisualizerView
+                    android:id="@+id/viz"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top">
+
+                    <LinearLayout
+                        android:id="@+id/viz_modes"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:padding="4dp" />
+                </HorizontalScrollView>
+            </FrameLayout>
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/nowbar"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             android:background="@color/card"
-            android:text="@string/up"
-            android:textColor="@color/text"
-            android:textSize="16sp" />
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
 
-        <Button
-            android:id="@+id/btn_scan"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:background="@color/card"
-            android:text="@string/scan"
-            android:textColor="@color/text"
-            android:textSize="16sp" />
+            <TextView
+                android:id="@+id/now_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:maxLines="2" />
 
-        <Button
-            android:id="@+id/btn_now"
-            android:layout_width="0dp"
-            android:layout_height="56dp"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:background="@color/accent"
-            android:text="@string/now_playing"
-            android:textColor="@color/bg_solid"
-            android:textSize="16sp" />
+            <Button
+                android:id="@+id/btn_shuffle"
+                android:layout_width="56dp"
+                android:layout_height="48dp"
+                android:background="@color/tab_off"
+                android:text="⇄"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_repeat"
+                android:layout_width="56dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:background="@color/tab_off"
+                android:text="1"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_prev"
+                android:layout_width="56dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:background="@color/tab_off"
+                android:text="⏮"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_play"
+                android:layout_width="64dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:background="@color/accent"
+                android:text="▶"
+                android:textColor="@color/bg_solid"
+                android:textSize="18sp" />
+
+            <Button
+                android:id="@+id/btn_next"
+                android:layout_width="56dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:background="@color/tab_off"
+                android:text="⏭"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+        </LinearLayout>
     </LinearLayout>
-
-    <ListView
-        android:id="@+id/list"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="12dp"
-        android:divider="@color/panel"
-        android:dividerHeight="1dp" />
-
-    <TextView
-        android:id="@+id/empty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:text="@string/empty"
-        android:textColor="@color/muted"
-        android:textSize="18sp"
-        android:visibility="gone" />
-</LinearLayout>
+</FrameLayout>

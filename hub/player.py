@@ -8,7 +8,10 @@ from hub.adb import Adb
 from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
 
-PACKAGE = "com.changanhub.lamoreplayer"
+# New applicationId: Feiyu refuses pm install -r when the Hub folder minted a
+# new RSA key (UPDATE_INCOMPATIBLE) and refuses pm uninstall (auth dialog).
+PACKAGE = "com.changanhub.playrise"
+LEGACY_PACKAGES = ("com.changanhub.lamoreplayer",)
 JAVA_MAIN = "com.changanhub.player.BrowserActivity"
 
 GRANT_SHELL = (
@@ -26,6 +29,17 @@ def player_apk() -> Path:
     return bundled_apps() / "Player.apk"
 
 
+def is_player_package(package: str) -> bool:
+    return package == PACKAGE or package in LEGACY_PACKAGES
+
+
+def launch_player_target(package: str) -> str | None:
+    """Leftover player icons start the working package, not the old APK."""
+    if is_player_package(package):
+        return PACKAGE
+    return None
+
+
 def grant_player(adb: Adb, progress: Progress | None = None) -> list[str]:
     log: list[str] = []
     for cmd in GRANT_SHELL:
@@ -33,6 +47,23 @@ def grant_player(adb: Adb, progress: Progress | None = None) -> list[str]:
             progress(f"разрешение: {cmd}", 90)
         result = adb.shell(cmd, timeout=10)
         log.append(f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}")
+    return log
+
+
+def retire_legacy(adb: Adb, progress: Progress | None = None) -> list[str]:
+    """Hide the undeletable old player after the new package is installed."""
+    log: list[str] = []
+    for pkg in LEGACY_PACKAGES:
+        for cmd in (
+            f"am force-stop {pkg}",
+            f"pm disable-user --user 0 {pkg}",
+        ):
+            if progress:
+                progress(f"старый плеер: {cmd}", 88)
+            result = adb.shell(cmd, timeout=8)
+            log.append(
+                f"{cmd} code={result.code} out={result.stdout.strip()!r} err={result.stderr.strip()!r}"
+            )
     return log
 
 
@@ -68,5 +99,10 @@ def install_player(adb: Adb, progress: Progress | None = None) -> list[str]:
         return lines
     lines.append(f"Пакет установлен. В списке ГУ: Lamore Player · {PACKAGE}")
     lines += start_player(adb, progress=progress)
-    lines.append("Откройте флешку в плеере. Музыка — визуалайзер и эквалайзер; видео — на весь экран.")
+    lines += retire_legacy(adb, progress=progress)
+    lines.append(
+        "Откройте флешку в плеере. Вкладки: музыка, видео, эквалайзер, визуализация. "
+        "Видео — SRT рядом с файлом и выбор дорожки. "
+        "Старый com.changanhub.lamoreplayer Feiyu не удаляет — его отключаю, не снимаю."
+    )
     return lines

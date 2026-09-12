@@ -104,9 +104,9 @@ def main() -> None:
             "--custom-package",
             "com.changanhub.player",
             "--version-code",
-            "2",
+            "3",
             "--version-name",
-            "1.0.1",
+            "1.1.0",
             "--auto-add-overlay",
             str(res_zip),
         ]
@@ -138,7 +138,7 @@ def main() -> None:
         [
             str(d8),
             "--min-api",
-            "24",
+            "28",
             "--lib",
             str(android_jar),
             "--output",

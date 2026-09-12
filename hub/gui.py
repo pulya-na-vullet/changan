@@ -15,10 +15,12 @@ from typing import Callable
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
 from hub.capture import Recorder, take_screenshot as capture_screenshot, CAPTURE_VERSION
 from hub.catalog import CATALOG, package_from_row, package_label
+from hub.bundle import PACKAGE_FILE_TYPES, PACKAGE_SUFFIXES
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
 from hub.player import install_player, player_apk, start_player
+from hub.aichat import aichat_apk, install_aichat, start_aichat
 from hub.paths import bundled_apps, captures_dir
 from hub.signer import certificate_info, ensure_keystore
 from hub.usb import list_usb_apks, removable_roots
@@ -152,6 +154,7 @@ class HubApp:
             ("install", "Установка APK"),
             ("overlay", "Правая панель"),
             ("player", "Плеер"),
+            ("aichat", "Чат ИИ"),
             ("demo", "Демо"),
             ("apps", "Приложения ГУ"),
             ("catalog", "Каталог"),
@@ -246,6 +249,7 @@ class HubApp:
         self.pages["install"] = self._page_install()
         self.pages["overlay"] = self._page_overlay()
         self.pages["player"] = self._page_player()
+        self.pages["aichat"] = self._page_aichat()
         self.pages["demo"] = self._page_demo()
         self.pages["apps"] = self._page_apps()
         self.pages["catalog"] = self._page_catalog()
@@ -293,15 +297,20 @@ class HubApp:
         ttk.Label(page, text="Установка приложений", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
+            text="APK и XAPK/APKM: Hub переподпишет под Changan и поставит через push + pm "
+            "(для XAPK — сессия install-create/write/commit, не adb install-multiple). "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
             "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
             "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
             "Панель QuickBar — пакет com.changanhub.quickrise; старые "
-            "quickbar/quickkeep Hub только отключает, не удаляет. "
+            "quickbar/quickkeep Hub только отключает, не удаляет. Повторная установка панели "
+            "из новой папки Hub колонку не обновляет (другая подпись) — «Только запустить». "
+            "Свежий Chrome (SDK 29) на Feiyu Android 9 не встанет — Браузер Лайт уже на ГУ. "
             "Скрытие и сортировка — колонка справа из «Правая панель», не раздел «Плеер». "
+            "В штатном меню Feiyu сторонних иконок нет — это нормально: открывайте из QuickBar "
+            "справа или из «Приложения ГУ». "
             "adb install на Feiyu зависает — Hub его не вызывает. "
-            "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
+            "«Открыть флешку» — APK/XAPK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(6, 8))
         row = ttk.Frame(page)
@@ -310,7 +319,7 @@ class HubApp:
             row, text="Установить выбранный", style="Accent.TButton", command=self.install_selected
         )
         self.install_btn.pack(side=tk.LEFT)
-        ttk.Button(row, text="Выбрать APK…", command=self.pick_apk).pack(side=tk.LEFT, padx=8)
+        ttk.Button(row, text="Выбрать APK / XAPK…", command=self.pick_apk).pack(side=tk.LEFT, padx=8)
         self.usb_btn = ttk.Button(row, text="Открыть флешку", command=self.open_usb_stick)
         self.usb_btn.pack(side=tk.LEFT)
         ttk.Button(row, text="Папка apps/", command=self.open_apps_folder).pack(side=tk.LEFT, padx=8)
@@ -321,7 +330,7 @@ class HubApp:
         self.apk_list.bind("<Double-1>", lambda _e: self.install_selected())
         ttk.Label(
             page,
-            text="Кнопка всегда сверху списка. Двойной клик по APK тоже ставит его.",
+            text="Кнопка всегда сверху списка. Двойной клик по APK/XAPK тоже ставит его.",
             style="Muted.TLabel",
         ).pack(anchor="w")
         self.refresh_apk_list()
@@ -372,13 +381,45 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Lamore Player читает USB, вставленный в ГУ (не флешку ноутбука). "
-                "Музыка: визуалайзер и эквалайзер с пресетами ГУ. Видео на весь экран. "
-                "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, "
-                "MP4, MKV, WebM, 3GP и другие, если чип их открывает. "
-                "Экзотика вроде WMA/AVI может не завестись — это ограничение ГУ, не Hub. "
-                "Пакет: com.changanhub.lamoreplayer. Один ярлык в меню "
-                "(не путать с правой панелью и не со штатным магнитофоном)."
+                "Lamore Player 1.1 читает USB в ГУ (не флешку ноутбука). "
+                "Центр экрана: вкладки Музыка / Видео / Эквалайзер / Визуализация. "
+                "Музыка: очередь, шаффл, повтор, теги, 10-полосный EQ с пресетами, "
+                "BassBoost/Virtualizer/Loudness на audioSessionId. "
+                "Видео: полный экран, SRT/ASS рядом с файлом, выбор звуковой дорожки. "
+                "Заставки: спектр, волна, частицы, круг, OpenGL-туман под ритм. "
+                "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
+                "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
+                "Пакет: com.changanhub.playrise. Старый lamoreplayer Feiyu не удаляет — "
+                "Hub ставит новый id, как QuickBar → quickrise. Без Google Play и без Compose. "
+                "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
+            ),
+            style="Muted.TLabel",
+            wraplength=640,
+            justify="left",
+        ).pack(anchor="w", pady=12, fill=tk.X)
+        return page
+
+    def _page_aichat(self) -> ttk.Frame:
+        page = ttk.Frame(self.stack)
+        ttk.Label(page, text="AI Chat — DeepSeek и YandexGPT", style="Title.TLabel").pack(anchor="w")
+        row = ttk.Frame(page)
+        row.pack(fill=tk.X, pady=(12, 8))
+        ttk.Button(
+            row, text="Установить и открыть чат", style="Accent.TButton", command=self.deploy_aichat
+        ).pack(side=tk.LEFT)
+        ttk.Button(row, text="Только открыть", command=self.resume_aichat).pack(side=tk.LEFT, padx=8)
+        ttk.Label(page, text=f"APK: {aichat_apk()}", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(
+            page,
+            text=(
+                "AI Chat 1.0.1 ходит в интернет с ГУ (SIM/Wi‑Fi), без Google Play. "
+                "Вкладки: Чат / Настройки / История / Голос. Центр экрана 20%/30%. "
+                "Провайдеры: DeepSeek (api.deepseek.com) и YandexGPT. Ключи в Android Keystore. "
+                "Ответы озвучивает системный TTS (русский). Микрофона на Feiyu нет: голосовой "
+                "помощник машины — iFlytek, это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
+                "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
+                "Пакет: com.changanhub.chatrise (старый aichat Feiyu не удаляет). "
+                "Макет: docs\\aichat-layout.html."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -436,8 +477,10 @@ class HubApp:
             page,
             text=(
                 "Рабочая панель: QuickBar · com.changanhub.quickrise. "
+                "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep без скрытия и сортировки. "
-                "«Запустить выбранное» на них поднимает колонку справа."
+                "«Запустить выбранное» на них поднимает колонку справа. "
+                "Фильтр: пустое поле показывает все; «ch» прячет Яндекс."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -774,9 +817,12 @@ class HubApp:
     def refresh_apk_list(self) -> None:
         self.apk_list.delete(0, tk.END)
         folder = bundled_apps()
-        files = sorted(folder.glob("*.apk"))
+        files: list[Path] = []
+        for suffix in PACKAGE_SUFFIXES:
+            files.extend(folder.glob(f"*{suffix}"))
+        files = sorted({item.resolve() for item in files}, key=lambda p: p.name.lower())
         if not files:
-            self.apk_list.insert(tk.END, f"(пусто) положите APK в {folder}")
+            self.apk_list.insert(tk.END, f"(пусто) положите APK/XAPK в {folder}")
             return
         for item in files:
             self.apk_list.insert(tk.END, str(item))
@@ -794,7 +840,7 @@ class HubApp:
 
     def pick_apk(self) -> None:
         self.journal.action("выбрать APK")
-        path = filedialog.askopenfilename(filetypes=[("APK", "*.apk")])
+        path = filedialog.askopenfilename(filetypes=PACKAGE_FILE_TYPES)
         if not path:
             self.journal.write("INFO", "ui", "выбор APK отменён")
             return
@@ -813,12 +859,12 @@ class HubApp:
                 self.apk_list.insert(tk.END, str(item))
             self.apk_list.selection_clear(0, tk.END)
             self.apk_list.selection_set(0)
-            self.log(f"Флешка: {len(apks)} APK. Hub переподпишет выбранный под белый список ГУ.")
+            self.log(f"Флешка: {len(apks)} APK/XAPK. Hub переподпишет выбранный под белый список ГУ.")
             return
         initial = str(roots[0]) if roots else None
         path = filedialog.askopenfilename(
-            title="APK на флешке",
-            filetypes=[("APK", "*.apk")],
+            title="APK / XAPK на флешке",
+            filetypes=PACKAGE_FILE_TYPES,
             initialdir=initial,
         )
         if not path:
@@ -832,7 +878,7 @@ class HubApp:
     def install_selected(self) -> None:
         selection = self.apk_list.curselection()
         if not selection:
-            messagebox.showinfo("Установка", "Выберите APK в списке")
+            messagebox.showinfo("Установка", "Выберите APK или XAPK в списке")
             return
         path = Path(self.apk_list.get(selection[0]))
         if not path.exists():
@@ -852,14 +898,17 @@ class HubApp:
                 for line in lines:
                     self.journal.write("INFO", "overlay", line)
                 joined = "\n".join(lines).lower()
-                self.log("Готово" if "пакет установлен" in joined else "Не установлено")
+                self.log(
+                    "Готово"
+                    if "пакет установлен" in joined or "панель на гу сохранена" in joined
+                    else "Не установлено"
+                )
                 if "not auth" in joined or "-118" in joined:
                     self._ui(
                         lambda: messagebox.showerror(
                             "ГУ отказала в установке",
                             "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                            "В журнале смотрите serial уже стоящих приложений и строку «Подписано».\n"
-                            "Пришлите logs\\hub.log, если снова отказ.",
+                            "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                         )
                     )
                 return
@@ -870,8 +919,7 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "В журнале смотрите serial уже стоящих приложений и строку «Подписано».\n"
-                        "Пришлите logs\\hub.log, если снова отказ.",
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                     )
                 )
 
@@ -896,8 +944,7 @@ class HubApp:
                         "ГУ отказала в установке",
                         "Окно 提示 «com.changanhub.quickbar is not auth, install failed!» — "
                         "белый список Feiyu (код -118).\n"
-                        "В журнале — serial приложений на ГУ и способ подписи. "
-                        "Пришлите logs\\hub.log, если отказ повторится.",
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                     )
                 )
 
@@ -921,7 +968,7 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "Пришлите logs\\hub.log, если отказ повторится.",
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                     )
                 )
 
@@ -940,6 +987,44 @@ class HubApp:
                 self.journal.write("INFO", "player", line)
 
         self._work("Запуск плеера", go)
+
+    def deploy_aichat(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial установка чата не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            lines = install_aichat(adb, progress=progress)
+            for line in lines:
+                self.journal.write("INFO", "aichat", line)
+            joined = "\n".join(lines).lower()
+            if "not auth" in joined or "-118" in joined:
+                self._ui(
+                    lambda: messagebox.showerror(
+                        "ГУ отказала в установке",
+                        "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
+                    )
+                )
+
+        self._work("AI Chat", go)
+
+    def resume_aichat(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ чат не открою.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in start_aichat(adb, progress=progress):
+                self.journal.write("INFO", "aichat", line)
+
+        self._work("Запуск AI Chat", go)
 
     def resume_overlay(self) -> None:
         def go() -> None:
@@ -1023,12 +1108,14 @@ class HubApp:
 
         def go() -> None:
             from hub.overlay import launch_overlay_target, start_overlay
+            from hub.player import launch_player_target, start_player
+            from hub.aichat import launch_aichat_target, start_aichat
 
             adb = self._need_adb()
             if not adb:
                 return
-            target = launch_overlay_target(pkg)
-            if target:
+            overlay = launch_overlay_target(pkg)
+            if overlay:
                 if not self._hu_ready(adb):
                     raise AdbError("Сначала нажмите «Подключить». Без ГУ панель не запущу.")
 
@@ -1036,10 +1123,34 @@ class HubApp:
                     self._show_progress(message, percent)
 
                 self.log(
-                    f"{pkg} — ярлык панели. Запускаю рабочую QuickBar ({target}): "
+                    f"{pkg} — ярлык панели. Запускаю рабочую QuickBar ({overlay}): "
                     "скрытие и сортировка в зелёной колонке справа, не в меню приложений."
                 )
                 for line in start_overlay(adb, progress=progress):
+                    self.journal.write("INFO", "apps", line)
+                return
+            player = launch_player_target(pkg)
+            if player:
+                if not self._hu_ready(adb):
+                    raise AdbError("Сначала нажмите «Подключить». Без ГУ плеер не открою.")
+
+                def progress_player(message: str, percent: int) -> None:
+                    self._show_progress(message, percent)
+
+                self.log(f"{pkg} — ярлык плеера. Запускаю {player}.")
+                for line in start_player(adb, progress=progress_player):
+                    self.journal.write("INFO", "apps", line)
+                return
+            chat = launch_aichat_target(pkg)
+            if chat:
+                if not self._hu_ready(adb):
+                    raise AdbError("Сначала нажмите «Подключить». Без ГУ чат не открою.")
+
+                def progress_chat(message: str, percent: int) -> None:
+                    self._show_progress(message, percent)
+
+                self.log(f"{pkg} — ярлык чата. Запускаю {chat}.")
+                for line in start_aichat(adb, progress=progress_chat):
                     self.journal.write("INFO", "apps", line)
                 return
             result = adb.launch(pkg)

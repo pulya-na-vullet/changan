@@ -165,6 +165,10 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
         log += _retire_package(adb, package, progress=progress)
         return log
 
+    from hub.player import is_player_package
+    from hub.aichat import is_aichat_package
+
+    protected = is_player_package(package) or is_aichat_package(package)
     step(f"пробую pm uninstall --user 0 {package} (лимит 8с)", 60)
     gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=8)
     log.append(
@@ -174,6 +178,13 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
     blob = f"{gone.stdout}\n{gone.stderr}".lower()
     if gone.code != 124 and "success" in blob and "failure" not in blob and "not allow" not in blob:
         step(f"{package} снят", 100)
+        return log
+    if protected:
+        step(
+            "Feiyu не удаляет этот пакет. Плеер и чат не отключаю — иначе рабочее "
+            "приложение пропадёт, как при прошлом «Удалении» lamoreplayer.",
+            100,
+        )
         return log
     step("Feiyu не удаляет auth-приложение. Скрываю и отключаю пакет.", 70)
     for cmd in (
@@ -245,6 +256,17 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     report = install_apk(adb, apk, already_signed=False, progress=progress, package=PACKAGE)
     lines.extend(report.log)
     if not report.ok:
+        present = adb.shell(f"pm path {PACKAGE}", timeout=8)
+        still_there = "package:" in f"{present.stdout or ''}\n{present.stderr or ''}"
+        if still_there:
+            lines.append(
+                f"Рабочая панель на ГУ сохранена: QuickBar · {PACKAGE}. "
+                "Новый APK не встал (другая подпись Hub) — колонку не отключаю."
+            )
+            lines += start_overlay(adb, progress=progress)
+            if progress:
+                progress("Колонка справа на месте. Не ставьте панель повторно из новой папки Hub.", 100)
+            return lines
         if any("not auth" in line.lower() or "-118" in line for line in report.log):
             lines.append(
                 "Пакет НЕ установлен. Белое окно 提示 «is not auth, install failed!» — "
@@ -259,11 +281,17 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         if progress:
             progress("Установка не удалась — пакета в списке не будет.", 100)
         return lines
-    lines.append(f"Пакет установлен. В списке ГУ: QuickBar · {PACKAGE}")
+    if report.method == "keep-existing":
+        lines.append(f"Рабочая панель на ГУ сохранена: QuickBar · {PACKAGE}")
+    else:
+        lines.append(f"Пакет установлен. В списке ГУ: QuickBar · {PACKAGE}")
     lines += start_overlay(adb, progress=progress)
     if progress:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
-    lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
+    lines.append(
+        "В штатном меню Feiyu иконки панели нет. Ищите зелёную колонку СПРАВА "
+        "и сторонние приложения в ней, не в «установленных» Iflytek."
+    )
     lines.append(
         "Старые com.changanhub.quickbar / quickdock / quicklane / quickkeep Feiyu не даёт "
         "удалить (auth, not allow delete) — Hub их отключает и ставит новую "

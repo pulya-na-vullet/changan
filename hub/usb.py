@@ -92,5 +92,5 @@ def _walk(folder: Path, found: list[Path], depth: int, limit: int) -> None:
             if name in SKIP_DIRS or name.startswith("."):
                 continue
             _walk(item, found, depth + 1, limit)
-        elif name.endswith(".apk") and item.is_file() and item.stat().st_size > 0:
+        elif name.endswith((".apk", ".xapk", ".apkm", ".apks")) and item.is_file() and item.stat().st_size > 0:
             found.append(item)

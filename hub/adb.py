@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -79,7 +80,24 @@ def _no_adb_target(text: str) -> bool:
         or "device not found" in low
         or ("device" in low and "not found" in low)
         or "device offline" in low
+        or "failed to get feature set" in low
     )
+
+
+_ACTIVITY_RE = re.compile(r"([A-Za-z][A-Za-z0-9_.]*)/(\.?[A-Za-z][A-Za-z0-9_.$]*)")
+
+
+def parse_main_activity(dumpsys: str) -> str | None:
+    """First MAIN activity from ``dumpsys package``, even without CATEGORY_LAUNCHER."""
+    text = dumpsys or ""
+    idx = text.find("android.intent.action.MAIN")
+    chunk = text[idx : idx + 8000] if idx >= 0 else text[:8000]
+    for match in _ACTIVITY_RE.finditer(chunk):
+        pkg, act = match.group(1), match.group(2)
+        if "android.intent" in pkg or pkg.startswith("android.content"):
+            continue
+        return f"{pkg}/{act}"
+    return None
 
 
 def _run_kwargs() -> dict:
@@ -260,6 +278,12 @@ class Adb:
             body = (stdout + "\n" + stderr).lower()
             if "not auth" in body or "install failed" in body or "failure [" in body:
                 return CommandResult(False, stdout, stderr, last.code, last.argv)
+            # Rus HU log 2026-09-12: `pm path` returns code=1 + verify success
+            # (missing package, or path on stderr). The next stdin variant hung
+            # 10s and Hub never read already-installed HackChan/Yandex APKs.
+            if verified:
+                ok = bool(stdout.strip()) or bool(stderr.strip()) or last.code == 0
+                return CommandResult(ok, stdout, stderr, last.code, last.argv)
             if asked and not verified and not stdout.strip():
                 continue
             ok = last.code == 0 or "success" in body or bool(stdout.strip())
@@ -321,13 +345,36 @@ class Adb:
 
     def package_path(self, package: str) -> str:
         result = self.shell(f"pm path {package}", timeout=15)
-        for line in result.stdout.splitlines():
-            if line.startswith("package:"):
-                return line.split(":", 1)[1].strip()
+        for stream in (result.stdout, result.stderr):
+            for line in stream.splitlines():
+                if line.strip().startswith("package:"):
+                    return line.split("package:", 1)[-1].strip()
         return ""
 
     def launch(self, package: str) -> CommandResult:
-        return self.shell(f"monkey -p {package} -c android.intent.category.LAUNCHER 1")
+        monkey = self.shell(
+            f"monkey -p {package} -c android.intent.category.LAUNCHER 1",
+            timeout=12,
+        )
+        blob = f"{monkey.stdout}\n{monkey.stderr}".lower()
+        if (
+            monkey.ok
+            and monkey.code == 0
+            and "no activities" not in blob
+            and "monkey aborted" not in blob
+        ):
+            return monkey
+        dumped = self.shell(f"dumpsys package {package}", timeout=15)
+        activity = parse_main_activity(f"{dumped.stdout}\n{dumped.stderr}")
+        if activity:
+            started = self.shell(f"am start -n {activity}", timeout=12)
+            started_blob = f"{started.stdout}\n{started.stderr}".lower()
+            if started.ok or "starting:" in started_blob:
+                return started
+        return self.shell(
+            f"am start -a android.intent.action.MAIN -p {package}",
+            timeout=12,
+        )
 
     def clear_launcher_cache(self) -> list[CommandResult]:
         results = []

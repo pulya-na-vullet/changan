@@ -2,9 +2,17 @@
 <resources>
     <string name="app_name">Lamore Player</string>
     <string name="usb">Флешка ГУ</string>
-    <string name="scan">Все файлы на диске</string>
+    <string name="scan">Обновить</string>
     <string name="up">Назад</string>
-    <string name="empty">На флешке нет музыки и видео.\nВставьте USB в разъём ГУ.</string>
+    <string name="empty">На флешке нет файлов.\nВставьте USB в разъём ГУ.</string>
     <string name="eq">Эквалайзер</string>
     <string name="now_playing">Сейчас играет</string>
+    <string name="tab_music">Музыка</string>
+    <string name="tab_video">Видео</string>
+    <string name="tab_eq">Эквалайзер</string>
+    <string name="tab_viz">Визуализация</string>
+    <string name="sort_folder">папки</string>
+    <string name="sort_artist">исполнитель</string>
+    <string name="sort_album">альбом</string>
+    <string name="sort_title">название</string>
 </resources>

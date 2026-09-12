@@ -9,6 +9,22 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <TextView
+        android:id="@+id/subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="120dp"
+        android:gravity="center"
+        android:padding="12dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="22sp"
+        android:shadowColor="#FF000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:maxLines="4" />
+
     <LinearLayout
         android:id="@+id/controls"
         android:layout_width="match_parent"
@@ -61,6 +77,22 @@
                 android:layout_height="64dp"
                 android:text="⏭"
                 android:textSize="20sp" />
+
+            <Button
+                android:id="@+id/btn_audio"
+                android:layout_width="100dp"
+                android:layout_height="64dp"
+                android:layout_marginStart="8dp"
+                android:text="Звук"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_subs"
+                android:layout_width="100dp"
+                android:layout_height="64dp"
+                android:layout_marginStart="8dp"
+                android:text="Субтитры"
+                android:textSize="16sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

@@ -109,3 +109,41 @@ def test_switching_serial_keeps_previous_key(tmp_path: Path) -> None:
     assert second.serial == other
     assert second.certificate.resolve() != first.certificate.resolve()
     assert cert_matches_whitelist(x509.load_pem_x509_certificate(second.certificate.read_bytes()), other)
+
+
+def test_python_sign_keeps_native_libs_stored_and_aligned(tmp_path: Path) -> None:
+    import zipfile
+    from unittest.mock import patch
+
+    from hub.signer import _so_data_offset, sign_apk
+
+    apk = tmp_path / "withso.apk"
+    payload = b"\x7fELF" + b"\x00" * 60
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"not-a-real-manifest")
+        zf.writestr("classes.dex", b"dex\n")
+        info = zipfile.ZipInfo("lib/arm64-v8a/libdummy.so")
+        info.compress_type = zipfile.ZIP_STORED
+        zf.writestr(info, payload)
+    store = ensure_keystore(tmp_path / "certs")
+    with patch("hub.signer.find_apksigner", return_value=None):
+        signed = sign_apk(apk, tmp_path / "withso-signed.apk", keystore=store)
+    with zipfile.ZipFile(signed) as zf:
+        so = zf.getinfo("lib/arm64-v8a/libdummy.so")
+        assert so.compress_type == zipfile.ZIP_STORED
+        assert zf.read("lib/arm64-v8a/libdummy.so") == payload
+    offset = _so_data_offset(signed.read_bytes(), "lib/arm64-v8a/libdummy.so")
+    assert offset % 4096 == 0
+
+
+def test_signed_output_does_not_stack_changan_suffix(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from hub.signer import sign_apk_with_method
+
+    src = tmp_path / "app-changan.apk"
+    src.write_bytes(b"pk")
+    with patch("hub.signer._sign_python"), patch("hub.signer.find_apksigner", return_value=None):
+        dst, _method = sign_apk_with_method(src, keystore=ensure_keystore(tmp_path / "certs"))
+    assert dst == src
+    assert dst.name == "app-changan.apk"

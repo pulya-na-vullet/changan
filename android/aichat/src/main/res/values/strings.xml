@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Chat</string>
+    <string name="tab_chat">Чат</string>
+    <string name="tab_settings">Настройки</string>
+    <string name="tab_history">История</string>
+    <string name="tab_voice">Голос</string>
+    <string name="send">Отправить</string>
+    <string name="hint">Сообщение</string>
+    <string name="tts_on">Автоозвучка</string>
+    <string name="empty">Введите вопрос. Ключ API — во вкладке Настройки.</string>
+</resources>

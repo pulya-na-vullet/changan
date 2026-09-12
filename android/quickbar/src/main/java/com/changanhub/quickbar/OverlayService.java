@@ -14,7 +14,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
@@ -1176,6 +1178,36 @@ public class OverlayService extends Service {
             }
             items.add(item);
         }
+        try {
+            List<ApplicationInfo> installed = pm.getInstalledApplications(0);
+            for (int i = 0; i < installed.size(); i++) {
+                ApplicationInfo ai = installed.get(i);
+                String pkg = ai.packageName;
+                if (pkg == null
+                        || getPackageName().equals(pkg)
+                        || isLegacyPackage(pkg)
+                        || seen.contains(pkg)) {
+                    continue;
+                }
+                boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                        || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+                if (system) {
+                    continue;
+                }
+                seen.add(pkg);
+                AppItem extra = new AppItem();
+                extra.pkg = pkg;
+                extra.label = String.valueOf(pm.getApplicationLabel(ai));
+                try {
+                    extra.icon = pm.getApplicationIcon(ai);
+                } catch (Exception e) {
+                    extra.icon = getDrawable(android.R.drawable.sym_def_app_icon);
+                }
+                extra.system = false;
+                items.add(extra);
+            }
+        } catch (Exception ignored) {
+        }
         final Set<String> fav = favorites();
         Collections.sort(items, new Comparator<AppItem>() {
             @Override
@@ -1607,6 +1639,9 @@ public class OverlayService extends Service {
         try {
             Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
             if (intent == null) {
+                intent = launchIntentFallback(pkg);
+            }
+            if (intent == null) {
                 return;
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -1614,6 +1649,33 @@ public class OverlayService extends Service {
             rememberLaunch(pkg);
         } catch (Exception ignored) {
         }
+    }
+
+    private Intent launchIntentFallback(String pkg) {
+        PackageManager pm = getPackageManager();
+        Intent main = new Intent(Intent.ACTION_MAIN);
+        main.setPackage(pkg);
+        List<ResolveInfo> resolved = pm.queryIntentActivities(main, 0);
+        if (resolved != null && !resolved.isEmpty() && resolved.get(0).activityInfo != null) {
+            Intent intent = new Intent(Intent.ACTION_MAIN);
+            intent.setClassName(pkg, resolved.get(0).activityInfo.name);
+            return intent;
+        }
+        try {
+            PackageInfo info = pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES);
+            if (info.activities != null) {
+                for (int i = 0; i < info.activities.length; i++) {
+                    ActivityInfo ai = info.activities[i];
+                    if (ai.exported) {
+                        Intent intent = new Intent();
+                        intent.setClassName(pkg, ai.name);
+                        return intent;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private void rememberLaunch(String pkg) {

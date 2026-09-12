@@ -313,7 +313,10 @@ def sign_apk_with_method(
     adb_binary: Path | str | None = None,
 ) -> tuple[Path, str]:
     src = Path(src)
-    dst = Path(dst) if dst else src.with_name(src.stem + "-changan.apk")
+    if dst is None:
+        dst = src if src.stem.endswith("-changan") else src.with_name(src.stem + "-changan.apk")
+    else:
+        dst = Path(dst)
     keystore = keystore or ensure_keystore()
     dst.parent.mkdir(parents=True, exist_ok=True)
     tool = Path(apksigner) if apksigner else find_apksigner(adb_binary)
@@ -427,9 +430,77 @@ def _digest(data: bytes) -> str:
     return base64.b64encode(hashlib.sha256(data).digest()).decode("ascii")
 
 
-def _sign_python(src: Path, dst: Path, keystore: Keystore) -> None:
+def _is_native_lib(name: str) -> bool:
+    normalized = name.replace("\\", "/")
+    return normalized.startswith("lib/") and normalized.endswith(".so")
+
+
+def _pad_zipinfo_for_align(zf: zipfile.ZipFile, zi: zipfile.ZipInfo, align: int) -> None:
+    """Pad the extra field so uncompressed file data starts on ``align``."""
+    fp = getattr(zf, "fp", None)
+    if fp is None or align <= 0:
+        return
+    name_len = len(zi.filename.encode("utf-8"))
+    extra = zi.extra or b""
+    header = 30 + name_len + len(extra)
+    pad = (align - (fp.tell() + header) % align) % align
+    if pad:
+        zi.extra = extra + b"\x00" * pad
+
+
+def _copy_zipinfo(src: zipfile.ZipInfo, *, compress_type: int | None = None) -> zipfile.ZipInfo:
+    zi = zipfile.ZipInfo(filename=src.filename, date_time=src.date_time)
+    zi.compress_type = src.compress_type if compress_type is None else compress_type
+    zi.comment = src.comment
+    zi.create_system = src.create_system
+    zi.create_version = src.create_version
+    zi.extract_version = src.extract_version
+    zi.flag_bits = src.flag_bits & ~0x08
+    zi.internal_attr = src.internal_attr
+    zi.external_attr = src.external_attr
+    return zi
+
+
+def _write_apk_zip(
+    entries: list[tuple[zipfile.ZipInfo, bytes]], extra_files: list[tuple[str, bytes]]
+) -> bytes:
     import io
 
+    tmp = io.BytesIO()
+    with zipfile.ZipFile(tmp, "w") as zout:
+        for info, data in entries:
+            name = info.filename.replace("\\", "/")
+            if _is_native_lib(name):
+                zi = _copy_zipinfo(info, compress_type=zipfile.ZIP_STORED)
+                _pad_zipinfo_for_align(zout, zi, 4096)
+            else:
+                zi = _copy_zipinfo(info)
+                if zi.compress_type == zipfile.ZIP_STORED:
+                    _pad_zipinfo_for_align(zout, zi, 4)
+            zout.writestr(zi, data)
+        for name, payload in extra_files:
+            zi = zipfile.ZipInfo(name)
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            zout.writestr(zi, payload)
+    return tmp.getvalue()
+
+
+def _so_data_offset(apk_bytes: bytes, name: str) -> int:
+    pos = 0
+    needle = name.encode("utf-8")
+    while pos + 30 <= len(apk_bytes) and apk_bytes[pos : pos + 4] == b"PK\x03\x04":
+        fn_len = int.from_bytes(apk_bytes[pos + 26 : pos + 28], "little")
+        extra_len = int.from_bytes(apk_bytes[pos + 28 : pos + 30], "little")
+        fname = apk_bytes[pos + 30 : pos + 30 + fn_len]
+        data_off = pos + 30 + fn_len + extra_len
+        if fname == needle:
+            return data_off
+        csize = int.from_bytes(apk_bytes[pos + 18 : pos + 22], "little")
+        pos = data_off + csize
+    raise ValueError(name)
+
+
+def _sign_python(src: Path, dst: Path, keystore: Keystore) -> None:
     key = load_key(keystore.private_key)
     cert = load_certificate(keystore.certificate)
     entries: list[tuple[zipfile.ZipInfo, bytes]] = []
@@ -480,19 +551,15 @@ def _sign_python(src: Path, dst: Path, keystore: Keystore) -> None:
         )
     )
 
-    tmp = io.BytesIO()
-    with zipfile.ZipFile(tmp, "w") as zout:
-        for info, data in entries:
-            zout.writestr(info, data)
-        for name, payload in (
+    tmp_bytes = _write_apk_zip(
+        entries,
+        (
             ("META-INF/MANIFEST.MF", manifest_bytes),
             ("META-INF/CERT.SF", sf_bytes),
             ("META-INF/CERT.RSA", rsa_blob),
-        ):
-            zi = zipfile.ZipInfo(name)
-            zi.compress_type = zipfile.ZIP_DEFLATED
-            zout.writestr(zi, payload)
-    signed = attach_v2(tmp.getvalue(), key, cert)
+        ),
+    )
+    signed = attach_v2(tmp_bytes, key, cert)
     if not has_v2_block(signed):
         raise RuntimeError("v2 signing block missing after Python sign")
     dst.write_bytes(signed)

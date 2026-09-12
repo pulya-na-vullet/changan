@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1920" />
+  <title>Lamore Player 1.1 — вёрстка</title>
+  <style>
+    :root {
+      --bg: #0B1220;
+      --panel: #121A2B;
+      --card: #182235;
+      --tab: #223049;
+      --accent: #3DDC97;
+      --text: #F3F6FB;
+      --muted: #9AA7B8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #05080f;
+      color: var(--text);
+      font-family: Roboto, "Noto Sans", Arial, sans-serif;
+    }
+    .page {
+      max-width: 1920px;
+      margin: 0 auto;
+      padding: 16px 16px 40px;
+    }
+    h1 { color: var(--accent); font-size: 22px; margin-bottom: 6px; }
+    .hint { color: var(--muted); font-size: 14px; margin-bottom: 14px; line-height: 1.45; }
+    .nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .nav button {
+      min-height: 44px; padding: 0 16px; border: 0; cursor: pointer;
+      background: var(--tab); color: var(--text); font-size: 15px; font-weight: 700;
+    }
+    .nav button.on { background: var(--accent); color: var(--bg); }
+    .hu {
+      width: 1920px; height: 720px;
+      background: var(--panel);
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 8px 40px #000a;
+    }
+    .guides {
+      display: none; position: absolute; inset: 0; pointer-events: none; z-index: 20;
+    }
+    .hu.show-guides .guides { display: block; }
+    .guides .v, .guides .h { position: absolute; background: rgba(255, 107, 107, 0.35); }
+    .guides .v { top: 0; bottom: 0; width: 2px; }
+    .guides .h { left: 0; right: 0; height: 2px; }
+    .guides .l { left: 20%; } .guides .r { right: 20%; }
+    .guides .t { top: 30%; } .guides .b { bottom: 30%; }
+    .guides .zone {
+      position: absolute; left: 20%; top: 30%; width: 60%; height: 40%;
+      outline: 2px dashed rgba(61, 220, 151, 0.8);
+    }
+    .stage {
+      position: absolute;
+      left: 20%; top: 30%; width: 60%; height: 40%;
+      display: flex; flex-direction: column;
+      background: var(--panel);
+    }
+    .title {
+      text-align: center; color: var(--accent); font-size: 22px; font-weight: 700;
+      line-height: 1.2;
+    }
+    .tabs { display: flex; height: 52px; margin-top: 6px; gap: 4px; }
+    .tab {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 700; background: var(--tab); color: var(--text);
+    }
+    .tab.on { background: var(--accent); color: var(--bg); }
+    .pages { flex: 1; margin-top: 6px; min-height: 0; overflow: hidden; }
+    .toolbar { display: flex; height: 48px; gap: 6px; }
+    .toolbar .btn {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: var(--card); color: var(--text); font-size: 15px; font-weight: 700;
+    }
+    .toolbar .sort { color: var(--accent); }
+    .path { color: var(--muted); font-size: 13px; margin-top: 4px; white-space: nowrap; overflow: hidden; }
+    .list { margin-top: 2px; overflow: hidden; }
+    .row {
+      display: flex; align-items: center; min-height: 72px; padding: 8px 0;
+      border-bottom: 1px solid var(--panel);
+    }
+    .kind {
+      width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
+      background: var(--card); color: var(--accent); font-size: 22px; flex-shrink: 0;
+    }
+    .row .meta { margin-left: 12px; min-width: 0; }
+    .row .name { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nowbar {
+      height: 56px; margin-top: 6px; background: var(--card);
+      display: flex; align-items: center; padding: 0 8px; gap: 4px; flex-shrink: 0;
+    }
+    .nowbar .now-title { flex: 1; font-size: 14px; min-width: 0; overflow: hidden; }
+    .ib {
+      height: 48px; width: 56px; display: flex; align-items: center; justify-content: center;
+      background: var(--tab); color: var(--text); font-size: 16px; flex-shrink: 0;
+    }
+    .ib.play { width: 64px; background: var(--accent); color: var(--bg); font-size: 18px; }
+    .ib.green { background: var(--accent); color: var(--bg); }
+    .eq { height: 100%; overflow: hidden; padding: 4px; }
+    .presets { display: flex; gap: 8px; overflow: hidden; }
+    .chip {
+      height: 40px; padding: 0 12px; display: flex; align-items: center;
+      background: var(--tab); color: var(--text); font-size: 13px; font-weight: 700; white-space: nowrap;
+    }
+    .chip.on { background: var(--accent); color: var(--bg); }
+    .eq label { display: block; font-size: 13px; margin-top: 4px; }
+    .bar {
+      height: 10px; background: #0b1220; border-radius: 6px; margin: 3px 0 2px; position: relative;
+    }
+    .bar > i {
+      display: block; height: 100%; background: var(--accent); border-radius: 6px;
+    }
+    .curve {
+      height: 48px; margin-top: 6px; background: #121A2B;
+      background-image: linear-gradient(transparent 11px, #33445A73 12px),
+        linear-gradient(90deg, transparent, transparent);
+      border: 1px solid #223049;
+      position: relative;
+    }
+    .curve svg { width: 100%; height: 100%; display: block; }
+    .viz { height: 100%; position: relative; background: #0B1220; overflow: hidden; }
+    .viz-modes { position: absolute; top: 4px; left: 4px; display: flex; gap: 6px; z-index: 2; }
+    .viz-modes .chip { height: 36px; }
+    .bars {
+      position: absolute; left: 8px; right: 8px; bottom: 8px; top: 44px;
+      display: flex; align-items: flex-end; gap: 4px;
+    }
+    .bars b {
+      flex: 1; background: var(--accent); border-radius: 6px 6px 0 0; opacity: 0.9;
+    }
+    .full {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      padding: 20px; background: var(--bg);
+    }
+    .cover {
+      width: 90px; height: 90px; margin: 0 auto; background: var(--card);
+      display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 36px;
+    }
+    .track { text-align: center; font-size: 24px; font-weight: 700; margin-top: 8px; }
+    .folder { text-align: center; color: var(--muted); font-size: 14px; margin-top: 4px; }
+    .viz-full { height: 180px; margin-top: 12px; background: #0B1220; display: flex; align-items: flex-end; gap: 6px; padding: 8px; }
+    .viz-full b { flex: 1; background: var(--accent); border-radius: 6px 6px 0 0; }
+    .seek { height: 8px; background: var(--tab); border-radius: 4px; margin-top: 12px; }
+    .seek i { display: block; width: 38%; height: 100%; background: var(--accent); border-radius: 4px; }
+    .time { text-align: center; color: var(--muted); font-size: 14px; margin-top: 6px; }
+    .transport { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 12px; }
+    .transport .ib { height: 64px; width: 72px; font-size: 18px; background: var(--card); }
+    .transport .prev, .transport .next { width: 88px; height: 72px; font-size: 22px; }
+    .transport .play { width: 120px; height: 72px; font-size: 26px; background: var(--accent); color: var(--bg); }
+    .video {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 40% 40%, #24344a, #000);
+    }
+    .video .sub {
+      position: absolute; left: 0; right: 0; bottom: 132px;
+      text-align: center; font-size: 22px; text-shadow: 1px 1px 4px #000; padding: 12px;
+    }
+    .vctrl {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      background: #CC0B1220; padding: 16px;
+    }
+    .vctrl .name { font-size: 20px; }
+    .vbtns { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 8px; }
+    .vbtns .ib { width: 80px; height: 64px; background: #2a3548; }
+    .vbtns .play { width: 100px; background: var(--accent); color: var(--bg); }
+    .vbtns .wide { width: 100px; font-size: 16px; }
+    .badge {
+      position: absolute; left: 12px; top: 12px; z-index: 30;
+      background: #0008; color: var(--muted); font-size: 12px; padding: 4px 8px;
+    }
+    body.shot { background: var(--panel); }
+    body.shot .page { padding: 0; max-width: none; }
+    body.shot h1, body.shot .hint, body.shot .nav, body.shot .badge { display: none !important; }
+    body.shot .hu { box-shadow: none; }
+    .screen { display: none; }
+    .screen.on { display: block; }
+    #s-now, #s-film { position: absolute; inset: 0; }
+    #s-now.on, #s-film.on { display: flex; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Lamore Player 1.1 — вёрстка под ГУ 1920×720</h1>
+    <p class="hint">
+      Это не эмулятор Android, а макет по XML: тёмная тема, центр 60%×40%
+      (поля слева/справа 20%, сверху/снизу 30%). Откройте файл в браузере ноутбука — на ГУ ставить не нужно.
+      Список на вкладке «Музыка» специально короткий: в реальной зоне ~288 px по высоте.
+    </p>
+    <div class="nav">
+      <button data-s="music" class="on">Музыка</button>
+      <button data-s="video">Видео</button>
+      <button data-s="eq">Эквалайзер</button>
+      <button data-s="viz">Визуализация</button>
+      <button data-s="now">Сейчас играет</button>
+      <button data-s="film">Видеоплеер</button>
+      <button id="guides">Поля 20% / 30%</button>
+    </div>
+    <div class="hu" id="hu">
+      <div class="badge">Changan Lamore · Feiyu · 1920×720</div>
+      <div class="guides">
+        <div class="v l"></div><div class="v r"></div>
+        <div class="h t"></div><div class="h b"></div>
+        <div class="zone"></div>
+      </div>
+
+      <div class="screen on" id="s-music">
+        <div class="stage">
+          <div class="title">Lamore Player</div>
+          <div class="tabs">
+            <div class="tab on">Музыка</div>
+            <div class="tab">Видео</div>
+            <div class="tab">Эквалайзер</div>
+            <div class="tab">Визуализация</div>
+          </div>
+          <div class="pages">
+            <div class="toolbar">
+              <div class="btn">Назад</div>
+              <div class="btn">Обновить</div>
+              <div class="btn sort">папки</div>
+            </div>
+            <div class="path">музыка · /storage/usb0 · 24 файла</div>
+            <div class="list">
+              <div class="row">
+                <div class="kind">♪</div>
+                <div class="meta">
+                  <div class="name">Ночь — Сплин</div>
+                  <div class="sub">аудио · Сплин · 4:12</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="nowbar">
+            <div class="now-title">Сплин — Ночь</div>
+            <div class="ib">⇄</div>
+            <div class="ib">∞</div>
+            <div class="ib">⏮</div>
+            <div class="ib play">❚❚</div>
+            <div class="ib">⏭</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen" id="s-video">
+        <div class="stage">
+          <div class="title">Lamore Player</div>
+          <div class="tabs">
+            <div class="tab">Музыка</div>
+            <div class="tab on">Видео</div>
+            <div class="tab">Эквалайзер</div>
+            <div class="tab">Визуализация</div>
+          </div>
+          <div class="pages">
+            <div class="toolbar">
+              <div class="btn">Назад</div>
+              <div class="btn">Обновить</div>
+            </div>
+            <div class="path">видео · /storage/usb0 · 6 файлов</div>
+            <div class="list">
+              <div class="row">
+                <div class="kind">▶</div>
+                <div class="meta">
+                  <div class="name">Драйв (2011)</div>
+                  <div class="sub">видео · 1:40:12 · 1920×800</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="nowbar">
+            <div class="now-title">флешка ГУ · выберите трек</div>
+            <div class="ib">⇄</div>
+            <div class="ib">∞</div>
+            <div class="ib">⏮</div>
+            <div class="ib play">▶</div>
+            <div class="ib">⏭</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen" id="s-eq">
+        <div class="stage">
+          <div class="title">Lamore Player</div>
+          <div class="tabs">
+            <div class="tab">Музыка</div>
+            <div class="tab">Видео</div>
+            <div class="tab on">Эквалайзер</div>
+            <div class="tab">Визуализация</div>
+          </div>
+          <div class="pages">
+            <div class="eq">
+              <div class="presets">
+                <div class="chip">Flat</div>
+                <div class="chip on">Rock</div>
+                <div class="chip">Pop</div>
+                <div class="chip">Jazz</div>
+                <div class="chip">Classical</div>
+                <div class="chip">Bass Boost</div>
+                <div class="chip">Vocal</div>
+                <div class="chip">Custom</div>
+              </div>
+              <label>Бас</label><div class="bar"><i style="width:55%"></i></div>
+              <label>Средние</label><div class="bar"><i style="width:40%"></i></div>
+              <label>Высокие</label><div class="bar"><i style="width:48%"></i></div>
+              <div class="curve">
+                <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+                  <path d="M0 28 C12 18, 22 22, 35 26 S55 8, 70 14 S90 10, 100 16 L100 40 L0 40 Z" fill="rgba(61,220,151,.2)"/>
+                  <path d="M0 28 C12 18, 22 22, 35 26 S55 8, 70 14 S90 10, 100 16" fill="none" stroke="#3DDC97" stroke-width="2"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="nowbar">
+            <div class="now-title">Сплин — Ночь</div>
+            <div class="ib">⇄</div>
+            <div class="ib">∞</div>
+            <div class="ib">⏮</div>
+            <div class="ib play">❚❚</div>
+            <div class="ib">⏭</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen" id="s-viz">
+        <div class="stage">
+          <div class="title">Lamore Player</div>
+          <div class="tabs">
+            <div class="tab">Музыка</div>
+            <div class="tab">Видео</div>
+            <div class="tab">Эквалайзер</div>
+            <div class="tab on">Визуализация</div>
+          </div>
+          <div class="pages">
+            <div class="viz">
+              <div class="viz-modes">
+                <div class="chip on">Спектр</div>
+                <div class="chip">Волна</div>
+                <div class="chip">Частицы</div>
+                <div class="chip">Круг</div>
+                <div class="chip">Туман</div>
+                <div class="chip on">На весь экран</div>
+              </div>
+              <div class="bars">
+                <b style="height:35%"></b><b style="height:52%"></b><b style="height:80%"></b>
+                <b style="height:44%"></b><b style="height:70%"></b><b style="height:28%"></b>
+                <b style="height:90%"></b><b style="height:40%"></b><b style="height:62%"></b>
+                <b style="height:33%"></b><b style="height:75%"></b><b style="height:48%"></b>
+                <b style="height:22%"></b><b style="height:58%"></b><b style="height:41%"></b>
+              </div>
+            </div>
+          </div>
+          <div class="nowbar">
+            <div class="now-title">Сплин — Ночь</div>
+            <div class="ib green">⇄</div>
+            <div class="ib">∞</div>
+            <div class="ib">⏮</div>
+            <div class="ib play">❚❚</div>
+            <div class="ib">⏭</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen" id="s-now">
+        <div class="full">
+          <div class="cover">♪</div>
+          <div class="track">Сплин — Ночь</div>
+          <div class="folder">/storage/usb0/Music</div>
+          <div class="viz-full">
+            <b style="height:30%"></b><b style="height:55%"></b><b style="height:88%"></b>
+            <b style="height:42%"></b><b style="height:70%"></b><b style="height:36%"></b>
+            <b style="height:95%"></b><b style="height:50%"></b><b style="height:64%"></b>
+            <b style="height:28%"></b><b style="height:72%"></b><b style="height:40%"></b>
+            <b style="height:60%"></b><b style="height:34%"></b><b style="height:80%"></b>
+            <b style="height:45%"></b>
+          </div>
+          <div class="viz-modes" style="position:relative;top:8px;left:0">
+            <div class="chip on">Спектр</div>
+            <div class="chip">Волна</div>
+            <div class="chip">Частицы</div>
+            <div class="chip">Круг</div>
+            <div class="chip">Туман</div>
+          </div>
+          <div class="seek"><i></i></div>
+          <div class="time">1:38  /  4:12</div>
+          <div class="transport">
+            <div class="ib">⇄</div>
+            <div class="ib prev">⏮</div>
+            <div class="ib play">❚❚</div>
+            <div class="ib next">⏭</div>
+            <div class="ib">∞</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen" id="s-film">
+        <div class="video">
+          <div class="sub">Он за рулём. Город молчит.</div>
+          <div class="vctrl">
+            <div class="name">Драйв (2011).mkv</div>
+            <div class="seek" style="margin-top:8px"><i style="width:22%"></i></div>
+            <div class="vbtns">
+              <div class="ib">⏮</div>
+              <div class="ib play">❚❚</div>
+              <div class="ib">⏭</div>
+              <div class="ib wide">Звук 1/2</div>
+              <div class="ib wide">SRT вкл</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function show(id) {
+      document.querySelectorAll(".screen").forEach(function (el) { el.classList.remove("on"); });
+      document.getElementById("s-" + id).classList.add("on");
+      document.querySelectorAll(".nav button[data-s]").forEach(function (b) {
+        b.classList.toggle("on", b.getAttribute("data-s") === id);
+      });
+      var u = new URL(location.href);
+      u.searchParams.set("s", id);
+      history.replaceState(null, "", u);
+    }
+    document.querySelectorAll(".nav button[data-s]").forEach(function (b) {
+      b.onclick = function () { show(b.getAttribute("data-s")); };
+    });
+    document.getElementById("guides").onclick = function () {
+      document.getElementById("hu").classList.toggle("show-guides");
+      this.classList.toggle("on");
+    };
+    var params = new URLSearchParams(location.search);
+    if (params.get("shot") === "1") {
+      document.body.classList.add("shot");
+    }
+    if (params.get("guides") === "1") {
+      document.getElementById("hu").classList.add("show-guides");
+    }
+    var q = params.get("s") || "music";
+    show(q);
+  </script>
+</body>
+</html>

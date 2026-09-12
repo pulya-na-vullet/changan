@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from hub.overlay import (
     LEGACY_PACKAGE,
@@ -7,6 +8,7 @@ from hub.overlay import (
     PERSIST_SHELL,
     disable_user_package,
     grant_overlay,
+    install_overlay,
     remove_overlay,
     start_overlay,
 )
@@ -113,6 +115,33 @@ def test_disable_user_package_hides_when_auth_blocks_delete() -> None:
     assert "auth-приложение" in joined
 
 
+def test_disable_user_package_does_not_disable_player_or_chat() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "is auth app, not allow delete!", 1, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    for pkg in (
+        "com.changanhub.playrise",
+        "com.changanhub.lamoreplayer",
+        "com.changanhub.chatrise",
+        "com.changanhub.aichat",
+    ):
+        fake.shells.clear()
+        lines = disable_user_package(fake, pkg)
+        joined = "\n".join(fake.shells + lines)
+        assert f"pm uninstall --user 0 {pkg}" in joined
+        assert f"pm disable-user --user 0 {pkg}" not in joined
+        assert "pm hide" not in joined
+        assert "не отключаю" in joined
+
+
 def test_quickbar_is_three_times_taller() -> None:
     src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
         encoding="utf-8"
@@ -141,7 +170,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.7"' in mf
+    assert 'android:versionName="1.3.8"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -183,6 +212,8 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "com.changanhub.quickdock" in overlay
     assert "com.changanhub.quicklane" in overlay
     assert "com.changanhub.quickkeep" in overlay
+    assert "getInstalledApplications" in overlay
+    assert "launchIntentFallback" in overlay
     assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
     assert "ACTION_KEEPALIVE" in overlay
     assert "getService" in overlay
@@ -395,6 +426,33 @@ def test_launch_overlay_target_uses_working_package() -> None:
     assert launch_overlay_target("com.changanhub.quickkeep") == PACKAGE
     assert launch_overlay_target("com.changanhub.quicklane") == PACKAGE
     assert launch_overlay_target("mobi.zona") is None
+
+
+def test_install_overlay_keeps_working_package_on_failed_update(tmp_path: Path) -> None:
+    from hub.adb import CommandResult
+    from hub.installer import InstallReport
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        fake.shells.append(command)
+        if command.startswith("pm path"):
+            return CommandResult(True, f"package:/data/app/{PACKAGE}/base.apk", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    apk = tmp_path / "QuickBar.apk"
+    apk.write_bytes(b"apk")
+    report = InstallReport(ok=False, signed_apk=apk, method="", log=["pm fail"], package=PACKAGE)
+    with (
+        patch("hub.overlay.install_apk", return_value=report),
+        patch("hub.overlay.overlay_apk", return_value=apk),
+    ):
+        lines = install_overlay(fake)
+    joined = "\n".join(lines)
+    assert "сохранена" in joined.lower()
+    assert "Пакет НЕ установлен" not in joined
+    assert any(cmd.startswith(f"pm enable --user 0 {PACKAGE}") for cmd in fake.shells)
 
 
 def test_disable_overlay_never_uninstalls() -> None:
