@@ -20,6 +20,7 @@ from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
 from hub.player import install_player, player_apk, start_player
+from hub.aichat import aichat_apk, install_aichat, start_aichat
 from hub.paths import bundled_apps, captures_dir
 from hub.signer import certificate_info, ensure_keystore
 from hub.usb import list_usb_apks, removable_roots
@@ -153,6 +154,7 @@ class HubApp:
             ("install", "Установка APK"),
             ("overlay", "Правая панель"),
             ("player", "Плеер"),
+            ("aichat", "Чат ИИ"),
             ("demo", "Демо"),
             ("apps", "Приложения ГУ"),
             ("catalog", "Каталог"),
@@ -247,6 +249,7 @@ class HubApp:
         self.pages["install"] = self._page_install()
         self.pages["overlay"] = self._page_overlay()
         self.pages["player"] = self._page_player()
+        self.pages["aichat"] = self._page_aichat()
         self.pages["demo"] = self._page_demo()
         self.pages["apps"] = self._page_apps()
         self.pages["catalog"] = self._page_catalog()
@@ -388,6 +391,31 @@ class HubApp:
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
                 "Пакет: com.changanhub.lamoreplayer. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
+            ),
+            style="Muted.TLabel",
+            wraplength=640,
+            justify="left",
+        ).pack(anchor="w", pady=12, fill=tk.X)
+        return page
+
+    def _page_aichat(self) -> ttk.Frame:
+        page = ttk.Frame(self.stack)
+        ttk.Label(page, text="AI Chat — DeepSeek и YandexGPT", style="Title.TLabel").pack(anchor="w")
+        row = ttk.Frame(page)
+        row.pack(fill=tk.X, pady=(12, 8))
+        ttk.Button(
+            row, text="Установить и открыть чат", style="Accent.TButton", command=self.deploy_aichat
+        ).pack(side=tk.LEFT)
+        ttk.Button(row, text="Только открыть", command=self.resume_aichat).pack(side=tk.LEFT, padx=8)
+        ttk.Label(page, text=f"APK: {aichat_apk()}", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(
+            page,
+            text=(
+                "AI Chat 1.0 ходит в интернет с ГУ (SIM/Wi‑Fi), без Google Play. "
+                "Вкладки: Чат / Настройки / История / Голос. Центр экрана 20%/30%. "
+                "Провайдеры: DeepSeek (api.deepseek.com) и YandexGPT. Ключи в Android Keystore. "
+                "Ответы озвучивает системный TTS (русский). Микрофон — если на ГУ есть STT. "
+                "Пакет: com.changanhub.aichat. Макет: docs\\aichat-layout.html."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -955,6 +983,44 @@ class HubApp:
                 self.journal.write("INFO", "player", line)
 
         self._work("Запуск плеера", go)
+
+    def deploy_aichat(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial установка чата не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            lines = install_aichat(adb, progress=progress)
+            for line in lines:
+                self.journal.write("INFO", "aichat", line)
+            joined = "\n".join(lines).lower()
+            if "not auth" in joined or "-118" in joined:
+                self._ui(
+                    lambda: messagebox.showerror(
+                        "ГУ отказала в установке",
+                        "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
+                    )
+                )
+
+        self._work("AI Chat", go)
+
+    def resume_aichat(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ чат не открою.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in start_aichat(adb, progress=progress):
+                self.journal.write("INFO", "aichat", line)
+
+        self._work("Запуск AI Chat", go)
 
     def resume_overlay(self) -> None:
         def go() -> None:

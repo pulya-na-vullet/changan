@@ -121,6 +121,21 @@ python -m hub record --seconds 30
 Макет экранов без ГУ: откройте в браузере ноутбука `docs/player-layout.html`
 (1920×720, поля 20%/30%). PNG тех же экранов лежат в `docs/player-layout/`.
 
+## AI Chat (DeepSeek / YandexGPT)
+
+Приложение `com.changanhub.aichat` ставится из Hub, раздел **Чат ИИ**.
+Интернет нужен **на ГУ** (SIM или Wi‑Fi), не на ноутбуке.
+
+- центр экрана: поля 20% по ширине и 30% по высоте;
+- вкладки: чат, настройки, история, голос;
+- DeepSeek (`https://api.deepseek.com/v1`) и YandexGPT, стриминг SSE;
+- ключи в Android Keystore, не в открытом виде;
+- автоозвучка ответов системным TTS (`ru-RU`), стоп и повтор;
+- история диалогов — JSON в filesDir.
+
+Сборка: `python scripts/build_aichat.py` → `apps/AiChat.apk`.
+Макет: `docs/aichat-layout.html`.
+
 ## Демо для клиентов (скриншот и видео)
 
 Отдельное приложение на ГУ не нужно: снимок и ролик идут с ноутбука по ADB.

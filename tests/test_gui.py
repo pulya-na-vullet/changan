@@ -12,7 +12,7 @@ def test_gui_pages_render() -> None:
     app = HubApp()
     try:
         app.root.update()
-        for name in ("connect", "install", "overlay", "player", "demo", "apps", "catalog", "tools"):
+        for name in ("connect", "install", "overlay", "player", "aichat", "demo", "apps", "catalog", "tools"):
             app.show(name)
             app.root.update_idletasks()
             app.root.update()
@@ -21,6 +21,7 @@ def test_gui_pages_render() -> None:
             "install",
             "overlay",
             "player",
+            "aichat",
             "demo",
             "apps",
             "catalog",

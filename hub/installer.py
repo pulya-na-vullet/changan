@@ -1710,6 +1710,8 @@ def apk_package_name(apk: Path) -> str | None:
         return "com.changanhub.quickrise"
     if any(token in stem for token in ("player", "lamoreplayer")):
         return "com.changanhub.lamoreplayer"
+    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat")):
+        return "com.changanhub.aichat"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")

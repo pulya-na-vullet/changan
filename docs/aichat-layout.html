@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Chat — вёрстка</title>
+  <style>
+    :root {
+      --bg: #0B1220; --panel: #121A2B; --card: #182235; --tab: #223049;
+      --accent: #3DDC97; --text: #F3F6FB; --muted: #9AA7B8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #05080f; color: var(--text); font-family: Roboto, Arial, sans-serif; }
+    .page { max-width: 1920px; margin: 0 auto; padding: 16px; }
+    h1 { color: var(--accent); font-size: 22px; margin-bottom: 6px; }
+    .hint { color: var(--muted); font-size: 14px; margin-bottom: 12px; line-height: 1.4; }
+    .nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .nav button {
+      min-height: 44px; padding: 0 16px; border: 0; cursor: pointer;
+      background: var(--tab); color: var(--text); font-weight: 700;
+    }
+    .nav button.on { background: var(--accent); color: var(--bg); }
+    .hu { width: 1920px; height: 720px; background: var(--panel); position: relative; overflow: hidden; }
+    body.shot { background: var(--panel); }
+    body.shot .page { padding: 0; }
+    body.shot h1, body.shot .hint, body.shot .nav { display: none !important; }
+    .stage {
+      position: absolute; left: 20%; top: 30%; width: 60%; height: 40%;
+      display: flex; flex-direction: column;
+    }
+    .head { display: flex; align-items: center; gap: 8px; }
+    .head h2 { flex: 1; color: var(--accent); font-size: 20px; }
+    .tabs { display: flex; height: 48px; margin-top: 6px; gap: 4px; }
+    .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-weight: 700; background: var(--tab); }
+    .tab.on { background: var(--accent); color: var(--bg); }
+    .pages { flex: 1; min-height: 0; margin-top: 6px; overflow: hidden; }
+    .row { display: flex; gap: 8px; margin-top: auto; }
+    .input { flex: 1; background: var(--card); padding: 10px; min-height: 48px; color: var(--muted); }
+    .send { width: 96px; background: var(--accent); color: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+    .ib { width: 52px; background: var(--tab); display: flex; align-items: center; justify-content: center; }
+    .msg { background: #1E3A34; padding: 8px; margin-bottom: 6px; font-size: 15px; }
+    .msg.ai { background: var(--card); }
+    .who { color: var(--accent); font-size: 12px; }
+    .chip { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; background: var(--tab); margin-right: 6px; font-size: 13px; }
+    .chip.on { background: var(--accent); color: var(--bg); }
+    label { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .field { background: var(--card); padding: 6px 8px; font-size: 14px; }
+    .screen { display: none; position: absolute; inset: 0; }
+    .screen.on { display: block; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>AI Chat 1.0 — вёрстка 1920×720</h1>
+    <p class="hint">Макет по XML: поля 20%/30%. Ключи вводятся на ГУ, не здесь. Откройте файл в браузере ноутбука.</p>
+    <div class="nav">
+      <button data-s="chat" class="on">Чат</button>
+      <button data-s="settings">Настройки</button>
+      <button data-s="history">История</button>
+      <button data-s="voice">Голос</button>
+    </div>
+    <div class="hu" id="hu">
+      <div class="screen on" id="s-chat">
+        <div class="stage">
+          <div class="head"><h2>AI Chat</h2><span>Автоозвучка</span><span class="chip on">вкл</span></div>
+          <div class="tabs">
+            <div class="tab on">Чат</div><div class="tab">Настройки</div><div class="tab">История</div><div class="tab">Голос</div>
+          </div>
+          <div class="pages">
+            <div class="chip">Переведи</div><div class="chip">Объясни</div><div class="chip">Сократи</div>
+            <div class="msg"><div class="who">Вы · 18:02</div>Где ближайшая заправка?</div>
+            <div class="msg ai"><div class="who">ИИ · 18:02</div>По навигатору — Лукойл через 3 км, справа.</div>
+          </div>
+          <div class="row">
+            <div class="input">Сообщение</div>
+            <div class="ib">🎙</div>
+            <div class="ib">■</div>
+            <div class="send">Отправить</div>
+          </div>
+        </div>
+      </div>
+      <div class="screen" id="s-settings">
+        <div class="stage">
+          <div class="head"><h2>AI Chat</h2></div>
+          <div class="tabs">
+            <div class="tab">Чат</div><div class="tab on">Настройки</div><div class="tab">История</div><div class="tab">Голос</div>
+          </div>
+          <div class="pages">
+            <div class="chip on">DeepSeek</div><div class="chip">Yandex</div>
+            <label>DeepSeek URL</label>
+            <div class="field">https://api.deepseek.com/v1</div>
+            <label>API Key</label>
+            <div class="field">••••••••••••</div>
+            <label>Модель</label>
+            <div class="field">deepseek-chat</div>
+            <div style="margin-top:8px" class="chip on">Проверить подключение</div>
+          </div>
+        </div>
+      </div>
+      <div class="screen" id="s-history">
+        <div class="stage">
+          <div class="head"><h2>AI Chat</h2></div>
+          <div class="tabs">
+            <div class="tab">Чат</div><div class="tab">Настройки</div><div class="tab on">История</div><div class="tab">Голос</div>
+          </div>
+          <div class="pages">
+            <div class="row" style="margin:0 0 8px">
+              <div class="chip">Новый</div><div class="chip">Экспорт</div><div class="chip">Импорт</div>
+            </div>
+            <div class="msg ai">Где ближайшая заправка? · 18:02</div>
+            <div class="msg ai">Переведи табличку · 17:40</div>
+          </div>
+        </div>
+      </div>
+      <div class="screen" id="s-voice">
+        <div class="stage">
+          <div class="head"><h2>AI Chat</h2></div>
+          <div class="tabs">
+            <div class="tab">Чат</div><div class="tab">Настройки</div><div class="tab">История</div><div class="tab on">Голос</div>
+          </div>
+          <div class="pages">
+            <div class="chip on">Автоозвучка ответов</div>
+            <label>Скорость</label>
+            <div style="height:8px;background:#0b1220;margin:6px 0"><i style="display:block;width:50%;height:100%;background:var(--accent)"></i></div>
+            <label>Тон</label>
+            <div style="height:8px;background:#0b1220;margin:6px 0"><i style="display:block;width:50%;height:100%;background:var(--accent)"></i></div>
+            <label>Громкость</label>
+            <div style="height:8px;background:#0b1220;margin:6px 0"><i style="display:block;width:80%;height:100%;background:var(--accent)"></i></div>
+            <div class="chip on" style="margin-top:8px">Проверить голос</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function show(id) {
+      document.querySelectorAll(".screen").forEach(function (el) { el.classList.remove("on"); });
+      document.getElementById("s-" + id).classList.add("on");
+      document.querySelectorAll(".nav button[data-s]").forEach(function (b) {
+        b.classList.toggle("on", b.getAttribute("data-s") === id);
+      });
+    }
+    document.querySelectorAll(".nav button[data-s]").forEach(function (b) {
+      b.onclick = function () { show(b.getAttribute("data-s")); };
+    });
+    var p = new URLSearchParams(location.search);
+    if (p.get("shot") === "1") document.body.classList.add("shot");
+    show(p.get("s") || "chat");
+  </script>
+</body>
+</html>

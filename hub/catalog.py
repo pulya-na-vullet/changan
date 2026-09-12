@@ -41,6 +41,15 @@ CATALOG: list[CatalogApp] = [
         notes="Ставится из раздела «Плеер». Читает USB ГУ (не ноутбука). Вкладки музыка/видео/эквалайзер/визуализация. Форматы Feiyu: MP3/AAC/FLAC/WAV/OGG/OPUS, MP4/MKV/WebM/MOV/TS и др.",
     ),
     CatalogApp(
+        id="aichat",
+        name="AI Chat",
+        summary="Чат с DeepSeek и YandexGPT, автоозвучка ответов.",
+        package="com.changanhub.aichat",
+        kind="chat",
+        source="bundled",
+        notes="Ставится из раздела «Чат ИИ». Интернет на ГУ. Ключи в Настройках. TTS русский.",
+    ),
+    CatalogApp(
         id="files",
         name="Material Files",
         summary="Файловый менеджер — штатный проводник на английской ГУ часто спрятан.",
