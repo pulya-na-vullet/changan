@@ -57,7 +57,6 @@ PROBE_PACKAGES = (
 # whitelist serial is baked into Vecentek + services.jar, not a sideloaded APK.
 MANAGER_PATHS = (
     "/system/app/VecentekApp/VecentekApp.apk",
-    "/system/app/VecentekAPP/VecentekAPP.apk",
     "/system/framework/services.jar",
 )
 MANAGER_HINTS = ("vecentek", "certificatemanager", "wutong")
@@ -70,6 +69,14 @@ _AUTH_NEEDLES = (
     b"ddb66eefd98476f3",
     b"DDB66EEFD98476F3",
 )
+_JUNK_SERIALS = {
+    0x0123456789ABCDEF,
+    0x123456789ABCDEF,
+    0x1234567890ABCDEF,
+    0xFEDCBA9876543210,
+    0x0FEDCBA987654321,
+    0xABCDEF0123456789,
+}
 
 Progress = Callable[[str, int], None]
 
@@ -155,11 +162,12 @@ def install_apk(
     step(f"Начинаю установку {apk.name}", 5)
     package = package or apk_package_name(apk)
     used_serial: int | None = None
+    remaining: list[int] = []
     if already_signed:
         signed = apk
         step("Переподпись не нужна.", 15)
     else:
-        used_serial, signed, method = _sign_for_hu(adb, apk, package, step)
+        used_serial, signed, method, remaining = _sign_for_hu(adb, apk, package, step)
         package = package or apk_package_name(signed)
     report.signed_apk = signed
     report.package = package
@@ -224,9 +232,10 @@ def install_apk(
         return report
     if "not auth" in blob or "-118" in blob:
         if not already_signed:
-            retry = _resign_after_not_auth(adb, apk, package, used_serial, step)
-            if retry is not None:
-                used_serial, signed, method = retry
+            for fresh in _next_auth_serials(adb, used_serial, remaining, step):
+                used_serial, signed, method = _sign_with_serial(
+                    adb, apk, fresh, step, retry=True
+                )
                 report.signed_apk = signed
                 result, remote_apk = _push_and_pm(adb, signed, step)
                 if remote_apk is None:
@@ -236,7 +245,7 @@ def install_apk(
         step(
             "ГУ показала «is not auth, install failed» (код -118). Это отказ белого "
             "списка Feiyu при установке, не при удалении. Старую панель Hub не снимал. "
-            "В журнале выше — serial с уже стоящих приложений и способ подписи.",
+            "Файлы Vecentek/services/vdex — в data\\probe, пришлите их вместе с журналом.",
             100,
         )
         return report
@@ -304,7 +313,7 @@ def _sign_for_hu(
     step: Progress,
     *,
     ignore_cache: bool = False,
-) -> tuple[int, Path, str]:
+) -> tuple[int, Path, str, list[int]]:
     # Overlay leftovers are auth apps. Cloning their serial (not the cert)
     # and generating a new keystore makes pm install -r fail with
     # UPDATE_INCOMPATIBLE, then pm uninstall pops 提示 not allow delete.
@@ -314,6 +323,7 @@ def _sign_for_hu(
         installed_serial = discover_package_signer_serial(adb, package, step)
     device = getattr(adb, "serial", None)
     hu_serial = None if ignore_cache else load_cached_hu_serial(device)
+    candidates: list[int] = []
     if installed_serial:
         step(
             f"Уже стоящий {package} serial=0x{installed_serial:x} — подписываю тем же ключом, "
@@ -321,12 +331,14 @@ def _sign_for_hu(
             8,
         )
         hu_serial = installed_serial
+        candidates = [installed_serial]
     elif hu_serial:
         step(
             f"Беру сохранённый serial ГУ {device or '?'} 0x{hu_serial:x} "
             "(без скачивания приложений).",
             8,
         )
+        candidates = [hu_serial]
     else:
         candidates = discover_hu_signer_candidates(adb, step)
         if candidates:
@@ -348,25 +360,51 @@ def _sign_for_hu(
             f"Не снял serial с приложений ГУ, беру гайд 0x{CHANGAN_SERIAL:x}.",
             8,
         )
+    signed_serial, signed, method = _sign_with_serial(adb, apk, serial, step)
+    remaining = [item for item in candidates if item != signed_serial]
+    return signed_serial, signed, method, remaining
+
+
+def _sign_with_serial(
+    adb: Adb, apk: Path, serial: int, step: Progress, *, retry: bool = False
+) -> tuple[int, Path, str]:
+    device = getattr(adb, "serial", None)
+    save_cached_hu_serial(serial, device)
     store = ensure_keystore(serial=serial)
-    step(
-        f"Шаг 1/5: подпись APK под Changan (v1+v2, serial 0x{serial:x})…",
-        10,
-    )
+    if retry:
+        step(f"Повторная подпись serial=0x{serial:x}.", 82)
+    else:
+        step(
+            f"Шаг 1/5: подпись APK под Changan (v1+v2, serial 0x{serial:x})…",
+            10,
+        )
     signed, method = sign_apk_with_method(apk, keystore=store, adb_binary=adb.binary)
-    step(f"Подписано ({method}): {signed}", 25)
+    step(f"Подписано ({method}): {signed}", 84 if retry else 25)
     for seen in apk_certificate_serials(signed):
-        step(f"в подписанном APK serial=0x{seen:x}", 26)
+        step(f"в подписанном APK serial=0x{seen:x}", 84 if retry else 26)
     return serial, signed, method
 
 
-def _resign_after_not_auth(
+MAX_SERIAL_RETRIES = 5
+
+
+def _next_auth_serials(
     adb: Adb,
-    apk: Path,
-    package: str | None,
     used_serial: int | None,
+    remaining: list[int],
     step: Progress,
-) -> tuple[int, Path, str] | None:
+) -> list[int]:
+    ordered: list[int] = []
+    for item in remaining:
+        if item != used_serial and item not in ordered:
+            ordered.append(item)
+    if ordered:
+        step(
+            "Белый список этой ГУ другой. Пробую следующие serial с этой машины, "
+            "без повторного скачивания Vecentek.",
+            72,
+        )
+        return ordered[:MAX_SERIAL_RETRIES]
     step(
         "Белый список этой ГУ другой. Снимаю serial из Vecentek/services.jar "
         "и сторонних APK этой машины, без кэша.",
@@ -376,25 +414,15 @@ def _resign_after_not_auth(
     if device:
         _clear_cached_hu_serial(device)
     for fresh in discover_hu_signer_candidates(adb, step):
-        if fresh == used_serial:
-            continue
-        save_cached_hu_serial(fresh, device)
+        if fresh != used_serial and fresh not in ordered:
+            ordered.append(fresh)
+    if not ordered:
         step(
-            f"Повторная подпись serial=0x{fresh:x} (было 0x{used_serial:x}).",
-            82,
+            "Другой serial на этой ГУ не нашёл — гайд Feiyu отвергла, сторонних APK нет. "
+            "Смотрите VecentekApp / services.jar / vdex в data\\probe.",
+            80,
         )
-        store = ensure_keystore(serial=fresh)
-        signed, method = sign_apk_with_method(apk, keystore=store, adb_binary=adb.binary)
-        step(f"Подписано ({method}): {signed}", 84)
-        for seen in apk_certificate_serials(signed):
-            step(f"в подписанном APK serial=0x{seen:x}", 84)
-        return fresh, signed, method
-    step(
-        "Другой serial на этой ГУ не нашёл — гайд Feiyu отвергла, сторонних APK нет. "
-        "Смотрите VecentekApp / services.jar в журнале.",
-        80,
-    )
-    return None
+    return ordered[:MAX_SERIAL_RETRIES]
 
 
 def _push_and_pm(
@@ -537,9 +565,82 @@ def _candidate_packages(paths: dict[str, str]) -> list[str]:
 def _plausible_serial(value: int) -> bool:
     if value <= 0xFFFFFFFF or value >= (1 << 64):
         return False
-    if value in (0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF):
+    if value in (
+        0xFFFFFFFFFFFFFFFF,
+        0x7FFFFFFFFFFFFFFF,
+        *_JUNK_SERIALS,
+    ):
+        return False
+    raw = value.to_bytes(8, "little")
+    if all(0x20 <= byte < 0x7F for byte in raw):
+        return False
+    if all(0x20 <= byte < 0x7F for byte in value.to_bytes(8, "big")):
+        return False
+    if len(set(raw)) < 4:
         return False
     return True
+
+
+def _dex_blobs(data: bytes) -> list[bytes]:
+    blobs: list[bytes] = []
+    start = 0
+    while True:
+        index = data.find(b"dex\n", start)
+        if index < 0:
+            break
+        file_size = 0
+        if index + 36 <= len(data):
+            file_size = int.from_bytes(data[index + 32 : index + 36], "little")
+        if 64 <= file_size <= len(data) - index:
+            blobs.append(data[index : index + file_size])
+            start = index + max(file_size, 4)
+        else:
+            blobs.append(data[index:])
+            start = index + 4
+    return blobs
+
+
+def dex_const_wide_literals(data: bytes) -> list[int]:
+    """Dalvik ``const-wide`` (op 0x18) 64-bit literals from a DEX blob."""
+    found: list[int] = []
+    for blob in _dex_blobs(data) or [data]:
+        offset = 0
+        while offset + 10 <= len(blob):
+            if blob[offset] == 0x18:
+                value = int.from_bytes(blob[offset + 2 : offset + 10], "little")
+                if _plausible_serial(value) and value not in found:
+                    found.append(value)
+                offset += 10
+                continue
+            offset += 2
+    return found
+
+
+def dex_array_data_longs(data: bytes) -> list[int]:
+    """DEX ``array-data`` payloads with 8-byte elements (long[] whitelist)."""
+    found: list[int] = []
+    for blob in _dex_blobs(data) or [data]:
+        offset = 0
+        while offset + 16 <= len(blob):
+            if int.from_bytes(blob[offset : offset + 2], "little") != 0x0300:
+                offset += 2
+                continue
+            width = int.from_bytes(blob[offset + 2 : offset + 4], "little")
+            size = int.from_bytes(blob[offset + 4 : offset + 8], "little")
+            if width != 8 or size < 1 or size > 64:
+                offset += 2
+                continue
+            start = offset + 8
+            end = start + size * 8
+            if end > len(blob):
+                offset += 2
+                continue
+            for index in range(size):
+                value = int.from_bytes(blob[start + index * 8 : start + (index + 1) * 8], "little")
+                if _plausible_serial(value) and value not in found:
+                    found.append(value)
+            offset = end if end % 2 == 0 else end + 1
+    return found
 
 
 def extract_embedded_serials(data: bytes) -> list[int]:
@@ -563,17 +664,25 @@ def extract_embedded_serials(data: bytes) -> list[int]:
         add(CHANGAN_SERIAL)
     for match in _HEX16.finditer(data):
         add(int(match.group(1), 16))
-    for needle in _AUTH_NEEDLES:
-        start = 0
-        while True:
-            index = data.find(needle, start)
-            if index < 0:
+    for value in dex_array_data_longs(data):
+        add(value)
+    for value in dex_const_wide_literals(data):
+        add(value)
+    return found
+
+
+def _interesting_strings(data: bytes, limit: int = 16) -> list[str]:
+    found: list[str] = []
+    for raw in re.findall(rb"[\x20-\x7e]{6,80}", data):
+        low = raw.lower()
+        if any(needle.lower() in low for needle in _AUTH_NEEDLES) or any(
+            token in low for token in (b"serial", b"cert", b"vecentek", b"whitelist")
+        ):
+            text = raw.decode("ascii", "replace")
+            if text not in found:
+                found.append(text)
+            if len(found) >= limit:
                 break
-            window = data[max(0, index - 96) : index + 96]
-            for offset in range(0, max(0, len(window) - 7)):
-                add(int.from_bytes(window[offset : offset + 8], "little"))
-                add(int.from_bytes(window[offset : offset + 8], "big"))
-            start = index + 1
     return found
 
 
@@ -582,18 +691,21 @@ def embedded_serials_in_apk(apk: Path) -> list[int]:
 
     def merge(values: list[int]) -> None:
         for value in values:
-            if value not in found:
+            if value not in found and _plausible_serial(value):
                 found.append(value)
 
     try:
-        merge(extract_embedded_serials(apk.read_bytes()))
+        whole = apk.read_bytes()
     except OSError:
         return found
+    merge(extract_embedded_serials(whole))
     try:
         with zipfile.ZipFile(apk) as zf:
             for name in zf.namelist():
                 lower = name.lower()
-                if not lower.endswith((".dex", ".jar", ".cer", ".crt", ".der", ".pem")):
+                if not lower.endswith(
+                    (".dex", ".jar", ".so", ".vdex", ".odex", ".cer", ".crt", ".der", ".pem")
+                ):
                     continue
                 blob = zf.read(name)
                 merge(extract_embedded_serials(blob))
@@ -606,8 +718,7 @@ def embedded_serials_in_apk(apk: Path) -> list[int]:
                             if b"BEGIN CERTIFICATE" in blob
                             else x509.load_der_x509_certificate(blob)
                         )
-                        if cert.serial_number not in found:
-                            found.append(cert.serial_number)
+                        merge([cert.serial_number])
                     except Exception:
                         pass
     except zipfile.BadZipFile:
@@ -615,7 +726,7 @@ def embedded_serials_in_apk(apk: Path) -> list[int]:
     return found
 
 
-def _manager_targets(mapping: dict[str, str]) -> list[tuple[str, str]]:
+def _manager_targets(mapping: dict[str, str], extra_paths: list[str] | None = None) -> list[tuple[str, str]]:
     targets: list[tuple[str, str]] = []
     seen: set[str] = set()
     for pkg, path in mapping.items():
@@ -624,7 +735,7 @@ def _manager_targets(mapping: dict[str, str]) -> list[tuple[str, str]]:
             if path not in seen:
                 targets.append((pkg, path))
                 seen.add(path)
-    for path in MANAGER_PATHS:
+    for path in list(MANAGER_PATHS) + list(extra_paths or []):
         if path not in seen:
             name = path.rsplit("/", 1)[-1]
             targets.append((name, path))
@@ -636,37 +747,46 @@ def _serials_from_manager(
     adb: Adb, mapping: dict[str, str], step: Progress | None = None
 ) -> list[int]:
     found: list[int] = []
-    for pkg, remote in _manager_targets(mapping):
-        timeout = 90 if remote.endswith(".jar") else 40
+    extras = _whitelist_extra_paths(adb, step)
+    for pkg, remote in _manager_targets(mapping, extras):
+        timeout = 90 if remote.endswith((".jar", ".vdex", ".odex")) else 40
         from hub.paths import app_data
 
         probe_dir = app_data() / "probe"
         probe_dir.mkdir(parents=True, exist_ok=True)
         local = probe_dir / remote.rsplit("/", 1)[-1]
+        reused = local.exists() and local.stat().st_size >= 64
         if step:
-            step(f"читаю белый список: {remote}", 7)
-        pulled = adb.raw(["pull", remote, str(local)], timeout=timeout)
-        if not pulled.ok or not local.exists() or local.stat().st_size < 64:
-            if step:
-                step(
-                    f"не скачал {remote} code={pulled.code} err={pulled.stderr.strip()[:120]!r}",
-                    7,
-                )
-            continue
+            if reused:
+                step(f"уже скачан: {local.name} ({local.stat().st_size} байт)", 7)
+            else:
+                step(f"читаю белый список: {remote}", 7)
+        if not reused:
+            pulled = adb.raw(["pull", remote, str(local)], timeout=timeout)
+            if not pulled.ok or not local.exists() or local.stat().st_size < 64:
+                if step:
+                    step(
+                        f"не скачал {remote} code={pulled.code} err={pulled.stderr.strip()[:120]!r}",
+                        7,
+                    )
+                continue
         serials = embedded_serials_in_apk(local)
         if step:
             shown = ", ".join(f"0x{item:x}" for item in serials[:6]) or "пусто"
             step(f"{pkg}: вшитые serial {shown}", 8)
+            try:
+                with zipfile.ZipFile(local) as zf:
+                    names = ", ".join(zf.namelist()[:12])
+                    step(f"{pkg} содержимое: {names}", 8)
+            except zipfile.BadZipFile:
+                pass
+            hints = _interesting_strings(local.read_bytes())
+            if hints:
+                step(f"{pkg} строки: " + " | ".join(hints[:8]), 8)
         for item in serials:
             if item not in found:
                 found.append(item)
-        try:
-            local.unlink()
-        except OSError:
-            pass
-        # Vecentek is enough when it already yielded a non-cookbook serial.
-        if any(item != CHANGAN_SERIAL for item in found) and "vecentek" in pkg.lower():
-            break
+        # Keep probe copies for the next log. Do not unlink.
     return found
 
 
@@ -686,6 +806,11 @@ def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> lis
         step(f"сторонние APK на этой ГУ: {shown}{extra}", 7)
     elif step:
         step("сторонних APK нет (русификация в /system). Читаю Vecentek.", 7)
+        ident = adb.shell("getprop ro.build.display.id", timeout=8)
+        build = (ident.stdout or "").strip().splitlines()
+        build_id = next((line.strip() for line in reversed(build) if line.strip() and "password" not in line.lower()), "")
+        if build_id:
+            step(f"прошивка: {build_id}", 7)
 
     third: list[int] = []
     for pkg in _candidate_packages(sideload):
@@ -711,11 +836,54 @@ def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> lis
     for item in third + other:
         if item not in ordered:
             ordered.append(item)
-    if CHANGAN_SERIAL in embedded and CHANGAN_SERIAL not in ordered:
+    if CHANGAN_SERIAL not in ordered:
         ordered.append(CHANGAN_SERIAL)
     if step and ordered:
-        step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in ordered[:6]), 8)
+        step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in ordered[:8]), 8)
     return ordered
+
+
+def _ls_names(result: CommandResult) -> list[str]:
+    names: list[str] = []
+    for token in (result.stdout or "").replace("\r", "\n").split():
+        low = token.lower().strip(":,")
+        if low in {"please", "input", "verify", "password", "success", "success!"}:
+            continue
+        if "password" in low:
+            continue
+        names.append(token)
+    return names
+
+
+def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
+    folders = (
+        ("/system/app/VecentekApp", True),
+        ("/system/app/VecentekApp/oat/arm64", True),
+        ("/system/app/VecentekApp/lib/arm64", True),
+        ("/system/app/VecentekApp/lib/arm64-v8a", True),
+        ("/system/framework/oat/arm64", True),
+        ("/system/framework/arm64", True),
+        ("/system/etc/security", False),
+        ("/system/etc", False),
+    )
+    suffixes = (".vdex", ".odex", ".apk", ".jar", ".so", ".crt", ".cer", ".der", ".pem")
+    hints = ("cert", "auth", "white", "vecentek", "wutong", "changan", "serial")
+    found: list[str] = []
+    for folder, take_all in folders:
+        listed = adb.shell(f"ls {folder}", timeout=8)
+        names = _ls_names(listed)
+        if step and names and "No such" not in (listed.stdout or ""):
+            step(f"ls {folder}: " + " ".join(names[:16]), 7)
+        for name in names:
+            lower = name.lower()
+            if not lower.endswith(suffixes):
+                continue
+            if not take_all and not any(hint in lower for hint in hints):
+                continue
+            path = f"{folder}/{name}"
+            if path not in MANAGER_PATHS and path not in found:
+                found.append(path)
+    return found[:16]
 
 
 def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:
@@ -804,9 +972,28 @@ def load_cached_hu_serial(device: str | None = None) -> int | None:
     if not path.exists():
         return None
     try:
-        return int(path.read_text(encoding="utf-8").strip(), 0)
+        value = int(path.read_text(encoding="utf-8").strip(), 0)
     except (OSError, ValueError):
         return None
+    if value <= 0:
+        return None
+    if value in _JUNK_SERIALS or value in (0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return None
+    if value < (1 << 64):
+        raw = value.to_bytes(8, "little")
+        if all(0x20 <= byte < 0x7F for byte in raw) or all(
+            0x20 <= byte < 0x7F for byte in value.to_bytes(8, "big")
+        ):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return None
+    return value
 
 
 def save_cached_hu_serial(serial: int, device: str | None = None) -> None:

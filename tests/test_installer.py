@@ -447,6 +447,25 @@ def test_extract_embedded_serials_finds_cookbook_and_other() -> None:
     found = extract_embedded_serials(blob)
     assert CHANGAN_SERIAL in found
     assert 0xAABBCCDDEEFF11 in found
+    ascii_window = extract_embedded_serials(b"xx is not auth,install failed! yy")
+    assert 0x20746F6E20736920 not in ascii_window
+    assert 0x123456789ABCDEF not in extract_embedded_serials(b"0123456789abcdef placeholder")
+
+
+def test_dex_const_wide_and_array_data_serials() -> None:
+    from hub.installer import dex_array_data_longs, dex_const_wide_literals, extract_embedded_serials
+
+    serial = 0xA1B2C3D4E5F60718
+    insn = bytes([0x18, 0x00]) + serial.to_bytes(8, "little")
+    blob = b"dex\n" + b"\x00" * 28 + insn
+    assert serial in dex_const_wide_literals(blob)
+    assert serial in extract_embedded_serials(blob)
+
+    other = 0xB2C3D4E5F607189A
+    array = (0x0300).to_bytes(2, "little") + (8).to_bytes(2, "little") + (1).to_bytes(4, "little")
+    array += other.to_bytes(8, "little")
+    assert other in dex_array_data_longs(array)
+    assert other in extract_embedded_serials(array)
 
 
 def test_embedded_serials_in_apk(tmp_path: Path) -> None:
@@ -460,12 +479,23 @@ def test_embedded_serials_in_apk(tmp_path: Path) -> None:
     assert 0x11223344556677 in found
 
 
+def test_cached_junk_serial_is_ignored(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("hub.paths.app_data", lambda: tmp_path)
+    from hub.installer import load_cached_hu_serial, save_cached_hu_serial
+
+    save_cached_hu_serial(0x123456789ABCDEF, "AHFPF_RUS")
+    assert load_cached_hu_serial("AHFPF_RUS") is None
+    save_cached_hu_serial(0xA1B2C3D4E5F60718, "AHFPF_RUS")
+    assert load_cached_hu_serial("AHFPF_RUS") == 0xA1B2C3D4E5F60718
+
+
 def test_discover_uses_vecentek_when_no_sideload(tmp_path: Path) -> None:
     from hub.installer import discover_hu_signer_candidates
+    from hub.signer import CHANGAN_SERIAL
 
     apk = tmp_path / "VecentekApp.apk"
     with zipfile.ZipFile(apk, "w") as zf:
-        zf.writestr("classes.dex", b"CertificateManager serial=fedcba9876543210\n")
+        zf.writestr("classes.dex", b"CertificateManager serial=a1b2c3d4e5f60718\n")
         zf.writestr("AndroidManifest.xml", b"mf")
 
     fake = FakeAdb()
@@ -494,8 +524,63 @@ def test_discover_uses_vecentek_when_no_sideload(tmp_path: Path) -> None:
     fake.raw = raw  # type: ignore[method-assign]
     notes: list[str] = []
     candidates = discover_hu_signer_candidates(fake, lambda m, p: notes.append(m))
-    assert 0xFEDCBA9876543210 in candidates
+    assert 0xA1B2C3D4E5F60718 in candidates
+    assert CHANGAN_SERIAL in candidates
+    assert 0xFEDCBA9876543210 not in candidates
     assert any("vecentek" in line.lower() for line in notes)
+
+
+def test_install_tries_remaining_serials_without_rediscover(tmp_path: Path) -> None:
+    from hub.signer import CHANGAN_SERIAL
+
+    apk = tmp_path / "QuickBar.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    fake.serial = "AHFPF6643S69270176"
+    installs = {"n": 0}
+    discovers = {"n": 0}
+    first = 0xA1B2C3D4E5F60718
+    second = 0xB2C3D4E5F607189A
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            installs["n"] += 1
+            if installs["n"] == 1:
+                return CommandResult(
+                    False,
+                    "Failure [-118: com.changanhub.quickrise is not auth,install failed!]",
+                    "please input verify password: verify success!",
+                    1,
+                    [],
+                )
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    def discover(_adb, _step=None):
+        discovers["n"] += 1
+        return [first, second]
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with (
+        patch("hub.paths.app_data", return_value=tmp_path),
+        patch("hub.installer.load_cached_hu_serial", return_value=None),
+        patch("hub.installer.discover_hu_signer_candidates", side_effect=discover),
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.ensure_keystore") as ek,
+        patch("hub.installer.apk_certificate_serials", return_value=[CHANGAN_SERIAL]),
+        patch("hub.installer.save_cached_hu_serial"),
+    ):
+        report = install_apk(fake, apk, already_signed=False, package="com.changanhub.quickrise")
+    assert report.ok
+    assert installs["n"] == 2
+    assert discovers["n"] == 1
+    serials = [call.kwargs.get("serial") for call in ek.call_args_list]
+    assert serials == [first, second]
+    assert any("следующие serial" in line.lower() or "повторная" in line.lower() for line in report.log)
 
 
 
