@@ -455,6 +455,16 @@ def test_extract_embedded_serials_finds_cookbook_and_other() -> None:
     assert 0xA1B2C3D4E5F60718 not in extract_embedded_serials(noise)
 
 
+def test_plausible_serial_works_without_bit_count() -> None:
+    from hub.installer import _plausible_serial
+    from hub.signer import CHANGAN_SERIAL
+
+    assert _plausible_serial(CHANGAN_SERIAL)
+    assert _plausible_serial(0xA1B2C3D4E5F60718)
+    assert not _plausible_serial(0x123456789ABCDEF)
+    assert not _plausible_serial(0x20746F6E20736920)
+
+
 def _fake_dex(*chunks: bytes) -> bytes:
     payload = b"".join(chunks)
     header = bytearray(64)
@@ -542,6 +552,41 @@ def test_discover_uses_vecentek_when_no_sideload(tmp_path: Path) -> None:
     assert 0xFEDCBA9876543210 not in candidates
     assert any("vecentek" in line.lower() for line in notes)
     assert candidates[0] in (0xA1B2C3D4E5F60718, CHANGAN_SERIAL)
+
+
+def test_manager_scan_continues_if_one_file_raises(tmp_path: Path) -> None:
+    from hub.installer import _serials_from_manager
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm list packages"):
+            return CommandResult(
+                True,
+                "package:/system/app/VecentekApp/VecentekApp.apk=com.vecentek.decoreapp\n",
+                "",
+                0,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            Path(args[2]).write_bytes(b"x" * 128)
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    with (
+        patch("hub.paths.app_data", return_value=tmp_path),
+        patch("hub.installer.embedded_serial_groups", side_effect=AttributeError("bit_count")),
+    ):
+        high, low = _serials_from_manager(fake, {"com.vecentek.decoreapp": "/system/app/VecentekApp/VecentekApp.apk"}, lambda m, p: notes.append(m))
+    assert high == []
+    assert low == []
+    assert any("не разобрал" in line for line in notes)
 
 
 def test_whitelist_extra_paths_keep_services_skip_am() -> None:

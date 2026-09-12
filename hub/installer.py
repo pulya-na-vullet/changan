@@ -589,7 +589,7 @@ def _plausible_serial(value: int) -> bool:
     pairs = tuple(raw[i : i + 2] for i in range(0, 8, 2))
     if len(set(pairs)) <= 1:
         return False
-    bits = value.bit_count()
+    bits = bin(value).count("1")
     if bits < 16 or bits > 48:
         return False
     if (value & 0x0000FFFF0000FFFF) == 0:
@@ -828,7 +828,12 @@ def _serials_from_manager(
                         7,
                     )
                 continue
-        group_high, group_low = embedded_serial_groups(local)
+        try:
+            group_high, group_low = embedded_serial_groups(local)
+        except Exception as exc:  # noqa: BLE001 — one bad jar must not abort install
+            if step:
+                step(f"{pkg}: не разобрал ({type(exc).__name__}: {exc})", 8)
+            continue
         if step:
             shown = ", ".join(f"0x{item:x}" for item in (group_high + group_low)[:6]) or "пусто"
             step(f"{pkg}: вшитые serial {shown}", 8)
