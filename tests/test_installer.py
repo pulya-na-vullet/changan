@@ -418,7 +418,7 @@ def test_install_resigns_on_118_when_hu_serial_differs(tmp_path) -> None:
     with (
         patch("hub.paths.app_data", return_value=tmp_path),
         patch("hub.installer.load_cached_hu_serial", return_value=None),
-        patch("hub.installer.discover_hu_signer_serial", side_effect=[None, other]),
+        patch("hub.installer.discover_hu_signer_candidates", side_effect=[[], [other]]),
         patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
         patch("hub.installer.ensure_keystore") as ek,
         patch("hub.installer.apk_certificate_serials", return_value=[CHANGAN_SERIAL]),
@@ -431,5 +431,71 @@ def test_install_resigns_on_118_when_hu_serial_differs(tmp_path) -> None:
     assert CHANGAN_SERIAL in serials
     assert other in serials
     assert any("повторная" in line.lower() or "другой" in line.lower() for line in report.log)
+
+
+def test_extract_embedded_serials_finds_cookbook_and_other() -> None:
+    from hub.installer import extract_embedded_serials
+    from hub.signer import CHANGAN_SERIAL
+
+    blob = (
+        b"xxCertificateManager"
+        + CHANGAN_SERIAL.to_bytes(8, "little")
+        + b"not auth"
+        + (0xABCDEF123456).to_bytes(8, "little")
+        + b" serial=00aabbccddeeff11 "
+    )
+    found = extract_embedded_serials(blob)
+    assert CHANGAN_SERIAL in found
+    assert 0xAABBCCDDEEFF11 in found
+
+
+def test_embedded_serials_in_apk(tmp_path: Path) -> None:
+    from hub.installer import embedded_serials_in_apk
+
+    apk = tmp_path / "vecentek.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("classes.dex", b"xx not auth 0011223344556677 yy")
+        zf.writestr("AndroidManifest.xml", b"mf")
+    found = embedded_serials_in_apk(apk)
+    assert 0x11223344556677 in found
+
+
+def test_discover_uses_vecentek_when_no_sideload(tmp_path: Path) -> None:
+    from hub.installer import discover_hu_signer_candidates
+
+    apk = tmp_path / "VecentekApp.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("classes.dex", b"CertificateManager serial=fedcba9876543210\n")
+        zf.writestr("AndroidManifest.xml", b"mf")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm list packages"):
+            return CommandResult(
+                True,
+                "package:/system/app/VecentekApp/VecentekApp.apk=com.vecentek.decoreapp\n"
+                "package:/system/priv-app/Settings/Settings.apk=com.android.settings\n",
+                "",
+                0,
+                [],
+            )
+        if command.startswith("pm path"):
+            raise AssertionError("do not probe missing sideload apps")
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            Path(args[2]).write_bytes(apk.read_bytes())
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    candidates = discover_hu_signer_candidates(fake, lambda m, p: notes.append(m))
+    assert 0xFEDCBA9876543210 in candidates
+    assert any("vecentek" in line.lower() for line in notes)
+
 
 

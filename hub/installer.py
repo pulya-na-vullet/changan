@@ -53,6 +53,24 @@ PROBE_PACKAGES = (
     "ru.rutube.app",
 )
 
+# Official RU / overlay firmware often has zero /data/app packages. The
+# whitelist serial is baked into Vecentek + services.jar, not a sideloaded APK.
+MANAGER_PATHS = (
+    "/system/app/VecentekApp/VecentekApp.apk",
+    "/system/app/VecentekAPP/VecentekAPP.apk",
+    "/system/framework/services.jar",
+)
+MANAGER_HINTS = ("vecentek", "certificatemanager", "wutong")
+_HEX16 = re.compile(rb"(?<![0-9a-fA-F])([0-9a-fA-F]{16})(?![0-9a-fA-F])")
+_AUTH_NEEDLES = (
+    b"not auth",
+    b"CertificateManager",
+    b"is not auth",
+    b"install failed!",
+    b"ddb66eefd98476f3",
+    b"DDB66EEFD98476F3",
+)
+
 Progress = Callable[[str, int], None]
 
 # Visible pipeline in the Hub loader. Order matters for the checklist UI.
@@ -310,9 +328,12 @@ def _sign_for_hu(
             8,
         )
     else:
-        hu_serial = discover_hu_signer_serial(adb, step)
-        if hu_serial:
+        candidates = discover_hu_signer_candidates(adb, step)
+        if candidates:
+            hu_serial = candidates[0]
             save_cached_hu_serial(hu_serial, device)
+        else:
+            hu_serial = None
     serial = hu_serial or CHANGAN_SERIAL
     if hu_serial and hu_serial != CHANGAN_SERIAL:
         step(
@@ -347,32 +368,33 @@ def _resign_after_not_auth(
     step: Progress,
 ) -> tuple[int, Path, str] | None:
     step(
-        "Белый список этой ГУ другой. Снимаю serial заново со сторонних приложений "
-        "(HackChan/Яндекс), без кэша с другой машины.",
+        "Белый список этой ГУ другой. Снимаю serial из Vecentek/services.jar "
+        "и сторонних APK этой машины, без кэша.",
         72,
     )
     device = getattr(adb, "serial", None)
     if device:
         _clear_cached_hu_serial(device)
-    fresh = discover_hu_signer_serial(adb, step)
-    if not fresh or fresh == used_serial:
+    for fresh in discover_hu_signer_candidates(adb, step):
+        if fresh == used_serial:
+            continue
+        save_cached_hu_serial(fresh, device)
         step(
-            "Другой serial на этой ГУ не нашёл — гайд/кэш Feiyu отвергла. "
-            "Нужно любое уже стоящее стороннее приложение (Яндекс, HackChan).",
-            80,
+            f"Повторная подпись serial=0x{fresh:x} (было 0x{used_serial:x}).",
+            82,
         )
-        return None
-    save_cached_hu_serial(fresh, device)
+        store = ensure_keystore(serial=fresh)
+        signed, method = sign_apk_with_method(apk, keystore=store, adb_binary=adb.binary)
+        step(f"Подписано ({method}): {signed}", 84)
+        for seen in apk_certificate_serials(signed):
+            step(f"в подписанном APK serial=0x{seen:x}", 84)
+        return fresh, signed, method
     step(
-        f"Повторная подпись serial=0x{fresh:x} (было 0x{used_serial:x}).",
-        82,
+        "Другой serial на этой ГУ не нашёл — гайд Feiyu отвергла, сторонних APK нет. "
+        "Смотрите VecentekApp / services.jar в журнале.",
+        80,
     )
-    store = ensure_keystore(serial=fresh)
-    signed, method = sign_apk_with_method(apk, keystore=store, adb_binary=adb.binary)
-    step(f"Подписано ({method}): {signed}", 84)
-    for seen in apk_certificate_serials(signed):
-        step(f"в подписанном APK serial=0x{seen:x}", 84)
-    return fresh, signed, method
+    return None
 
 
 def _push_and_pm(
@@ -464,22 +486,37 @@ def _code_path_from_dumpsys(adb: Adb, package: str) -> str:
     return code_path.rstrip("/") + "/base.apk"
 
 
+def _all_package_paths(adb: Adb, step: Progress | None = None) -> dict[str, str]:
+    result = adb.shell("pm list packages -f", timeout=25)
+    mapping = parse_package_paths(merged_output(result))
+    extra = adb.shell("pm list packages -3 -f", timeout=15)
+    mapping.update(parse_package_paths(merged_output(extra)))
+    if step:
+        step(f"пакетов на ГУ: {len(mapping)}", 6)
+    return mapping
+
+
+def _is_sideload_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    return any(
+        token in normalized
+        for token in ("/data/app", "/data/priv-app", "/oem/", "/product/app", "/mnt/expand")
+    )
+
+
 def _third_party_paths(adb: Adb, step: Progress | None = None) -> dict[str, str]:
-    data_app: dict[str, str] = {}
-    for cmd in ("pm list packages -3 -f", "pm list packages -f"):
-        result = adb.shell(cmd, timeout=25)
-        mapping = parse_package_paths(merged_output(result))
-        data_app = {
-            pkg: path
-            for pkg, path in mapping.items()
-            if "/data/app" in path.replace("\\", "/") and pkg not in OVERLAY_PACKAGES
-        }
-        if data_app:
-            break
+    mapping = _all_package_paths(adb, step)
+    data_app = {
+        pkg: path
+        for pkg, path in mapping.items()
+        if _is_sideload_path(path) and pkg not in OVERLAY_PACKAGES
+    }
     if step and data_app:
         shown = ", ".join(sorted(data_app)[:12])
         extra = "…" if len(data_app) > 12 else ""
         step(f"сторонние APK на этой ГУ: {shown}{extra}", 7)
+    elif step:
+        step("сторонних APK нет — сниму serial из Vecentek/services.jar.", 7)
     return data_app
 
 
@@ -497,21 +534,194 @@ def _candidate_packages(paths: dict[str, str]) -> list[str]:
     return ordered
 
 
-def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:
-    """Read signing serials from third-party apps already on this head unit."""
+def _plausible_serial(value: int) -> bool:
+    if value <= 0xFFFFFFFF or value >= (1 << 64):
+        return False
+    if value in (0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF):
+        return False
+    return True
+
+
+def extract_embedded_serials(data: bytes) -> list[int]:
+    """Whitelist serials baked into Vecentek/services, not the APK signing cert."""
+    found: list[int] = []
+
+    def add(value: int) -> None:
+        if not _plausible_serial(value) or value in found:
+            return
+        found.append(value)
+
+    le = CHANGAN_SERIAL.to_bytes(8, "little")
+    be = CHANGAN_SERIAL.to_bytes(8, "big")
+    if le in data or be in data:
+        add(CHANGAN_SERIAL)
+    hex_token = format(CHANGAN_SERIAL, "x").encode("ascii")
+    if hex_token in data or hex_token.upper() in data:
+        add(CHANGAN_SERIAL)
+    wide = format(CHANGAN_SERIAL, "x").encode("utf-16-le")
+    if wide in data or format(CHANGAN_SERIAL, "X").encode("utf-16-le") in data:
+        add(CHANGAN_SERIAL)
+    for match in _HEX16.finditer(data):
+        add(int(match.group(1), 16))
+    for needle in _AUTH_NEEDLES:
+        start = 0
+        while True:
+            index = data.find(needle, start)
+            if index < 0:
+                break
+            window = data[max(0, index - 96) : index + 96]
+            for offset in range(0, max(0, len(window) - 7)):
+                add(int.from_bytes(window[offset : offset + 8], "little"))
+                add(int.from_bytes(window[offset : offset + 8], "big"))
+            start = index + 1
+    return found
+
+
+def embedded_serials_in_apk(apk: Path) -> list[int]:
+    found: list[int] = []
+
+    def merge(values: list[int]) -> None:
+        for value in values:
+            if value not in found:
+                found.append(value)
+
+    try:
+        merge(extract_embedded_serials(apk.read_bytes()))
+    except OSError:
+        return found
+    try:
+        with zipfile.ZipFile(apk) as zf:
+            for name in zf.namelist():
+                lower = name.lower()
+                if not lower.endswith((".dex", ".jar", ".cer", ".crt", ".der", ".pem")):
+                    continue
+                blob = zf.read(name)
+                merge(extract_embedded_serials(blob))
+                if lower.endswith((".cer", ".crt", ".der", ".pem")):
+                    try:
+                        from cryptography import x509
+
+                        cert = (
+                            x509.load_pem_x509_certificate(blob)
+                            if b"BEGIN CERTIFICATE" in blob
+                            else x509.load_der_x509_certificate(blob)
+                        )
+                        if cert.serial_number not in found:
+                            found.append(cert.serial_number)
+                    except Exception:
+                        pass
+    except zipfile.BadZipFile:
+        pass
+    return found
+
+
+def _manager_targets(mapping: dict[str, str]) -> list[tuple[str, str]]:
+    targets: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for pkg, path in mapping.items():
+        blob = f"{pkg} {path}".lower()
+        if any(hint in blob for hint in MANAGER_HINTS):
+            if path not in seen:
+                targets.append((pkg, path))
+                seen.add(path)
+    for path in MANAGER_PATHS:
+        if path not in seen:
+            name = path.rsplit("/", 1)[-1]
+            targets.append((name, path))
+            seen.add(path)
+    return targets
+
+
+def _serials_from_manager(
+    adb: Adb, mapping: dict[str, str], step: Progress | None = None
+) -> list[int]:
+    found: list[int] = []
+    for pkg, remote in _manager_targets(mapping):
+        timeout = 90 if remote.endswith(".jar") else 40
+        from hub.paths import app_data
+
+        probe_dir = app_data() / "probe"
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        local = probe_dir / remote.rsplit("/", 1)[-1]
+        if step:
+            step(f"читаю белый список: {remote}", 7)
+        pulled = adb.raw(["pull", remote, str(local)], timeout=timeout)
+        if not pulled.ok or not local.exists() or local.stat().st_size < 64:
+            if step:
+                step(
+                    f"не скачал {remote} code={pulled.code} err={pulled.stderr.strip()[:120]!r}",
+                    7,
+                )
+            continue
+        serials = embedded_serials_in_apk(local)
+        if step:
+            shown = ", ".join(f"0x{item:x}" for item in serials[:6]) or "пусто"
+            step(f"{pkg}: вшитые serial {shown}", 8)
+        for item in serials:
+            if item not in found:
+                found.append(item)
+        try:
+            local.unlink()
+        except OSError:
+            pass
+        # Vecentek is enough when it already yielded a non-cookbook serial.
+        if any(item != CHANGAN_SERIAL for item in found) and "vecentek" in pkg.lower():
+            break
+    return found
+
+
+def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> list[int]:
+    """Ordered serials to try on this HU: sideloaded APKs, then Vecentek, then cookbook."""
     if step:
-        step("Снимаю serial со сторонних приложений этой ГУ (не с другой машины).", 6)
-    paths = _third_party_paths(adb, step)
-    if paths:
-        for pkg in _candidate_packages(paths):
-            serial = _serial_from_remote_apk(adb, pkg, paths[pkg], step)
-            if serial:
-                return serial
-    for pkg in PROBE_PACKAGES:
-        serial = discover_package_signer_serial(adb, pkg, step)
-        if serial:
-            return serial
-    return None
+        step("Снимаю serial со сторонних приложений и Vecentek этой ГУ.", 6)
+    mapping = _all_package_paths(adb, step)
+    sideload = {
+        pkg: path
+        for pkg, path in mapping.items()
+        if _is_sideload_path(path) and pkg not in OVERLAY_PACKAGES
+    }
+    if step and sideload:
+        shown = ", ".join(sorted(sideload)[:12])
+        extra = "…" if len(sideload) > 12 else ""
+        step(f"сторонние APK на этой ГУ: {shown}{extra}", 7)
+    elif step:
+        step("сторонних APK нет (русификация в /system). Читаю Vecentek.", 7)
+
+    third: list[int] = []
+    for pkg in _candidate_packages(sideload):
+        serial = _serial_from_remote_apk(adb, pkg, sideload[pkg], step)
+        if serial and serial not in third:
+            third.append(serial)
+        if len(third) >= 2:
+            break
+    if not mapping:
+        for pkg in PROBE_PACKAGES:
+            serial = discover_package_signer_serial(adb, pkg, step)
+            if serial and serial not in third:
+                third.append(serial)
+                break
+    if third:
+        if step:
+            step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in third[:6]), 8)
+        return third
+
+    embedded = _serials_from_manager(adb, mapping, step)
+    other = [item for item in embedded if item != CHANGAN_SERIAL]
+    ordered: list[int] = []
+    for item in third + other:
+        if item not in ordered:
+            ordered.append(item)
+    if CHANGAN_SERIAL in embedded and CHANGAN_SERIAL not in ordered:
+        ordered.append(CHANGAN_SERIAL)
+    if step and ordered:
+        step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in ordered[:6]), 8)
+    return ordered
+
+
+def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:
+    """Read signing serials from third-party apps or Vecentek on this head unit."""
+    candidates = discover_hu_signer_candidates(adb, step)
+    return candidates[0] if candidates else None
 
 
 def apk_package_name(apk: Path) -> str | None:
