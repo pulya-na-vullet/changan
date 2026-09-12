@@ -127,6 +127,8 @@ _EXTRA_LABELS = {
     "gb.xxy.hr": "HR",
     "ru.yandex.androidkeyboard": "Яндекс Клавиатура",
     "ru.kinopoisk": "Кинопоиск",
+    "com.yandex.browser.lite": "Яндекс Браузер Лайт",
+    "com.android.chrome": "Chrome",
     "air.StrelkaHUDFREE": "Стрелка",
     "com.changanhub.quickbar": "QuickBar (старая, без скрытия/сортировки)",
     "com.changanhub.quickdock": "QuickBar (старая, без скрытия/сортировки)",

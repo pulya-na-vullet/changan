@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 import zipfile
 from dataclasses import dataclass, field
@@ -11,6 +12,13 @@ from pathlib import Path
 from typing import Callable
 
 from hub.adb import Adb, CommandResult, _no_adb_target
+from hub.bundle import (
+    BundleSplit,
+    bundle_package_name,
+    extract_bundle,
+    is_apk_bundle,
+    parse_install_session,
+)
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
@@ -118,12 +126,23 @@ def classify_install_step(message: str) -> str | None:
         return "start"
     if any(
         token in low
-        for token in ("pm install", "pm uninstall", "удал", "шаг 3/", "шаг 4/", "adb root", "кэш лаунчера")
+        for token in (
+            "pm install",
+            "pm uninstall",
+            "install-create",
+            "install-write",
+            "install-commit",
+            "удал",
+            "шаг 3/",
+            "шаг 4/",
+            "adb root",
+            "кэш лаунчера",
+        )
     ):
         return "pm"
-    if any(token in low for token in ("push", "копир", "шаг 2/")):
+    if any(token in low for token in ("push", "копир", "шаг 2/", "obb")):
         return "push"
-    if any(token in low for token in ("подпис", "переподпис", "шаг 1/")):
+    if any(token in low for token in ("подпис", "переподпис", "шаг 1/", "распаков", "xapk", "сплит")):
         return "sign"
     return None
 
@@ -184,6 +203,8 @@ def _remote_apk_basename(signed: Path, package: str | None) -> str:
         ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in base
     )
     ascii_name = re.sub(r"_+", "_", ascii_name).strip("._") or "app"
+    if ascii_name[0].isdigit():
+        ascii_name = "hub-" + ascii_name
     if not ascii_name.lower().endswith(".apk"):
         ascii_name += ".apk"
     return ascii_name[:120]
@@ -227,6 +248,9 @@ def install_apk(
         return report
 
     step(f"Начинаю установку {apk.name}", 5)
+    if is_apk_bundle(apk):
+        return _install_bundle(adb, apk, report, step, package=package)
+
     package = package or apk_package_name(apk)
     used_serial: int | None = None
     remaining: list[int] = []
@@ -248,12 +272,20 @@ def install_apk(
     if remote_apk is None:
         return report
     blob = merged_output(result)
+    kept = _keep_working_overlay(adb, report, result, blob, package, step, remote_apk)
+    if kept is not None:
+        return kept
     if not _ok_install(result) and "update_incompatible" in blob.lower():
         conflict = _package_from_pm_error(blob) or package
         overlay_conflict = bool(
             (conflict and conflict in OVERLAY_PACKAGES) or (package and package in OVERLAY_PACKAGES)
         )
-        if overlay_conflict:
+        if overlay_conflict and conflict and package and conflict == package:
+            step(
+                f"Подпись не совпадает со стоящим {conflict}. Рабочий пакет не отключаю.",
+                72,
+            )
+        elif overlay_conflict:
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
@@ -325,13 +357,23 @@ def install_apk(
         )
         return report
 
-    if "extract native libraries" in blob or "install_failed_invalid_apk" in blob:
+    if "extract native libraries" in blob or (
+        "install_failed_invalid_apk" in blob and "androidmanifest.xml" not in blob
+    ):
         step(
             "APK с native .so Feiyu не распаковала (extract native libraries). "
             "Ставьте исходный файл (не *-changan.apk) этой сборкой Hub — подпись "
             "сохраняет несжатые библиотеки.",
             100,
         )
+        return report
+
+    if _is_older_sdk(blob):
+        _explain_older_sdk(step)
+        return report
+
+    if _is_missing_manifest(blob):
+        _explain_missing_manifest(step)
         return report
 
     step("pm install не прошёл. adb root на Feiyu не трогаю — он рвёт USB.", 100)
@@ -348,15 +390,329 @@ def _after_install(adb: Adb, report: InstallReport) -> None:
 
 
 def _finish_ok(
-    adb: Adb, report: InstallReport, remote_apk: str, step: Progress
+    adb: Adb, report: InstallReport, remote_apk: str | None, step: Progress
 ) -> InstallReport:
     report.ok = True
-    report.method = f"pm install {PM_INSTALL_FLAGS}"
-    adb.shell(f"rm {remote_apk}", timeout=8)
+    report.method = report.method or f"pm install {PM_INSTALL_FLAGS}"
+    if remote_apk:
+        adb.shell(f"rm {remote_apk}", timeout=8)
     step("Шаг 4/5: чищу кэш лаунчера…", 85)
     _after_install(adb, report)
     step("Шаг 5/5: пакет установлен.", 100)
     return report
+
+
+def _finish_keep_overlay(
+    adb: Adb, report: InstallReport, step: Progress, remote_apk: str | None = None
+) -> InstallReport:
+    report.ok = True
+    report.method = "keep-existing"
+    if remote_apk:
+        adb.shell(f"rm {remote_apk}", timeout=8)
+    step(
+        "Рабочая панель уже стоит на ГУ. Этот APK не обновляет — подпись другого Hub. "
+        "Колонку не отключаю. Дальше: «Только запустить», не повторная установка.",
+        100,
+    )
+    return report
+
+
+def _keep_working_overlay(
+    adb: Adb,
+    report: InstallReport,
+    result: CommandResult,
+    blob: str,
+    package: str | None,
+    step: Progress,
+    remote_apk: str | None,
+) -> InstallReport | None:
+    if _ok_install(result) or "update_incompatible" not in blob.lower():
+        return None
+    conflict = _package_from_pm_error(blob) or package
+    if not conflict or not package or conflict != package:
+        return None
+    if conflict not in OVERLAY_PACKAGES:
+        return None
+    step(
+        f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
+        "Рабочую колонку не отключаю.",
+        72,
+    )
+    if _confirm_installed(adb, package, step, attempts=2):
+        return _finish_keep_overlay(adb, report, step, remote_apk)
+    return None
+
+
+def _is_older_sdk(blob: str) -> bool:
+    low = blob.lower()
+    return "older_sdk" in low or "requires newer sdk" in low
+
+
+def _is_missing_manifest(blob: str) -> bool:
+    low = blob.lower()
+    return "androidmanifest.xml" in low or "failed to parse apk" in low
+
+
+def _explain_older_sdk(step: Progress) -> None:
+    step(
+        "Этот APK требует Android 10+ (SDK 29), а ГУ Feiyu — Android 9 (SDK 28). "
+        "Свежий Chrome так не встанет. На ГУ уже есть Яндекс Браузер Лайт "
+        "(com.yandex.browser.lite). Нужен Chrome с minSdk ≤ 28 или Fennec с F-Droid.",
+        100,
+    )
+
+
+def _explain_missing_manifest(step: Progress) -> None:
+    step(
+        "Это не одиночный APK, а контейнер (XAPK/APKM): нет AndroidManifest.xml. "
+        "Выберите исходный .xapk — Hub распакует внутренние APK и поставит их сессией.",
+        100,
+    )
+
+
+def _bundle_work_dir(apk: Path) -> Path:
+    from hub.paths import app_data
+
+    stem = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in apk.stem)[:80] or "bundle"
+    return app_data() / "bundle" / stem
+
+
+def _install_bundle(
+    adb: Adb,
+    apk: Path,
+    report: InstallReport,
+    step: Progress,
+    package: str | None = None,
+) -> InstallReport:
+    step("Это XAPK/APKM — распаковываю внутренние APK, контейнер на ГУ не ставлю.", 6)
+    work = _bundle_work_dir(apk)
+    if work.exists():
+        shutil.rmtree(work, ignore_errors=True)
+    try:
+        extracted = extract_bundle(apk, work)
+    except Exception as exc:  # noqa: BLE001 — bad zip must not crash Hub
+        step(
+            f"Не разобрал контейнер ({type(exc).__name__}: {exc}). "
+            "Нужен исходный .xapk с APKPure, не пустой zip.",
+            100,
+        )
+        return report
+
+    package = package or extracted.package or bundle_package_name(apk)
+    if not package and extracted.splits:
+        package = apk_package_name(extracted.splits[0].path)
+    report.package = package
+    step(
+        f"внутри {len(extracted.splits)} APK"
+        + (f", пакет {package}" if package else "")
+        + (f", OBB {len(extracted.obb)}" if extracted.obb else ""),
+        8,
+    )
+
+    used_serial, signed_splits, remaining = _sign_bundle_splits(
+        adb, extracted.splits, package, step
+    )
+    if not signed_splits:
+        step("Не подписал сплиты XAPK.", 100)
+        return report
+    report.signed_apk = next(
+        (item.path for item in signed_splits if item.name == "base"), signed_splits[0].path
+    )
+
+    if package:
+        present = adb.shell(f"pm path {package}", timeout=8)
+        if "package:" in merged_output(present):
+            adb.shell(f"pm enable --user 0 {package}", timeout=8)
+
+    if len(signed_splits) == 1:
+        result, remote_apk = _push_and_pm(adb, signed_splits[0].path, step, package=package)
+        remotes = [remote_apk] if remote_apk else []
+    else:
+        result, remotes = _session_install(adb, signed_splits, step, package=package)
+        remote_apk = remotes[-1] if remotes else None
+    if not remotes and not _ok_install(result):
+        return report
+
+    blob = merged_output(result)
+    kept = _keep_working_overlay(adb, report, result, blob, package, step, remote_apk)
+    if kept is not None:
+        return kept
+
+    if _ok_install(result):
+        _install_obb(adb, package, extracted.obb, step)
+        report.method = (
+            f"pm install {PM_INSTALL_FLAGS}"
+            if len(signed_splits) == 1
+            else "pm install-create/write/commit"
+        )
+        for extra in remotes[:-1]:
+            adb.shell(f"rm {extra}", timeout=8)
+        return _finish_ok(adb, report, remotes[-1] if remotes else None, step)
+
+    if "not auth" in blob.lower() or "-118" in blob.lower():
+        for fresh in _next_auth_serials(adb, used_serial, remaining, step):
+            used_serial, signed_splits, remaining = _sign_bundle_splits(
+                adb, extracted.splits, package, step, serial=fresh
+            )
+            report.signed_apk = signed_splits[0].path if signed_splits else report.signed_apk
+            if len(signed_splits) == 1:
+                result, remote_apk = _push_and_pm(
+                    adb, signed_splits[0].path, step, package=package
+                )
+                remotes = [remote_apk] if remote_apk else []
+            else:
+                result, remotes = _session_install(adb, signed_splits, step, package=package)
+            if _ok_install(result):
+                _install_obb(adb, package, extracted.obb, step)
+                report.method = "pm install-create/write/commit"
+                return _finish_ok(adb, report, remotes[-1] if remotes else None, step)
+        step(
+            "ГУ показала «is not auth, install failed» (код -118) на сплитах XAPK. "
+            "Старую панель Hub не снимал.",
+            100,
+        )
+        return report
+
+    log_blob = " ".join(report.log).lower()
+    if _is_older_sdk(log_blob):
+        _explain_older_sdk(step)
+        return report
+    if _is_missing_manifest(log_blob):
+        _explain_missing_manifest(step)
+        return report
+    step("pm install сплитов не прошёл. adb root на Feiyu не трогаю — он рвёт USB.", 100)
+    return report
+
+
+def _sign_bundle_splits(
+    adb: Adb,
+    splits: list[BundleSplit],
+    package: str | None,
+    step: Progress,
+    serial: int | None = None,
+) -> tuple[int | None, list[BundleSplit], list[int]]:
+    if not splits:
+        return serial, [], []
+    remaining: list[int] = []
+    if serial is None:
+        used_serial, signed_first, _method, remaining = _sign_for_hu(
+            adb, splits[0].path, package, step
+        )
+    else:
+        used_serial, signed_first, _method = _sign_with_serial(
+            adb, splits[0].path, serial, step, retry=True
+        )
+    store = ensure_keystore(serial=used_serial)
+    signed = [
+        BundleSplit(path=signed_first, name=splits[0].name, size=signed_first.stat().st_size)
+    ]
+    for split in splits[1:]:
+        path, method = sign_apk_with_method(split.path, keystore=store, adb_binary=adb.binary)
+        signed.append(BundleSplit(path=path, name=split.name, size=path.stat().st_size))
+        step(f"подписан сплит {split.name} ({method}): {path.name}", 25)
+    return used_serial, signed, remaining
+
+
+def _session_install(
+    adb: Adb, splits: list[BundleSplit], step: Progress, package: str | None = None
+) -> tuple[CommandResult, list[str]]:
+    total = sum(item.size or (item.path.stat().st_size if item.path.exists() else 0) for item in splits)
+    step(
+        f"Шаг 2/5: сессия pm install-create на {len(splits)} сплитов "
+        f"({total} байт). adb install-multiple на Feiyu не вызываю.",
+        35,
+    )
+    create_cmd = f"pm install-create {PM_INSTALL_FLAGS} -S {total}"
+    step(f"выполняю {create_cmd}", 40)
+    created = adb.shell(create_cmd, timeout=15)
+    step(
+        f"{create_cmd} code={created.code} stdout={created.stdout.strip()!r} "
+        f"stderr={created.stderr.strip()!r}",
+        42,
+    )
+    if adb_target_gone(created):
+        return created, []
+    session = parse_install_session(merged_output(created))
+    if not session:
+        step("pm install-create не вернул session id.", 45)
+        return CommandResult(False, created.stdout, created.stderr, created.code or 1, []), []
+
+    remotes: list[str] = []
+    try:
+        for index, split in enumerate(splits):
+            remote = f"/data/local/tmp/hub-{session}-{index}.apk"
+            step(f"push сплит {split.name} → {remote}", 45)
+            pushed = adb.push(split.path, remote, timeout=_transfer_timeout(split.path))
+            step(
+                f"push code={pushed.code} stdout={pushed.stdout.strip()!r} "
+                f"stderr={pushed.stderr.strip()!r}",
+                50,
+            )
+            if adb_target_gone(pushed) or not pushed.ok or "error" in (pushed.stdout + pushed.stderr).lower():
+                adb.shell(f"pm install-abandon {session}", timeout=8)
+                return pushed, remotes
+            remotes.append(remote)
+            adb.shell(f"chmod 644 {remote}", timeout=8)
+            size = split.size or split.path.stat().st_size
+            write_cmd = f"pm install-write -S {size} {session} {split.name} {remote}"
+            step(f"выполняю {write_cmd}", 60)
+            written = adb.shell(write_cmd, timeout=_pm_timeout(split.path))
+            step(
+                f"{write_cmd} code={written.code} stdout={written.stdout.strip()!r} "
+                f"stderr={written.stderr.strip()!r}",
+                65,
+            )
+            write_blob = merged_output(written).lower()
+            if adb_target_gone(written) or "failure" in write_blob or "error" in write_blob:
+                adb.shell(f"pm install-abandon {session}", timeout=8)
+                return written, remotes
+        commit_cmd = f"pm install-commit {session}"
+        step(f"выполняю {commit_cmd}", 68)
+        commit_timeout = min(180, max(45, 30 + total // (2 * 1024 * 1024)))
+        committed = adb.shell(commit_cmd, timeout=commit_timeout)
+        step(
+            f"{commit_cmd} code={committed.code} stdout={committed.stdout.strip()!r} "
+            f"stderr={committed.stderr.strip()!r}",
+            70,
+        )
+        if adb_target_gone(committed):
+            return committed, remotes
+        if not _ok_install(committed) and (
+            committed.code == 124 or "timeout" in (committed.stderr or "").lower()
+        ):
+            step("pm install-commit не ответил вовремя — проверяю pm path.", 72)
+            if _confirm_installed(adb, package, step):
+                committed = CommandResult(
+                    True, "Success", "confirmed via pm path after timeout", 0, []
+                )
+                step(f"пакет {package} уже в pm path — установка сплитов прошла.", 74)
+        if not _ok_install(committed):
+            commit_blob = merged_output(committed).lower()
+            if committed.code == 0 and "failure" not in commit_blob and "error" not in commit_blob:
+                if not package or _confirm_installed(adb, package, step, attempts=2):
+                    committed = CommandResult(True, "Success", "session commit", 0, [])
+            if not _ok_install(committed):
+                adb.shell(f"pm install-abandon {session}", timeout=8)
+        return committed, remotes
+    except Exception:
+        adb.shell(f"pm install-abandon {session}", timeout=8)
+        raise
+
+
+def _install_obb(adb: Adb, package: str | None, files: list[Path], step: Progress) -> None:
+    if not files or not package:
+        return
+    folder = f"/sdcard/Android/obb/{package}"
+    step(f"копирую OBB в {folder}", 80)
+    adb.shell(f"mkdir -p {folder}", timeout=8)
+    for item in files:
+        remote = f"{folder}/{item.name}"
+        pushed = adb.push(item, remote, timeout=_transfer_timeout(item, minimum=20))
+        step(
+            f"obb {item.name} code={pushed.code} stdout={pushed.stdout.strip()!r} "
+            f"stderr={pushed.stderr.strip()!r}",
+            82,
+        )
 
 
 def merged_output(result: CommandResult) -> str:
@@ -1345,6 +1701,9 @@ def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | N
 def apk_package_name(apk: Path) -> str | None:
     """Best-effort package id from filename / catalog / binary manifest."""
     from hub.catalog import CATALOG
+
+    if is_apk_bundle(apk):
+        return bundle_package_name(apk)
 
     stem = apk.name.lower()
     if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise")):

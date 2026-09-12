@@ -15,6 +15,7 @@ from typing import Callable
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
 from hub.capture import Recorder, take_screenshot as capture_screenshot, CAPTURE_VERSION
 from hub.catalog import CATALOG, package_from_row, package_label
+from hub.bundle import PACKAGE_FILE_TYPES, PACKAGE_SUFFIXES
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
@@ -293,17 +294,20 @@ class HubApp:
         ttk.Label(page, text="Установка приложений", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="Любой APK будет переподписан под Changan (v1+v2) и поставлен через push + один pm install -r -t -g. "
+            text="APK и XAPK/APKM: Hub переподпишет под Changan и поставит через push + pm "
+            "(для XAPK — сессия install-create/write/commit, не adb install-multiple). "
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
             "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
             "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
             "Панель QuickBar — пакет com.changanhub.quickrise; старые "
-            "quickbar/quickkeep Hub только отключает, не удаляет. "
+            "quickbar/quickkeep Hub только отключает, не удаляет. Повторная установка панели "
+            "из новой папки Hub колонку не обновляет (другая подпись) — «Только запустить». "
+            "Свежий Chrome (SDK 29) на Feiyu Android 9 не встанет — Браузер Лайт уже на ГУ. "
             "Скрытие и сортировка — колонка справа из «Правая панель», не раздел «Плеер». "
             "В штатном меню Feiyu сторонних иконок нет — это нормально: открывайте из QuickBar "
             "справа или из «Приложения ГУ». "
             "adb install на Feiyu зависает — Hub его не вызывает. "
-            "«Открыть флешку» — APK с USB; Hub сам переподпишет под белый список ГУ.",
+            "«Открыть флешку» — APK/XAPK с USB; Hub сам переподпишет под белый список ГУ.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(6, 8))
         row = ttk.Frame(page)
@@ -312,7 +316,7 @@ class HubApp:
             row, text="Установить выбранный", style="Accent.TButton", command=self.install_selected
         )
         self.install_btn.pack(side=tk.LEFT)
-        ttk.Button(row, text="Выбрать APK…", command=self.pick_apk).pack(side=tk.LEFT, padx=8)
+        ttk.Button(row, text="Выбрать APK / XAPK…", command=self.pick_apk).pack(side=tk.LEFT, padx=8)
         self.usb_btn = ttk.Button(row, text="Открыть флешку", command=self.open_usb_stick)
         self.usb_btn.pack(side=tk.LEFT)
         ttk.Button(row, text="Папка apps/", command=self.open_apps_folder).pack(side=tk.LEFT, padx=8)
@@ -323,7 +327,7 @@ class HubApp:
         self.apk_list.bind("<Double-1>", lambda _e: self.install_selected())
         ttk.Label(
             page,
-            text="Кнопка всегда сверху списка. Двойной клик по APK тоже ставит его.",
+            text="Кнопка всегда сверху списка. Двойной клик по APK/XAPK тоже ставит его.",
             style="Muted.TLabel",
         ).pack(anchor="w")
         self.refresh_apk_list()
@@ -440,7 +444,8 @@ class HubApp:
                 "Рабочая панель: QuickBar · com.changanhub.quickrise. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep без скрытия и сортировки. "
-                "«Запустить выбранное» на них поднимает колонку справа."
+                "«Запустить выбранное» на них поднимает колонку справа. "
+                "Фильтр: пустое поле показывает все; «ch» прячет Яндекс."
             ),
             style="Muted.TLabel",
             wraplength=640,
@@ -777,9 +782,12 @@ class HubApp:
     def refresh_apk_list(self) -> None:
         self.apk_list.delete(0, tk.END)
         folder = bundled_apps()
-        files = sorted(folder.glob("*.apk"))
+        files: list[Path] = []
+        for suffix in PACKAGE_SUFFIXES:
+            files.extend(folder.glob(f"*{suffix}"))
+        files = sorted({item.resolve() for item in files}, key=lambda p: p.name.lower())
         if not files:
-            self.apk_list.insert(tk.END, f"(пусто) положите APK в {folder}")
+            self.apk_list.insert(tk.END, f"(пусто) положите APK/XAPK в {folder}")
             return
         for item in files:
             self.apk_list.insert(tk.END, str(item))
@@ -797,7 +805,7 @@ class HubApp:
 
     def pick_apk(self) -> None:
         self.journal.action("выбрать APK")
-        path = filedialog.askopenfilename(filetypes=[("APK", "*.apk")])
+        path = filedialog.askopenfilename(filetypes=PACKAGE_FILE_TYPES)
         if not path:
             self.journal.write("INFO", "ui", "выбор APK отменён")
             return
@@ -816,12 +824,12 @@ class HubApp:
                 self.apk_list.insert(tk.END, str(item))
             self.apk_list.selection_clear(0, tk.END)
             self.apk_list.selection_set(0)
-            self.log(f"Флешка: {len(apks)} APK. Hub переподпишет выбранный под белый список ГУ.")
+            self.log(f"Флешка: {len(apks)} APK/XAPK. Hub переподпишет выбранный под белый список ГУ.")
             return
         initial = str(roots[0]) if roots else None
         path = filedialog.askopenfilename(
-            title="APK на флешке",
-            filetypes=[("APK", "*.apk")],
+            title="APK / XAPK на флешке",
+            filetypes=PACKAGE_FILE_TYPES,
             initialdir=initial,
         )
         if not path:
@@ -835,7 +843,7 @@ class HubApp:
     def install_selected(self) -> None:
         selection = self.apk_list.curselection()
         if not selection:
-            messagebox.showinfo("Установка", "Выберите APK в списке")
+            messagebox.showinfo("Установка", "Выберите APK или XAPK в списке")
             return
         path = Path(self.apk_list.get(selection[0]))
         if not path.exists():
@@ -855,7 +863,11 @@ class HubApp:
                 for line in lines:
                     self.journal.write("INFO", "overlay", line)
                 joined = "\n".join(lines).lower()
-                self.log("Готово" if "пакет установлен" in joined else "Не установлено")
+                self.log(
+                    "Готово"
+                    if "пакет установлен" in joined or "панель на гу сохранена" in joined
+                    else "Не установлено"
+                )
                 if "not auth" in joined or "-118" in joined:
                     self._ui(
                         lambda: messagebox.showerror(

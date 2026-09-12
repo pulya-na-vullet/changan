@@ -91,6 +91,9 @@ def test_classify_install_steps() -> None:
     assert classify_install_step("выполняю pm install -r -t -g /data/local/tmp/x") == "pm"
     assert classify_install_step("выполняю pm uninstall com.changanhub.quickbar") == "pm"
     assert classify_install_step("запуск: am start -n com.changanhub.quickbar/.MainActivity") == "start"
+    assert classify_install_step("Это XAPK/APKM — распаковываю внутренние APK") == "sign"
+    assert classify_install_step("выполняю pm install-create -r -t -g -S 12") == "pm"
+    assert classify_install_step("выполняю pm install-write -S 4 42 base /data/local/tmp/x") == "pm"
 
 
 def test_install_reports_no_certificates(tmp_path: Path) -> None:
@@ -302,15 +305,63 @@ def test_install_keeps_auth_package_if_uninstall_blocked(tmp_path: Path) -> None
             )
         if command.startswith("pm uninstall"):
             return CommandResult(False, "", "is auth app, not allow delete!", 1, [])
+        if command.startswith("pm path"):
+            return CommandResult(
+                True, "package:/data/app/com.changanhub.quickdock/base.apk", "", 0, []
+            )
         return CommandResult(True, "", "", 0, [])
 
     fake.shell = shell  # type: ignore[method-assign]
-    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+    with (
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.time.sleep"),
+    ):
         report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickdock")
-    assert not report.ok
+    assert report.ok
+    assert report.method == "keep-existing"
     assert not any(cmd.startswith("pm uninstall --user 0") for cmd in fake.shells)
+    assert not any("pm disable-user --user 0 com.changanhub.quickdock" in cmd for cmd in fake.shells)
     assert sum(1 for cmd in fake.shells if cmd.startswith("pm install")) == 1
-    assert any("quickrise" in line.lower() or "not allow delete" in line.lower() for line in report.log)
+    assert any("не отключаю" in line.lower() or "уже стоит" in line.lower() for line in report.log)
+
+
+def test_install_does_not_disable_working_quickrise_on_self_mismatch(tmp_path: Path) -> None:
+    apk = tmp_path / "QuickBar.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quickrise signatures do not match previously installed version; ignoring!]",
+                "",
+                1,
+                [],
+            )
+        if command.startswith("pm path"):
+            return CommandResult(
+                True,
+                "package:/data/app/com.changanhub.quickrise-VsvJPSJO/base.apk",
+                "",
+                0,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with (
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.time.sleep"),
+    ):
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickrise")
+    assert report.ok
+    assert not any("pm disable-user --user 0 com.changanhub.quickrise" in cmd for cmd in fake.shells)
+    assert any("не отключаю" in line.lower() for line in report.log)
 
 
 def test_parse_package_paths() -> None:
@@ -966,6 +1017,8 @@ def test_remote_apk_basename_strips_cyrillic() -> None:
     assert name.isascii()
     assert name.endswith(".apk")
     assert "Кино" not in name
+    assert not name[0].isdigit()
+    assert name.startswith("hub-")
 
 
 def test_parse_main_activity_without_launcher_category() -> None:
@@ -978,5 +1031,60 @@ Activity Resolver Table:
         5b2e7ee ru.yandex.yandexnavi/.ui.splash.SplashActivity
 """
     assert parse_main_activity(dump) == "ru.yandex.yandexnavi/.ui.splash.SplashActivity"
+
+
+def test_install_explains_older_sdk(tmp_path: Path) -> None:
+    apk = tmp_path / "com.android.chrome.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "Failure [INSTALL_FAILED_OLDER_SDK: Requires newer sdk version #29 (current version is #28)]",
+                "",
+                1,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True, package="com.android.chrome")
+    assert not report.ok
+    assert any("sdk 28" in line.lower() or "android 9" in line.lower() for line in report.log)
+    assert any("браузер лайт" in line.lower() for line in report.log)
+
+
+def test_install_explains_missing_manifest_container(tmp_path: Path) -> None:
+    apk = tmp_path / "demo.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(
+                False,
+                "",
+                "Error: Failed to parse APK file\nCaused by: java.io.FileNotFoundException: AndroidManifest.xml",
+                255,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
+        report = install_apk(fake, apk, already_signed=True)
+    assert not report.ok
+    assert any("xapk" in line.lower() for line in report.log)
 
 

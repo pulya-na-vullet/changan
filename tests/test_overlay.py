@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from hub.overlay import (
     LEGACY_PACKAGE,
@@ -7,6 +8,7 @@ from hub.overlay import (
     PERSIST_SHELL,
     disable_user_package,
     grant_overlay,
+    install_overlay,
     remove_overlay,
     start_overlay,
 )
@@ -397,6 +399,33 @@ def test_launch_overlay_target_uses_working_package() -> None:
     assert launch_overlay_target("com.changanhub.quickkeep") == PACKAGE
     assert launch_overlay_target("com.changanhub.quicklane") == PACKAGE
     assert launch_overlay_target("mobi.zona") is None
+
+
+def test_install_overlay_keeps_working_package_on_failed_update(tmp_path: Path) -> None:
+    from hub.adb import CommandResult
+    from hub.installer import InstallReport
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        fake.shells.append(command)
+        if command.startswith("pm path"):
+            return CommandResult(True, f"package:/data/app/{PACKAGE}/base.apk", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    apk = tmp_path / "QuickBar.apk"
+    apk.write_bytes(b"apk")
+    report = InstallReport(ok=False, signed_apk=apk, method="", log=["pm fail"], package=PACKAGE)
+    with (
+        patch("hub.overlay.install_apk", return_value=report),
+        patch("hub.overlay.overlay_apk", return_value=apk),
+    ):
+        lines = install_overlay(fake)
+    joined = "\n".join(lines)
+    assert "сохранена" in joined.lower()
+    assert "Пакет НЕ установлен" not in joined
+    assert any(cmd.startswith(f"pm enable --user 0 {PACKAGE}") for cmd in fake.shells)
 
 
 def test_disable_overlay_never_uninstalls() -> None:
