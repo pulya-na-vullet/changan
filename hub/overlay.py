@@ -263,7 +263,10 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
     lines += start_overlay(adb, progress=progress)
     if progress:
         progress("Готово. Ищите зелёную колонку СПРАВА, не иконку в меню.", 100)
-    lines.append("Панель — зелёная колонка СПРАВА поверх экрана, не пункт в меню приложений.")
+    lines.append(
+        "В штатном меню Feiyu иконки панели нет. Ищите зелёную колонку СПРАВА "
+        "и сторонние приложения в ней, не в «установленных» Iflytek."
+    )
     lines.append(
         "Старые com.changanhub.quickbar / quickdock / quicklane / quickkeep Feiyu не даёт "
         "удалить (auth, not allow delete) — Hub их отключает и ставит новую "

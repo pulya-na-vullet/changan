@@ -141,7 +141,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.7"' in mf
+    assert 'android:versionName="1.3.8"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -183,6 +183,8 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "com.changanhub.quickdock" in overlay
     assert "com.changanhub.quicklane" in overlay
     assert "com.changanhub.quickkeep" in overlay
+    assert "getInstalledApplications" in overlay
+    assert "launchIntentFallback" in overlay
     assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
     assert "ACTION_KEEPALIVE" in overlay
     assert "getService" in overlay

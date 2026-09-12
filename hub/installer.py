@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from hub.adb import Adb, CommandResult
+from hub.adb import Adb, CommandResult, _no_adb_target
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
@@ -29,6 +30,7 @@ REMOTE_CANDIDATES = (
 # Same logs: every flag combo returned the same pm result. Keep the one that
 # actually talks to PackageManager (`-g` grants runtime perms on first install).
 PM_INSTALL_FLAGS = "-r -t -g"
+MAX_SIDELOAD_PROBE = 12 * 1024 * 1024
 
 _INCOMPATIBLE_PKG = re.compile(r"Package ([A-Za-z0-9._]+) signatures", re.I)
 
@@ -160,6 +162,51 @@ def _ok_install(result: CommandResult) -> bool:
     return False
 
 
+def adb_target_gone(result: CommandResult) -> bool:
+    return _no_adb_target(f"{result.stdout or ''}\n{result.stderr or ''}")
+
+
+def _transfer_timeout(path: Path, minimum: int = 40) -> int:
+    size = path.stat().st_size if path.exists() else 0
+    mb = max(1, size // (1024 * 1024))
+    return min(180, max(minimum, 20 + mb))
+
+
+def _pm_timeout(path: Path) -> int:
+    size = path.stat().st_size if path.exists() else 0
+    mb = size // (1024 * 1024)
+    return min(180, max(45, 30 + mb // 2))
+
+
+def _remote_apk_basename(signed: Path, package: str | None) -> str:
+    base = package or signed.stem
+    ascii_name = "".join(
+        ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in base
+    )
+    ascii_name = re.sub(r"_+", "_", ascii_name).strip("._") or "app"
+    if not ascii_name.lower().endswith(".apk"):
+        ascii_name += ".apk"
+    return ascii_name[:120]
+
+
+def _confirm_installed(adb: Adb, package: str | None, step: Progress, attempts: int = 10) -> bool:
+    if not package:
+        return False
+    for index in range(attempts):
+        result = adb.shell(f"pm path {package}", timeout=10)
+        if adb_target_gone(result):
+            return False
+        if "package:" in merged_output(result):
+            return True
+        if index + 1 < attempts:
+            time.sleep(3)
+            step(
+                f"жду появления {package} в pm path ({index + 1}/{attempts})…",
+                72,
+            )
+    return False
+
+
 def install_apk(
     adb: Adb,
     apk: Path,
@@ -197,7 +244,7 @@ def install_apk(
         if "package:" in merged_output(present):
             adb.shell(f"pm enable --user 0 {package}", timeout=8)
 
-    result, remote_apk = _push_and_pm(adb, signed, step)
+    result, remote_apk = _push_and_pm(adb, signed, step, package=package)
     if remote_apk is None:
         return report
     blob = merged_output(result)
@@ -229,7 +276,9 @@ def install_apk(
                     73,
                 )
                 if _ok_uninstall(gone):
-                    result, remote_apk = _push_and_pm(adb, signed, step, start_pct=74)
+                    result, remote_apk = _push_and_pm(
+                        adb, signed, step, start_pct=74, package=package
+                    )
                     if remote_apk is None:
                         return report
                 else:
@@ -262,7 +311,7 @@ def install_apk(
                     adb, apk, fresh, step, retry=True
                 )
                 report.signed_apk = signed
-                result, remote_apk = _push_and_pm(adb, signed, step)
+                result, remote_apk = _push_and_pm(adb, signed, step, package=package)
                 if remote_apk is None:
                     return report
                 if _ok_install(result):
@@ -276,6 +325,15 @@ def install_apk(
         )
         return report
 
+    if "extract native libraries" in blob or "install_failed_invalid_apk" in blob:
+        step(
+            "APK с native .so Feiyu не распаковала (extract native libraries). "
+            "Ставьте исходный файл (не *-changan.apk) этой сборкой Hub — подпись "
+            "сохраняет несжатые библиотеки.",
+            100,
+        )
+        return report
+
     step("pm install не прошёл. adb root на Feiyu не трогаю — он рвёт USB.", 100)
     return report
 
@@ -283,7 +341,10 @@ def install_apk(
 def _after_install(adb: Adb, report: InstallReport) -> None:
     for result in adb.clear_launcher_cache():
         report.add(result.text or result.stderr or "ok")
-    report.add("Иконки в штатном меню Feiyu может не быть — это нормально.")
+    report.add(
+        "В штатном меню Feiyu сторонней иконки не будет — это нормально. "
+        "Откройте приложение из зелёной колонки QuickBar справа или из «Приложения ГУ»."
+    )
 
 
 def _finish_ok(
@@ -362,15 +423,16 @@ def _sign_for_hu(
         )
         hu_serial = installed_serial
         candidates = [installed_serial]
+    elif cached:
+        step(
+            f"сохранённый serial ГУ {device or '?'} 0x{cached:x} — им и подписываю, "
+            "без повторного скачивания Яндекса/whitelist.",
+            8,
+        )
+        hu_serial = cached
+        candidates = [cached]
     else:
         discovered = discover_hu_signer_candidates(adb, step)
-        if cached:
-            step(
-                f"сохранённый serial ГУ {device or '?'} 0x{cached:x} — пробую его, "
-                "затем boot-ext/Vecentek.",
-                8,
-            )
-            candidates.append(cached)
         for item in discovered:
             if item not in candidates:
                 candidates.append(item)
@@ -457,18 +519,23 @@ def _next_auth_serials(
 
 
 def _push_and_pm(
-    adb: Adb, signed: Path, step: Progress, start_pct: int = 35
+    adb: Adb, signed: Path, step: Progress, start_pct: int = 35, package: str | None = None
 ) -> tuple[CommandResult, str | None]:
     step("Шаг 2/5: копирую APK на ГУ (push). adb install пропускаю — на Feiyu он зависает.", start_pct)
     remote_apk = None
+    remote_name = _remote_apk_basename(signed, package)
+    push_timeout = _transfer_timeout(signed)
     for folder in REMOTE_CANDIDATES:
-        remote = f"{folder}/{signed.name.replace(' ', '_')}"
+        remote = f"{folder}/{remote_name}"
         step(f"push → {remote}", min(start_pct + 5, 45))
-        pushed = adb.push(signed, remote, timeout=40)
+        pushed = adb.push(signed, remote, timeout=push_timeout)
         step(
             f"push code={pushed.code} stdout={pushed.stdout.strip()!r} stderr={pushed.stderr.strip()!r}",
             min(start_pct + 10, 45),
         )
+        if adb_target_gone(pushed):
+            step("ГУ отвалилась от USB. Верните ADB-режим (USB切换 → ADB模式).", 45)
+            return CommandResult(False, pushed.stdout, pushed.stderr, pushed.code, []), None
         if pushed.ok and "error" not in (pushed.stdout + pushed.stderr).lower() and pushed.code != 124:
             remote_apk = remote
             break
@@ -478,11 +545,24 @@ def _push_and_pm(
     step("Шаг 3/5: pm install на ГУ…", 60)
     cmd = f"pm install {PM_INSTALL_FLAGS} {remote_apk}"
     step(f"выполняю {cmd}", 65)
-    result = adb.shell(cmd, timeout=25)
+    result = adb.shell(cmd, timeout=_pm_timeout(signed))
     step(
         f"{cmd} code={result.code} stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}",
         70,
     )
+    if adb_target_gone(result):
+        return result, remote_apk
+    if not _ok_install(result) and (
+        result.code == 124 or "timeout" in (result.stderr or "").lower()
+    ):
+        step(
+            "pm install не ответил вовремя — проверяю, не встал ли пакет сам "
+            "(большие APK на Feiyu так делают).",
+            72,
+        )
+        if _confirm_installed(adb, package, step):
+            result = CommandResult(True, "Success", "confirmed via pm path after timeout", 0, [])
+            step(f"пакет {package} уже в pm path — установка прошла.", 74)
     return result, remote_apk
 
 
@@ -499,7 +579,34 @@ def discover_package_signer_serial(
         remote = _code_path_from_dumpsys(adb, package)
     if not remote:
         return None
+    size = _remote_size(adb, remote)
+    if size < 0:
+        return None
+    if size > MAX_SIDELOAD_PROBE:
+        if step:
+            step(
+                f"не качаю {package} ({size} байт) ради serial — слишком большой APK.",
+                8,
+            )
+        return None
     return _serial_from_remote_apk(adb, package, remote, step)
+
+
+def _remote_size(adb: Adb, path: str) -> int:
+    quoted = path.replace("'", "'\\''")
+    result = adb.shell(f"stat -c %s '{quoted}'", timeout=8)
+    if adb_target_gone(result):
+        return -1
+    for token in merged_output(result).replace(",", " ").split():
+        if token.isdigit() and int(token) > 32:
+            return int(token)
+    result = adb.shell(f"ls -l '{quoted}'", timeout=8)
+    if adb_target_gone(result):
+        return -1
+    for token in merged_output(result).split():
+        if token.isdigit() and int(token) > 32:
+            return int(token)
+    return 0
 
 
 def _serial_from_remote_apk(
@@ -507,10 +614,22 @@ def _serial_from_remote_apk(
 ) -> int | None:
     from hub.paths import app_data
 
+    size = _remote_size(adb, remote)
+    if size < 0:
+        return None
+    if size > MAX_SIDELOAD_PROBE:
+        if step:
+            step(
+                f"не качаю {package} ({size} байт) ради serial — слишком большой APK.",
+                8,
+            )
+        return None
     probe_dir = app_data() / "probe"
     probe_dir.mkdir(parents=True, exist_ok=True)
     local = probe_dir / f"{package.split('.')[-1]}.apk"
     pulled = adb.raw(["pull", remote, str(local)], timeout=40)
+    if adb_target_gone(pulled):
+        return None
     if not pulled.ok or not local.exists() or local.stat().st_size < 64:
         return None
     try:
@@ -547,8 +666,16 @@ def _code_path_from_dumpsys(adb: Adb, package: str) -> str:
 
 def _all_package_paths(adb: Adb, step: Progress | None = None) -> dict[str, str]:
     result = adb.shell("pm list packages -f", timeout=25)
+    if adb_target_gone(result):
+        if step:
+            step("ГУ нет в ADB (device not found).", 6)
+        return {}
     mapping = parse_package_paths(merged_output(result))
     extra = adb.shell("pm list packages -3 -f", timeout=15)
+    if adb_target_gone(extra):
+        if step:
+            step("ГУ отвалилась при pm list -3.", 6)
+        return mapping
     mapping.update(parse_package_paths(merged_output(extra)))
     if step:
         step(f"пакетов на ГУ: {len(mapping)}", 6)
@@ -1001,6 +1128,10 @@ def _serials_from_manager(
                 step(f"читаю белый список: {remote}", 7)
         if not reused:
             pulled = adb.raw(["pull", remote, str(local)], timeout=timeout)
+            if adb_target_gone(pulled):
+                if step:
+                    step("ГУ отключилась — белый список дальше не читаю.", 7)
+                break
             if not pulled.ok or not local.exists() or local.stat().st_size < _min_probe_size(remote):
                 if step:
                     step(
@@ -1104,6 +1235,12 @@ def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> lis
     if step:
         step("Снимаю serial со сторонних приложений и Vecentek этой ГУ.", 6)
     mapping = _all_package_paths(adb, step)
+    if not mapping:
+        ping = adb.shell("getprop ro.product.model", timeout=8)
+        if adb_target_gone(ping):
+            if step:
+                step("ГУ отвалилась от USB. Верните ADB-режим, не ставьте APK вхолостую.", 7)
+            return []
     sideload = {
         pkg: path
         for pkg, path in mapping.items()
@@ -1180,6 +1317,10 @@ def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
     found: list[str] = []
     for folder, take_all in folders:
         listed = adb.shell(f"ls {folder}", timeout=8)
+        if adb_target_gone(listed):
+            if step:
+                step("ГУ отключилась — whitelist не читаю.", 7)
+            return found
         names = _ls_names(listed)
         if step and names and "No such" not in (listed.stdout or "") and "No such" not in (listed.stderr or ""):
             step(f"ls {folder}: " + " ".join(names[:16]), 7)
@@ -1222,6 +1363,35 @@ def apk_package_name(apk: Path) -> str | None:
         wide = item.package.encode("utf-16-le")
         if wide and wide in raw:
             return item.package
+    cleaned = apk.stem
+    while cleaned.lower().endswith("-changan"):
+        cleaned = cleaned[: -len("-changan")]
+    if re.fullmatch(r"[A-Za-z][\w]*(?:\.[A-Za-z][\w]*){2,}", cleaned) and not re.search(
+        r"\d{3,}", cleaned
+    ):
+        return cleaned
+    return _package_from_manifest(raw)
+
+
+def _package_from_manifest(raw: bytes) -> str | None:
+    if not raw:
+        return None
+    text = raw.decode("utf-16-le", errors="ignore")
+    found = re.findall(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){2,}", text)
+    skip = (
+        "android.permission",
+        "android.intent",
+        "android.hardware",
+        "android.os",
+        "com.android.internal",
+    )
+    for item in found:
+        low = item.lower()
+        if any(low.startswith(prefix) for prefix in skip):
+            continue
+        if "permission" in low or "intent" in low or "hardware" in low:
+            continue
+        return item
     return None
 
 

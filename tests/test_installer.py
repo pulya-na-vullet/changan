@@ -835,4 +835,148 @@ def test_install_tries_remaining_serials_without_rediscover(tmp_path: Path) -> N
     assert any("следующие serial" in line.lower() or "повторная" in line.lower() for line in report.log)
 
 
+def test_pm_timeout_counts_as_success_if_package_appears(tmp_path: Path) -> None:
+    apk = tmp_path / "com.android.chrome.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            return CommandResult(False, "", "timeout after 45s", 124, [])
+        if command.startswith("pm path com.android.chrome"):
+            return CommandResult(
+                True,
+                "package:/data/app/com.android.chrome-abc/base.apk",
+                "",
+                0,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    with patch("hub.installer.time.sleep"):
+        report = install_apk(fake, apk, already_signed=True, package="com.android.chrome")
+    assert report.ok
+    assert any("pm path" in line.lower() or "уже в pm path" in line.lower() for line in report.log)
+    assert any("штатном меню" in line.lower() for line in report.log)
+
+
+def test_cached_serial_skips_full_discover(tmp_path: Path) -> None:
+    apk = tmp_path / "browser.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    fake.serial = "AHFPF6643S69270176"
+
+    def discover(_adb, _step=None):
+        raise AssertionError("cached serial must skip Vecentek/Yandex rediscover")
+
+    with (
+        patch("hub.paths.app_data", return_value=tmp_path),
+        patch("hub.installer.load_cached_hu_serial", return_value=0xD42599C0446BDAFC),
+        patch("hub.installer.discover_hu_signer_candidates", side_effect=discover),
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.save_cached_hu_serial"),
+        patch("hub.installer.apk_certificate_serials", return_value=[0xD42599C0446BDAFC]),
+    ):
+        report = install_apk(fake, apk, already_signed=False, package="com.yandex.browser.lite")
+    assert report.ok
+    assert any("сохранённый serial" in line.lower() for line in report.log)
+
+
+def test_skip_huge_sideload_apk_when_reading_serial(tmp_path: Path) -> None:
+    from hub.installer import discover_hu_signer_candidates
+    from hub.signer import CHANGAN_SERIAL
+
+    fake = FakeAdb()
+    pulls: list[str] = []
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm list packages"):
+            return CommandResult(
+                True,
+                "package:/data/app/ru.yandex.yandexnavi-x/base.apk=ru.yandex.yandexnavi\n"
+                "package:/system/app/VecentekApp/VecentekApp.apk=com.vecentek.decoreapp\n",
+                "",
+                0,
+                [],
+            )
+        if command.startswith("stat -c"):
+            if "yandexnavi" in command:
+                return CommandResult(True, "361710366", "", 0, [])
+            return CommandResult(True, "325347", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            pulls.append(args[1])
+            dest = Path(args[2])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"PK\x03\x04not-an-apk")
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    with patch("hub.paths.app_data", return_value=tmp_path):
+        candidates = discover_hu_signer_candidates(fake, lambda m, p: notes.append(m))
+    assert not any("yandexnavi" in item for item in pulls)
+    assert any("слишком большой" in line for line in notes)
+    assert CHANGAN_SERIAL in candidates
+
+
+def test_discover_stops_when_device_gone() -> None:
+    from hub.installer import discover_hu_signer_candidates
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        return CommandResult(
+            False,
+            "",
+            "adb.exe: device 'AHFPF6643S69270176' not found",
+            1,
+            [],
+        )
+
+    fake.shell = shell  # type: ignore[method-assign]
+    notes: list[str] = []
+    assert discover_hu_signer_candidates(fake, lambda m, p: notes.append(m)) == []
+    assert any("отвалилась" in line.lower() or "device not found" in line.lower() for line in notes)
+
+
+def test_apk_package_name_from_filename() -> None:
+    from hub.installer import apk_package_name
+
+    assert apk_package_name(Path("com.android.chrome.apk")) == "com.android.chrome"
+    assert apk_package_name(Path("com.android.chrome-changan.apk")) == "com.android.chrome"
+
+
+def test_remote_apk_basename_strips_cyrillic() -> None:
+    from hub.installer import _remote_apk_basename
+
+    name = _remote_apk_basename(Path("Кинопоиск_2.266.0_APKPure-changan.apk"), None)
+    assert name.isascii()
+    assert name.endswith(".apk")
+    assert "Кино" not in name
+
+
+def test_parse_main_activity_without_launcher_category() -> None:
+    from hub.adb import parse_main_activity
+
+    dump = """
+Activity Resolver Table:
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        5b2e7ee ru.yandex.yandexnavi/.ui.splash.SplashActivity
+"""
+    assert parse_main_activity(dump) == "ru.yandex.yandexnavi/.ui.splash.SplashActivity"
+
 
