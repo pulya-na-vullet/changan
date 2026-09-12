@@ -334,11 +334,11 @@ def test_hu_serial_cache_is_per_device(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("hub.paths.app_data", lambda: tmp_path)
     from hub.installer import load_cached_hu_serial, save_cached_hu_serial
 
-    save_cached_hu_serial(0x111, "AHFPF_OWNER")
-    save_cached_hu_serial(0x222, "AHFPF_RUS")
+    save_cached_hu_serial(0xA1B2C3D4E5F60718, "AHFPF_OWNER")
+    save_cached_hu_serial(0xB2C3D4E5F607189A, "AHFPF_RUS")
     (tmp_path / "certs" / "hu_serial.txt").write_text("0xddb66eefd98476f3", encoding="utf-8")
-    assert load_cached_hu_serial("AHFPF_OWNER") == 0x111
-    assert load_cached_hu_serial("AHFPF_RUS") == 0x222
+    assert load_cached_hu_serial("AHFPF_OWNER") == 0xA1B2C3D4E5F60718
+    assert load_cached_hu_serial("AHFPF_RUS") == 0xB2C3D4E5F607189A
     assert load_cached_hu_serial("OTHER") is None
     assert load_cached_hu_serial(None) is None
 
@@ -456,13 +456,17 @@ def test_extract_embedded_serials_finds_cookbook_and_other() -> None:
 
 
 def test_plausible_serial_works_without_bit_count() -> None:
-    from hub.installer import _plausible_serial
+    from hub.installer import _plausible_opcode_serial, _plausible_serial
     from hub.signer import CHANGAN_SERIAL
 
     assert _plausible_serial(CHANGAN_SERIAL)
     assert _plausible_serial(0xA1B2C3D4E5F60718)
     assert not _plausible_serial(0x123456789ABCDEF)
     assert not _plausible_serial(0x20746F6E20736920)
+    assert not _plausible_serial(0x332D1B7402760001)
+    assert _plausible_opcode_serial(CHANGAN_SERIAL)
+    assert not _plausible_opcode_serial(0x332D1B7402760001)
+    assert not _plausible_opcode_serial(0xA190001566F0A19)
 
 
 def _fake_dex(*chunks: bytes) -> bytes:
@@ -479,7 +483,7 @@ def test_dex_const_wide_and_array_data_serials() -> None:
 
     serial = 0xA1B2C3D4E5F60718
     insn = bytes([0x18, 0x00]) + serial.to_bytes(8, "little")
-    blob = _fake_dex(insn, b"is not auth")
+    blob = _fake_dex(insn)  # obfuscated Vecentek has no "not auth" string
     assert serial in dex_const_wide_literals(blob)
     assert serial in extract_embedded_serials(blob)
 
@@ -489,6 +493,13 @@ def test_dex_const_wide_and_array_data_serials() -> None:
     dex = _fake_dex(array)
     assert other in dex_array_data_longs(dex)
     assert other in extract_embedded_serials(dex)
+
+    cdex_header = bytearray(64)
+    cdex_header[0:8] = b"cdex001\x00"
+    cdex_payload = bytes([0x18, 0x00]) + serial.to_bytes(8, "little")
+    cdex_header[32:36] = (64 + len(cdex_payload)).to_bytes(4, "little")
+    cdex = bytes(cdex_header) + cdex_payload
+    assert serial in dex_const_wide_literals(cdex)
 
 
 def test_embedded_serials_in_apk(tmp_path: Path) -> None:
@@ -507,6 +518,8 @@ def test_cached_junk_serial_is_ignored(tmp_path, monkeypatch) -> None:
     from hub.installer import load_cached_hu_serial, save_cached_hu_serial
 
     save_cached_hu_serial(0x123456789ABCDEF, "AHFPF_RUS")
+    assert load_cached_hu_serial("AHFPF_RUS") is None
+    save_cached_hu_serial(0x332D1B7402760001, "AHFPF_RUS")
     assert load_cached_hu_serial("AHFPF_RUS") is None
     save_cached_hu_serial(0xA1B2C3D4E5F60718, "AHFPF_RUS")
     assert load_cached_hu_serial("AHFPF_RUS") == 0xA1B2C3D4E5F60718
@@ -551,7 +564,62 @@ def test_discover_uses_vecentek_when_no_sideload(tmp_path: Path) -> None:
     assert CHANGAN_SERIAL in candidates
     assert 0xFEDCBA9876543210 not in candidates
     assert any("vecentek" in line.lower() for line in notes)
-    assert candidates[0] in (0xA1B2C3D4E5F60718, CHANGAN_SERIAL)
+    assert candidates[0] == 0xA1B2C3D4E5F60718
+    assert candidates[-1] == CHANGAN_SERIAL
+
+
+def test_discover_boot_ext_const_wide_skips_services_junk(tmp_path: Path) -> None:
+    from hub.installer import discover_hu_signer_candidates
+    from hub.signer import CHANGAN_SERIAL
+
+    serial = 0xA1B2C3D4E5F60718
+    services_noise = 0xB2C3D4E5F607189A
+    vecentek = tmp_path / "VecentekApp.apk"
+    with zipfile.ZipFile(vecentek, "w") as zf:
+        zf.writestr("classes.dex", _fake_dex())
+        zf.writestr("AndroidManifest.xml", b"mf")
+    boot_ext = _fake_dex(bytes([0x18, 0x00]) + serial.to_bytes(8, "little"))
+    services = _fake_dex(bytes([0x18, 0x00]) + services_noise.to_bytes(8, "little"))
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm list packages"):
+            return CommandResult(
+                True,
+                "package:/system/app/VecentekApp/VecentekApp.apk=com.vecentek.decoreapp\n",
+                "",
+                0,
+                [],
+            )
+        if command.startswith("pm path"):
+            raise AssertionError("do not probe missing sideload apps")
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            remote, dest = args[1], Path(args[2])
+            if remote.endswith("VecentekApp.apk"):
+                dest.write_bytes(vecentek.read_bytes())
+            elif remote.endswith("boot-ext.vdex"):
+                dest.write_bytes(boot_ext)
+            elif remote.endswith("services.jar"):
+                dest.write_bytes(services)
+            else:
+                dest.write_bytes(b"x" * 128)
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    with patch("hub.paths.app_data", return_value=tmp_path):
+        candidates = discover_hu_signer_candidates(fake, lambda m, p: notes.append(m))
+    assert candidates[0] == serial
+    assert services_noise not in candidates
+    assert CHANGAN_SERIAL == candidates[-1]
+    assert any("const-wide" in line and "0xa1b2c3d4e5f60718" in line.lower() for line in notes)
+    assert any("не беру" in line for line in notes)
 
 
 def test_manager_scan_continues_if_one_file_raises(tmp_path: Path) -> None:
@@ -589,13 +657,21 @@ def test_manager_scan_continues_if_one_file_raises(tmp_path: Path) -> None:
     assert any("не разобрал" in line for line in notes)
 
 
-def test_whitelist_extra_paths_keep_services_skip_am() -> None:
+def test_whitelist_extra_paths_keep_boot_ext_skip_am() -> None:
     from hub.installer import MANAGER_PATHS, _whitelist_extra_paths
 
     fake = FakeAdb()
 
     def shell(command: str, timeout: int = 60) -> CommandResult:
         fake.shells.append(command)
+        if command == "ls /system/framework/arm64":
+            return CommandResult(
+                True,
+                "boot-ext.vdex\nboot-ext.oat\nboot.vdex\nboot-framework.vdex\n",
+                "",
+                0,
+                [],
+            )
         if command == "ls /system/framework/oat/arm64":
             return CommandResult(
                 True,
@@ -611,10 +687,13 @@ def test_whitelist_extra_paths_keep_services_skip_am() -> None:
     fake.shell = shell  # type: ignore[method-assign]
     paths = _whitelist_extra_paths(fake)
     joined = " ".join(paths)
-    assert any(item.endswith("services.vdex") for item in MANAGER_PATHS)
+    assert any(item.endswith("boot-ext.vdex") for item in MANAGER_PATHS)
     assert "am.odex" not in joined
+    assert "am.vdex" not in joined
     assert "bmgr.vdex" not in joined
-    assert "wutong-cert.xml" in joined
+    assert "services.vdex" not in joined
+    assert "boot.vdex" not in joined
+    assert "boot-framework.vdex" not in joined
 
 
 def test_install_tries_remaining_serials_without_rediscover(tmp_path: Path) -> None:

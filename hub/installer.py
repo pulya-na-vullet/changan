@@ -53,16 +53,16 @@ PROBE_PACKAGES = (
     "ru.rutube.app",
 )
 
-# Official RU / overlay firmware often has zero /data/app packages. The
-# whitelist serial is baked into Vecentek + services.jar, not a sideloaded APK.
+# Official RU / overlay firmware often has zero /data/app packages.
+# Feiyu CertificateManager lives in boot-ext.vdex (CS75PLUS/Lamore), not in
+# the obfuscated Vecentek APK and not in AOSP services.jar help text.
 MANAGER_PATHS = (
     "/system/app/VecentekApp/VecentekApp.apk",
+    "/system/framework/arm64/boot-ext.vdex",
     "/system/framework/services.jar",
-    "/system/framework/oat/arm64/services.vdex",
-    "/system/framework/oat/arm64/services.odex",
-    "/system/etc/IncallPackageConfig.xml",
 )
-MANAGER_HINTS = ("vecentek", "certificatemanager", "wutong")
+MANAGER_HINTS = ("vecentek", "boot-ext", "certificatemanager", "wutong")
+WHITELIST_HINTS = ("vecentek", "boot-ext", "certificatemanager", "wutong")
 _HEX16 = re.compile(rb"(?<![0-9a-fA-F])([0-9a-fA-F]{16})(?![0-9a-fA-F])")
 _AUTH_NEEDLES = (
     b"not auth",
@@ -248,7 +248,7 @@ def install_apk(
         step(
             "ГУ показала «is not auth, install failed» (код -118). Это отказ белого "
             "списка Feiyu при установке, не при удалении. Старую панель Hub не снимал. "
-            "Файлы Vecentek/services/vdex — в data\\probe, пришлите их вместе с журналом.",
+            "Файлы VecentekApp.apk и boot-ext.vdex — в data\\probe, пришлите их с журналом.",
             100,
         )
         return report
@@ -325,7 +325,11 @@ def _sign_for_hu(
     if package and package not in OVERLAY_PACKAGES:
         installed_serial = discover_package_signer_serial(adb, package, step)
     device = getattr(adb, "serial", None)
-    hu_serial = None if ignore_cache else load_cached_hu_serial(device)
+    cached = None if ignore_cache else load_cached_hu_serial(device)
+    # Cookbook is the default guess; russified images already rejected it (-118).
+    # Do not skip boot-ext/Vecentek because a previous run cached the guide serial.
+    if cached == CHANGAN_SERIAL:
+        cached = None
     candidates: list[int] = []
     if installed_serial:
         step(
@@ -335,20 +339,21 @@ def _sign_for_hu(
         )
         hu_serial = installed_serial
         candidates = [installed_serial]
-    elif hu_serial:
-        step(
-            f"Беру сохранённый serial ГУ {device or '?'} 0x{hu_serial:x} "
-            "(без скачивания приложений).",
-            8,
-        )
-        candidates = [hu_serial]
     else:
-        candidates = discover_hu_signer_candidates(adb, step)
-        if candidates:
-            hu_serial = candidates[0]
-            save_cached_hu_serial(hu_serial, device)
-        else:
-            hu_serial = None
+        discovered = discover_hu_signer_candidates(adb, step)
+        if cached:
+            step(
+                f"сохранённый serial ГУ {device or '?'} 0x{cached:x} — пробую его, "
+                "затем boot-ext/Vecentek.",
+                8,
+            )
+            candidates.append(cached)
+        for item in discovered:
+            if item not in candidates:
+                candidates.append(item)
+        if CHANGAN_SERIAL in candidates:
+            candidates = [item for item in candidates if item != CHANGAN_SERIAL] + [CHANGAN_SERIAL]
+        hu_serial = candidates[0] if candidates else None
     serial = hu_serial or CHANGAN_SERIAL
     if hu_serial and hu_serial != CHANGAN_SERIAL:
         step(
@@ -388,7 +393,7 @@ def _sign_with_serial(
     return serial, signed, method
 
 
-MAX_SERIAL_RETRIES = 5
+MAX_SERIAL_RETRIES = 8
 
 
 def _next_auth_serials(
@@ -409,7 +414,7 @@ def _next_auth_serials(
         )
         return ordered[:MAX_SERIAL_RETRIES]
     step(
-        "Белый список этой ГУ другой. Снимаю serial из Vecentek/services.jar "
+        "Белый список этой ГУ другой. Снимаю serial из boot-ext.vdex/Vecentek "
         "и сторонних APK этой машины, без кэша.",
         72,
     )
@@ -422,7 +427,7 @@ def _next_auth_serials(
     if not ordered:
         step(
             "Другой serial на этой ГУ не нашёл — гайд Feiyu отвергла, сторонних APK нет. "
-            "Смотрите VecentekApp / services.jar / vdex в data\\probe.",
+            "Смотрите VecentekApp.apk и boot-ext.vdex в data\\probe.",
             80,
         )
     return ordered[:MAX_SERIAL_RETRIES]
@@ -589,6 +594,8 @@ def _plausible_serial(value: int) -> bool:
     pairs = tuple(raw[i : i + 2] for i in range(0, 8, 2))
     if len(set(pairs)) <= 1:
         return False
+    if (value & 0xFFFF) == 1:
+        return False
     bits = bin(value).count("1")
     if bits < 16 or bits > 48:
         return False
@@ -599,21 +606,33 @@ def _plausible_serial(value: int) -> bool:
     return True
 
 
+def _plausible_opcode_serial(value: int) -> bool:
+    """Stricter than hex strings: DEX debug ids often end in 0001 and contain 0x00."""
+    if not _plausible_serial(value):
+        return False
+    raw = value.to_bytes(8, "little")
+    if raw.count(0):
+        return False
+    return True
+
+
 def _dex_blobs(data: bytes) -> list[bytes]:
+    """DEX and compact DEX (cdex) inside APK/VDEX. boot-ext.vdex uses both."""
     blobs: list[bytes] = []
-    start = 0
-    while True:
-        index = data.find(b"dex\n", start)
-        if index < 0:
-            break
-        file_size = 0
-        if index + 36 <= len(data):
-            file_size = int.from_bytes(data[index + 32 : index + 36], "little")
-        if 64 <= file_size <= len(data) - index:
-            blobs.append(data[index : index + file_size])
-            start = index + max(file_size, 4)
-        else:
-            start = index + 4
+    for magic in (b"dex\n", b"cdex"):
+        start = 0
+        while True:
+            index = data.find(magic, start)
+            if index < 0:
+                break
+            file_size = 0
+            if index + 36 <= len(data):
+                file_size = int.from_bytes(data[index + 32 : index + 36], "little")
+            if 64 <= file_size <= len(data) - index:
+                blobs.append(data[index : index + file_size])
+                start = index + max(file_size, 4)
+            else:
+                start = index + 4
     return blobs
 
 
@@ -630,7 +649,7 @@ def dex_const_wide_literals(data: bytes) -> list[int]:
         while offset + 10 <= len(blob):
             if blob[offset] == 0x18:
                 value = int.from_bytes(blob[offset + 2 : offset + 10], "little")
-                if _plausible_serial(value) and value not in found:
+                if _plausible_opcode_serial(value) and value not in found:
                     found.append(value)
                 offset += 10
                 continue
@@ -649,17 +668,30 @@ def dex_array_data_longs(data: bytes) -> list[int]:
                 continue
             width = int.from_bytes(blob[offset + 2 : offset + 4], "little")
             size = int.from_bytes(blob[offset + 4 : offset + 8], "little")
+            start = offset + 8
+            if width == 1 and size == 8:
+                end = start + 8
+                if end > len(blob):
+                    offset += 2
+                    continue
+                for value in (
+                    int.from_bytes(blob[start:end], "big"),
+                    int.from_bytes(blob[start:end], "little"),
+                ):
+                    if _plausible_opcode_serial(value) and value not in found:
+                        found.append(value)
+                offset = end if end % 2 == 0 else end + 1
+                continue
             if width != 8 or size < 1 or size > 64:
                 offset += 2
                 continue
-            start = offset + 8
             end = start + size * 8
             if end > len(blob):
                 offset += 2
                 continue
             for index in range(size):
                 value = int.from_bytes(blob[start + index * 8 : start + (index + 1) * 8], "little")
-                if _plausible_serial(value) and value not in found:
+                if _plausible_opcode_serial(value) and value not in found:
                     found.append(value)
             offset = end if end % 2 == 0 else end + 1
     return found
@@ -686,6 +718,8 @@ def extract_hex_serials(data: bytes) -> list[int]:
         add(CHANGAN_SERIAL)
     for match in _HEX16.finditer(data):
         add(int(match.group(1), 16))
+    for match in re.finditer(rb"0x([0-9a-fA-F]{8,16})", data):
+        add(int(match.group(1), 16))
     return found
 
 
@@ -694,11 +728,31 @@ def extract_opcode_serials(data: bytes) -> list[int]:
     for value in dex_array_data_longs(data):
         if value not in found:
             found.append(value)
-    if _dex_has_auth(data):
-        for value in dex_const_wide_literals(data):
-            if value not in found:
-                found.append(value)
+    for value in dex_const_wide_literals(data):
+        if value not in found:
+            found.append(value)
     return found
+
+
+def dex_const_wide_raw(data: bytes, limit: int = 16) -> list[int]:
+    """Unfiltered const-wide >32bit, for the journal when filters empty the list."""
+    found: list[int] = []
+    for blob in _dex_blobs(data):
+        offset = 0
+        while offset + 10 <= len(blob) and len(found) < limit:
+            if blob[offset] == 0x18:
+                value = int.from_bytes(blob[offset + 2 : offset + 10], "little")
+                if value > 0xFFFFFFFF:
+                    found.append(value)
+                offset += 10
+                continue
+            offset += 2
+    return found
+
+
+def _is_whitelist_blob(pkg: str, remote: str) -> bool:
+    blob = f"{pkg} {remote}".lower()
+    return any(hint in blob for hint in WHITELIST_HINTS)
 
 
 def extract_embedded_serials(data: bytes) -> list[int]:
@@ -715,7 +769,8 @@ def _interesting_strings(data: bytes, limit: int = 16) -> list[str]:
     for raw in re.findall(rb"[\x20-\x7e]{6,80}", data):
         low = raw.lower()
         if any(needle.lower() in low for needle in _AUTH_NEEDLES) or any(
-            token in low for token in (b"serial", b"cert", b"vecentek", b"whitelist")
+            token in low
+            for token in (b"serial", b"cert", b"vecentek", b"whitelist", b"install", b"fail")
         ):
             text = raw.decode("ascii", "replace")
             if text not in found:
@@ -859,12 +914,34 @@ def _serials_from_manager(
                     text = ""
                 if text:
                     step(f"{pkg} xml: {' '.join(text.split())[:1200]}", 8)
+        take_opcodes = _is_whitelist_blob(pkg, remote)
+        if not take_opcodes:
+            try:
+                take_opcodes = _dex_has_auth(local.read_bytes())
+            except OSError:
+                take_opcodes = False
         for item in group_high:
             if item not in high:
                 high.append(item)
-        for item in group_low:
-            if item not in low and item not in high:
-                low.append(item)
+        if take_opcodes:
+            if step and group_low:
+                step(
+                    f"{pkg} const-wide: " + ", ".join(f"0x{item:x}" for item in group_low[:12]),
+                    8,
+                )
+            elif step:
+                raw_wide = dex_const_wide_raw(local.read_bytes())
+                if raw_wide:
+                    step(
+                        f"{pkg} const-wide сырые (фильтр отбросил): "
+                        + ", ".join(f"0x{item:x}" for item in raw_wide[:12]),
+                        8,
+                    )
+            for item in group_low:
+                if item not in low and item not in high:
+                    low.append(item)
+        elif step and group_low:
+            step(f"{pkg}: opcode serial из services не беру — это не boot-ext/Vecentek.", 8)
         # Keep probe copies for the next log. Do not unlink.
     return high, low
 
@@ -911,14 +988,10 @@ def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> lis
 
     high, low = _serials_from_manager(adb, mapping, step)
     ordered: list[int] = []
-    for item in third + high:
-        if item not in ordered:
+    for item in third + high + low[:8]:
+        if item != CHANGAN_SERIAL and item not in ordered:
             ordered.append(item)
-    if CHANGAN_SERIAL not in ordered:
-        ordered.append(CHANGAN_SERIAL)
-    for item in low[:4]:
-        if item not in ordered:
-            ordered.append(item)
+    ordered.append(CHANGAN_SERIAL)
     if step and ordered:
         step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in ordered[:8]), 8)
     return ordered
@@ -940,15 +1013,11 @@ def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
     folders = (
         ("/system/app/VecentekApp", True),
         ("/system/app/VecentekApp/oat/arm64", True),
-        ("/system/app/VecentekApp/lib/arm64", False),
-        ("/system/framework/oat/arm64", False),
-        ("/system/etc/security", False),
-        ("/system/etc", False),
-        ("/system/etc/permissions", False),
-        ("/system/etc/sysconfig", False),
+        ("/system/framework", False),
+        ("/system/framework/arm64", False),
     )
-    suffixes = (".vdex", ".odex", ".apk", ".jar", ".crt", ".cer", ".der", ".pem", ".xml")
-    hints = ("cert", "auth", "white", "vecentek", "wutong", "changan", "serial", "incall", "services")
+    suffixes = (".vdex", ".apk", ".jar")
+    hints = WHITELIST_HINTS
     found: list[str] = []
     for folder, take_all in folders:
         listed = adb.shell(f"ls {folder}", timeout=8)
@@ -1058,22 +1127,12 @@ def load_cached_hu_serial(device: str | None = None) -> int | None:
         return None
     if value <= 0:
         return None
-    if value in _JUNK_SERIALS or value in (0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF):
+    if not _plausible_serial(value):
         try:
             path.unlink()
         except OSError:
             pass
         return None
-    if value < (1 << 64):
-        raw = value.to_bytes(8, "little")
-        if all(0x20 <= byte < 0x7F for byte in raw) or all(
-            0x20 <= byte < 0x7F for byte in value.to_bytes(8, "big")
-        ):
-            try:
-                path.unlink()
-            except OSError:
-                pass
-            return None
     return value
 
 

@@ -858,8 +858,7 @@ class HubApp:
                         lambda: messagebox.showerror(
                             "ГУ отказала в установке",
                             "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                            "В журнале смотрите serial уже стоящих приложений и строку «Подписано».\n"
-                            "Пришлите logs\\hub.log, если снова отказ.",
+                            "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
                         )
                     )
                 return
@@ -870,8 +869,7 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "В журнале смотрите serial уже стоящих приложений и строку «Подписано».\n"
-                        "Пришлите logs\\hub.log, если снова отказ.",
+                        "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
                     )
                 )
 
@@ -896,8 +894,7 @@ class HubApp:
                         "ГУ отказала в установке",
                         "Окно 提示 «com.changanhub.quickbar is not auth, install failed!» — "
                         "белый список Feiyu (код -118).\n"
-                        "В журнале — serial приложений на ГУ и способ подписи. "
-                        "Пришлите logs\\hub.log, если отказ повторится.",
+                        "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
                     )
                 )
 
@@ -921,7 +918,7 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "Пришлите logs\\hub.log, если отказ повторится.",
+                        "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
                     )
                 )
 
