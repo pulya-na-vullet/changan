@@ -125,6 +125,55 @@ def test_shell_security_exception_does_not_retry() -> None:
     assert len(calls) == 1
 
 
+def test_shell_verify_success_nonzero_does_not_retry() -> None:
+    """Rus HU 2026-09-12: pm path returned code=1 + verify success, retry hung 10s."""
+    adb = object.__new__(Adb)
+    calls: list[tuple] = []
+
+    def fake_raw(args, timeout=45, input_text=None):
+        calls.append((tuple(args), input_text, timeout))
+        from hub.adb import CommandResult
+
+        return CommandResult(
+            False,
+            "",
+            "please input verify password: verify success!",
+            1,
+            args,
+        )
+
+    adb.raw = fake_raw  # type: ignore[method-assign]
+    adb.last_password_used = False
+    result = Adb.shell(adb, "pm path org.schabi.newpipe", timeout=10)
+    assert len(calls) == 1
+    assert not result.ok
+    assert result.code == 1
+
+
+def test_shell_keeps_package_path_on_stderr() -> None:
+    adb = object.__new__(Adb)
+    calls: list[tuple] = []
+
+    def fake_raw(args, timeout=45, input_text=None):
+        calls.append((tuple(args), input_text, timeout))
+        from hub.adb import CommandResult
+
+        return CommandResult(
+            False,
+            "",
+            "please input verify password: verify success!\npackage:/data/app/hack/base.apk\n",
+            1,
+            args,
+        )
+
+    adb.raw = fake_raw  # type: ignore[method-assign]
+    adb.last_password_used = False
+    result = Adb.shell(adb, "pm path ru.hackchan.launcher", timeout=10)
+    assert len(calls) == 1
+    assert "package:/data/app/hack/base.apk" in result.stderr
+    assert result.ok
+
+
 def test_journal_writes_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("hub.journal.logs_dir", lambda: tmp_path)
     journal = Journal()

@@ -260,6 +260,12 @@ class Adb:
             body = (stdout + "\n" + stderr).lower()
             if "not auth" in body or "install failed" in body or "failure [" in body:
                 return CommandResult(False, stdout, stderr, last.code, last.argv)
+            # Rus HU log 2026-09-12: `pm path` returns code=1 + verify success
+            # (missing package, or path on stderr). The next stdin variant hung
+            # 10s and Hub never read already-installed HackChan/Yandex APKs.
+            if verified:
+                ok = bool(stdout.strip()) or bool(stderr.strip()) or last.code == 0
+                return CommandResult(ok, stdout, stderr, last.code, last.argv)
             if asked and not verified and not stdout.strip():
                 continue
             ok = last.code == 0 or "success" in body or bool(stdout.strip())
@@ -321,9 +327,10 @@ class Adb:
 
     def package_path(self, package: str) -> str:
         result = self.shell(f"pm path {package}", timeout=15)
-        for line in result.stdout.splitlines():
-            if line.startswith("package:"):
-                return line.split(":", 1)[1].strip()
+        for stream in (result.stdout, result.stderr):
+            for line in stream.splitlines():
+                if line.strip().startswith("package:"):
+                    return line.split("package:", 1)[-1].strip()
         return ""
 
     def launch(self, package: str) -> CommandResult:

@@ -312,3 +312,124 @@ def test_install_keeps_auth_package_if_uninstall_blocked(tmp_path: Path) -> None
     assert sum(1 for cmd in fake.shells if cmd.startswith("pm install")) == 1
     assert any("quickrise" in line.lower() or "not allow delete" in line.lower() for line in report.log)
 
+
+def test_parse_package_paths() -> None:
+    from hub.installer import parse_package_paths, parse_pm_path
+
+    text = (
+        "please input verify password: verify success!\n"
+        "package:/data/app/~~x==/ru.hackchan.launcher-y/base.apk=ru.hackchan.launcher\n"
+        "package:/system/priv-app/Settings/Settings.apk=com.android.settings\n"
+    )
+    mapping = parse_package_paths(text)
+    assert mapping["ru.hackchan.launcher"].endswith("base.apk")
+    assert mapping["com.android.settings"].endswith("Settings.apk")
+    assert parse_pm_path("package:/data/app/foo.apk") == "/data/app/foo.apk"
+    assert parse_pm_path(
+        "please input verify password: verify success!\npackage:/data/app/foo.apk\n"
+    ) == "/data/app/foo.apk"
+
+
+def test_hu_serial_cache_is_per_device(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("hub.paths.app_data", lambda: tmp_path)
+    from hub.installer import load_cached_hu_serial, save_cached_hu_serial
+
+    save_cached_hu_serial(0x111, "AHFPF_OWNER")
+    save_cached_hu_serial(0x222, "AHFPF_RUS")
+    (tmp_path / "certs" / "hu_serial.txt").write_text("0xddb66eefd98476f3", encoding="utf-8")
+    assert load_cached_hu_serial("AHFPF_OWNER") == 0x111
+    assert load_cached_hu_serial("AHFPF_RUS") == 0x222
+    assert load_cached_hu_serial("OTHER") is None
+    assert load_cached_hu_serial(None) is None
+
+
+def test_discover_uses_third_party_list(tmp_path) -> None:
+    from hub.installer import discover_hu_signer_serial
+    from hub.signer import CHANGAN_SERIAL, sign_apk, ensure_keystore
+
+    apk = tmp_path / "hack.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+    store = ensure_keystore(tmp_path / "certs")
+    with patch("hub.signer.find_apksigner", return_value=None):
+        signed = sign_apk(apk, tmp_path / "hack-signed.apk", keystore=store)
+
+    fake = FakeAdb()
+    path_calls: list[str] = []
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm list packages"):
+            return CommandResult(
+                True,
+                "package:/data/app/hack/base.apk=ru.hackchan.launcher",
+                "",
+                0,
+                [],
+            )
+        if command.startswith("pm path"):
+            path_calls.append(command)
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            Path(args[2]).write_bytes(signed.read_bytes())
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    serial = discover_hu_signer_serial(fake, lambda m, p: notes.append(m))
+    assert serial == CHANGAN_SERIAL
+    assert not path_calls
+    assert any("hackchan" in line.lower() for line in notes)
+
+
+def test_install_resigns_on_118_when_hu_serial_differs(tmp_path) -> None:
+    from hub.signer import CHANGAN_SERIAL
+
+    apk = tmp_path / "QuickBar.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"mf")
+        zf.writestr("classes.dex", b"dex")
+
+    fake = FakeAdb()
+    fake.serial = "AHFPF6643S69270176"
+    installs = {"n": 0}
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command.startswith("pm install"):
+            installs["n"] += 1
+            if installs["n"] == 1:
+                return CommandResult(
+                    False,
+                    "Failure [-118: com.changanhub.quickrise is not auth,install failed!]",
+                    "please input verify password: verify success!",
+                    1,
+                    [],
+                )
+            return CommandResult(True, "Success", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    other = 0xABCDEF
+    with (
+        patch("hub.paths.app_data", return_value=tmp_path),
+        patch("hub.installer.load_cached_hu_serial", return_value=None),
+        patch("hub.installer.discover_hu_signer_serial", side_effect=[None, other]),
+        patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
+        patch("hub.installer.ensure_keystore") as ek,
+        patch("hub.installer.apk_certificate_serials", return_value=[CHANGAN_SERIAL]),
+        patch("hub.installer.save_cached_hu_serial"),
+    ):
+        report = install_apk(fake, apk, already_signed=False, package="com.changanhub.quickrise")
+    assert report.ok
+    assert installs["n"] == 2
+    serials = [call.kwargs.get("serial") for call in ek.call_args_list]
+    assert CHANGAN_SERIAL in serials
+    assert other in serials
+    assert any("повторная" in line.lower() or "другой" in line.lower() for line in report.log)
+
+
