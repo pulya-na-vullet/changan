@@ -1,11 +1,33 @@
 from pathlib import Path
 
+from app import project_root
+
 
 def test_app_py_exists() -> None:
     root = Path(__file__).resolve().parents[1]
     assert (root / "app.py").is_file()
     text = (root / "app.py").read_text(encoding="utf-8")
     assert "hub.gui" in text
+    assert "project_root" in text
+    assert (root / "hub" / "gui.py").is_file()
+
+
+def test_project_root_uses_nested_github_extract(tmp_path: Path) -> None:
+    inner = tmp_path / "changan-cursor-fix-rus-whitelist-serial-0bfc"
+    (inner / "hub").mkdir(parents=True)
+    (inner / "hub" / "gui.py").write_text("# gui\n", encoding="utf-8")
+    (inner / "app.py").write_text("#\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("# outer leftover\n", encoding="utf-8")
+    assert project_root(tmp_path) == inner.resolve()
+
+
+def test_project_root_prefers_current_folder(tmp_path: Path) -> None:
+    (tmp_path / "hub").mkdir()
+    (tmp_path / "hub" / "gui.py").write_text("# gui\n", encoding="utf-8")
+    nested = tmp_path / "nested"
+    (nested / "hub").mkdir(parents=True)
+    (nested / "hub" / "gui.py").write_text("# other\n", encoding="utf-8")
+    assert project_root(tmp_path) == tmp_path.resolve()
 
 
 def test_run_bat_starts_once() -> None:
