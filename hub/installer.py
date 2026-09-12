@@ -58,6 +58,9 @@ PROBE_PACKAGES = (
 MANAGER_PATHS = (
     "/system/app/VecentekApp/VecentekApp.apk",
     "/system/framework/services.jar",
+    "/system/framework/oat/arm64/services.vdex",
+    "/system/framework/oat/arm64/services.odex",
+    "/system/etc/IncallPackageConfig.xml",
 )
 MANAGER_HINTS = ("vecentek", "certificatemanager", "wutong")
 _HEX16 = re.compile(rb"(?<![0-9a-fA-F])([0-9a-fA-F]{16})(?![0-9a-fA-F])")
@@ -572,11 +575,26 @@ def _plausible_serial(value: int) -> bool:
     ):
         return False
     raw = value.to_bytes(8, "little")
+    if raw.count(0) >= 2:
+        return False
+    ascii_n = sum(1 for byte in raw if 0x20 <= byte < 0x7F)
+    if ascii_n >= 5:
+        return False
     if all(0x20 <= byte < 0x7F for byte in raw):
         return False
     if all(0x20 <= byte < 0x7F for byte in value.to_bytes(8, "big")):
         return False
-    if len(set(raw)) < 4:
+    if len(set(raw)) < 6:
+        return False
+    pairs = tuple(raw[i : i + 2] for i in range(0, 8, 2))
+    if len(set(pairs)) <= 1:
+        return False
+    bits = value.bit_count()
+    if bits < 16 or bits > 48:
+        return False
+    if (value & 0x0000FFFF0000FFFF) == 0:
+        return False
+    if (value & 0xFFFF0000FFFF0000) == 0:
         return False
     return True
 
@@ -595,15 +613,19 @@ def _dex_blobs(data: bytes) -> list[bytes]:
             blobs.append(data[index : index + file_size])
             start = index + max(file_size, 4)
         else:
-            blobs.append(data[index:])
             start = index + 4
     return blobs
+
+
+def _dex_has_auth(data: bytes) -> bool:
+    low = data.lower()
+    return any(needle.lower() in low for needle in _AUTH_NEEDLES) or b"certificatemanager" in low
 
 
 def dex_const_wide_literals(data: bytes) -> list[int]:
     """Dalvik ``const-wide`` (op 0x18) 64-bit literals from a DEX blob."""
     found: list[int] = []
-    for blob in _dex_blobs(data) or [data]:
+    for blob in _dex_blobs(data):
         offset = 0
         while offset + 10 <= len(blob):
             if blob[offset] == 0x18:
@@ -619,7 +641,7 @@ def dex_const_wide_literals(data: bytes) -> list[int]:
 def dex_array_data_longs(data: bytes) -> list[int]:
     """DEX ``array-data`` payloads with 8-byte elements (long[] whitelist)."""
     found: list[int] = []
-    for blob in _dex_blobs(data) or [data]:
+    for blob in _dex_blobs(data):
         offset = 0
         while offset + 16 <= len(blob):
             if int.from_bytes(blob[offset : offset + 2], "little") != 0x0300:
@@ -643,8 +665,8 @@ def dex_array_data_longs(data: bytes) -> list[int]:
     return found
 
 
-def extract_embedded_serials(data: bytes) -> list[int]:
-    """Whitelist serials baked into Vecentek/services, not the APK signing cert."""
+def extract_hex_serials(data: bytes) -> list[int]:
+    """Serials written as hex / cookbook bytes, not opcode false positives."""
     found: list[int] = []
 
     def add(value: int) -> None:
@@ -664,10 +686,27 @@ def extract_embedded_serials(data: bytes) -> list[int]:
         add(CHANGAN_SERIAL)
     for match in _HEX16.finditer(data):
         add(int(match.group(1), 16))
+    return found
+
+
+def extract_opcode_serials(data: bytes) -> list[int]:
+    found: list[int] = []
     for value in dex_array_data_longs(data):
-        add(value)
-    for value in dex_const_wide_literals(data):
-        add(value)
+        if value not in found:
+            found.append(value)
+    if _dex_has_auth(data):
+        for value in dex_const_wide_literals(data):
+            if value not in found:
+                found.append(value)
+    return found
+
+
+def extract_embedded_serials(data: bytes) -> list[int]:
+    """Whitelist serials baked into Vecentek/services, not the APK signing cert."""
+    found: list[int] = []
+    for value in extract_hex_serials(data) + extract_opcode_serials(data):
+        if value not in found:
+            found.append(value)
     return found
 
 
@@ -686,29 +725,35 @@ def _interesting_strings(data: bytes, limit: int = 16) -> list[str]:
     return found
 
 
-def embedded_serials_in_apk(apk: Path) -> list[int]:
-    found: list[int] = []
+def embedded_serial_groups(apk: Path) -> tuple[list[int], list[int]]:
+    high: list[int] = []
+    low: list[int] = []
 
-    def merge(values: list[int]) -> None:
+    def merge(target: list[int], values: list[int]) -> None:
         for value in values:
-            if value not in found and _plausible_serial(value):
-                found.append(value)
+            if value not in target and _plausible_serial(value):
+                target.append(value)
 
     try:
         whole = apk.read_bytes()
     except OSError:
-        return found
-    merge(extract_embedded_serials(whole))
+        return high, low
     try:
         with zipfile.ZipFile(apk) as zf:
+            merge(high, extract_hex_serials(whole))
             for name in zf.namelist():
                 lower = name.lower()
+                if lower.endswith((".xml", ".txt", ".json")):
+                    merge(high, extract_hex_serials(zf.read(name)))
+                    continue
                 if not lower.endswith(
-                    (".dex", ".jar", ".so", ".vdex", ".odex", ".cer", ".crt", ".der", ".pem")
+                    (".dex", ".jar", ".vdex", ".odex", ".cer", ".crt", ".der", ".pem")
                 ):
                     continue
                 blob = zf.read(name)
-                merge(extract_embedded_serials(blob))
+                merge(high, extract_hex_serials(blob))
+                if lower.endswith((".dex", ".vdex", ".odex", ".jar")):
+                    merge(low, extract_opcode_serials(blob))
                 if lower.endswith((".cer", ".crt", ".der", ".pem")):
                     try:
                         from cryptography import x509
@@ -718,11 +763,23 @@ def embedded_serials_in_apk(apk: Path) -> list[int]:
                             if b"BEGIN CERTIFICATE" in blob
                             else x509.load_der_x509_certificate(blob)
                         )
-                        merge([cert.serial_number])
+                        merge(high, [cert.serial_number])
                     except Exception:
                         pass
+            return high, low
     except zipfile.BadZipFile:
         pass
+    merge(high, extract_hex_serials(whole))
+    merge(low, extract_opcode_serials(whole))
+    return high, low
+
+
+def embedded_serials_in_apk(apk: Path) -> list[int]:
+    high, low = embedded_serial_groups(apk)
+    found = list(high)
+    for value in low:
+        if value not in found:
+            found.append(value)
     return found
 
 
@@ -745,8 +802,9 @@ def _manager_targets(mapping: dict[str, str], extra_paths: list[str] | None = No
 
 def _serials_from_manager(
     adb: Adb, mapping: dict[str, str], step: Progress | None = None
-) -> list[int]:
-    found: list[int] = []
+) -> tuple[list[int], list[int]]:
+    high: list[int] = []
+    low: list[int] = []
     extras = _whitelist_extra_paths(adb, step)
     for pkg, remote in _manager_targets(mapping, extras):
         timeout = 90 if remote.endswith((".jar", ".vdex", ".odex")) else 40
@@ -770,24 +828,40 @@ def _serials_from_manager(
                         7,
                     )
                 continue
-        serials = embedded_serials_in_apk(local)
+        group_high, group_low = embedded_serial_groups(local)
         if step:
-            shown = ", ".join(f"0x{item:x}" for item in serials[:6]) or "пусто"
+            shown = ", ".join(f"0x{item:x}" for item in (group_high + group_low)[:6]) or "пусто"
             step(f"{pkg}: вшитые serial {shown}", 8)
             try:
                 with zipfile.ZipFile(local) as zf:
-                    names = ", ".join(zf.namelist()[:12])
-                    step(f"{pkg} содержимое: {names}", 8)
+                    names = zf.namelist()
+                    dex_names = [name for name in names if name.lower().endswith((".dex", ".xml"))]
+                    step(f"{pkg} содержимое: " + ", ".join((dex_names or names)[:12]), 8)
+                    inner_hints: list[str] = []
+                    for name in names:
+                        if name.lower().endswith((".dex", ".xml")):
+                            inner_hints.extend(_interesting_strings(zf.read(name)))
+                    if inner_hints:
+                        step(f"{pkg} строки: " + " | ".join(inner_hints[:8]), 8)
             except zipfile.BadZipFile:
-                pass
-            hints = _interesting_strings(local.read_bytes())
-            if hints:
-                step(f"{pkg} строки: " + " | ".join(hints[:8]), 8)
-        for item in serials:
-            if item not in found:
-                found.append(item)
+                hints = _interesting_strings(local.read_bytes())
+                if hints:
+                    step(f"{pkg} строки: " + " | ".join(hints[:8]), 8)
+            if local.suffix.lower() == ".xml":
+                try:
+                    text = local.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    text = ""
+                if text:
+                    step(f"{pkg} xml: {' '.join(text.split())[:1200]}", 8)
+        for item in group_high:
+            if item not in high:
+                high.append(item)
+        for item in group_low:
+            if item not in low and item not in high:
+                low.append(item)
         # Keep probe copies for the next log. Do not unlink.
-    return found
+    return high, low
 
 
 def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> list[int]:
@@ -830,14 +904,16 @@ def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> lis
             step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in third[:6]), 8)
         return third
 
-    embedded = _serials_from_manager(adb, mapping, step)
-    other = [item for item in embedded if item != CHANGAN_SERIAL]
+    high, low = _serials_from_manager(adb, mapping, step)
     ordered: list[int] = []
-    for item in third + other:
+    for item in third + high:
         if item not in ordered:
             ordered.append(item)
     if CHANGAN_SERIAL not in ordered:
         ordered.append(CHANGAN_SERIAL)
+    for item in low[:4]:
+        if item not in ordered:
+            ordered.append(item)
     if step and ordered:
         step("кандидаты serial: " + ", ".join(f"0x{item:x}" for item in ordered[:8]), 8)
     return ordered
@@ -859,20 +935,20 @@ def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
     folders = (
         ("/system/app/VecentekApp", True),
         ("/system/app/VecentekApp/oat/arm64", True),
-        ("/system/app/VecentekApp/lib/arm64", True),
-        ("/system/app/VecentekApp/lib/arm64-v8a", True),
-        ("/system/framework/oat/arm64", True),
-        ("/system/framework/arm64", True),
+        ("/system/app/VecentekApp/lib/arm64", False),
+        ("/system/framework/oat/arm64", False),
         ("/system/etc/security", False),
         ("/system/etc", False),
+        ("/system/etc/permissions", False),
+        ("/system/etc/sysconfig", False),
     )
-    suffixes = (".vdex", ".odex", ".apk", ".jar", ".so", ".crt", ".cer", ".der", ".pem")
-    hints = ("cert", "auth", "white", "vecentek", "wutong", "changan", "serial")
+    suffixes = (".vdex", ".odex", ".apk", ".jar", ".crt", ".cer", ".der", ".pem", ".xml")
+    hints = ("cert", "auth", "white", "vecentek", "wutong", "changan", "serial", "incall", "services")
     found: list[str] = []
     for folder, take_all in folders:
         listed = adb.shell(f"ls {folder}", timeout=8)
         names = _ls_names(listed)
-        if step and names and "No such" not in (listed.stdout or ""):
+        if step and names and "No such" not in (listed.stdout or "") and "No such" not in (listed.stderr or ""):
             step(f"ls {folder}: " + " ".join(names[:16]), 7)
         for name in names:
             lower = name.lower()
@@ -883,7 +959,7 @@ def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
             path = f"{folder}/{name}"
             if path not in MANAGER_PATHS and path not in found:
                 found.append(path)
-    return found[:16]
+    return found[:12]
 
 
 def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:

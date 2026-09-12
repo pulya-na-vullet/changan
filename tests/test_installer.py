@@ -434,7 +434,7 @@ def test_install_resigns_on_118_when_hu_serial_differs(tmp_path) -> None:
 
 
 def test_extract_embedded_serials_finds_cookbook_and_other() -> None:
-    from hub.installer import extract_embedded_serials
+    from hub.installer import extract_embedded_serials, extract_hex_serials
     from hub.signer import CHANGAN_SERIAL
 
     blob = (
@@ -447,9 +447,21 @@ def test_extract_embedded_serials_finds_cookbook_and_other() -> None:
     found = extract_embedded_serials(blob)
     assert CHANGAN_SERIAL in found
     assert 0xAABBCCDDEEFF11 in found
+    assert 0xAABBCCDDEEFF11 in extract_hex_serials(blob)
     ascii_window = extract_embedded_serials(b"xx is not auth,install failed! yy")
     assert 0x20746F6E20736920 not in ascii_window
     assert 0x123456789ABCDEF not in extract_embedded_serials(b"0123456789abcdef placeholder")
+    noise = bytes([0x18, 0x00]) + (0xA1B2C3D4E5F60718).to_bytes(8, "little")
+    assert 0xA1B2C3D4E5F60718 not in extract_embedded_serials(noise)
+
+
+def _fake_dex(*chunks: bytes) -> bytes:
+    payload = b"".join(chunks)
+    header = bytearray(64)
+    header[0:8] = b"dex\n035\x00"
+    total = 64 + len(payload)
+    header[32:36] = total.to_bytes(4, "little")
+    return bytes(header) + payload
 
 
 def test_dex_const_wide_and_array_data_serials() -> None:
@@ -457,15 +469,16 @@ def test_dex_const_wide_and_array_data_serials() -> None:
 
     serial = 0xA1B2C3D4E5F60718
     insn = bytes([0x18, 0x00]) + serial.to_bytes(8, "little")
-    blob = b"dex\n" + b"\x00" * 28 + insn
+    blob = _fake_dex(insn, b"is not auth")
     assert serial in dex_const_wide_literals(blob)
     assert serial in extract_embedded_serials(blob)
 
     other = 0xB2C3D4E5F607189A
     array = (0x0300).to_bytes(2, "little") + (8).to_bytes(2, "little") + (1).to_bytes(4, "little")
     array += other.to_bytes(8, "little")
-    assert other in dex_array_data_longs(array)
-    assert other in extract_embedded_serials(array)
+    dex = _fake_dex(array)
+    assert other in dex_array_data_longs(dex)
+    assert other in extract_embedded_serials(dex)
 
 
 def test_embedded_serials_in_apk(tmp_path: Path) -> None:
@@ -473,10 +486,10 @@ def test_embedded_serials_in_apk(tmp_path: Path) -> None:
 
     apk = tmp_path / "vecentek.apk"
     with zipfile.ZipFile(apk, "w") as zf:
-        zf.writestr("classes.dex", b"xx not auth 0011223344556677 yy")
+        zf.writestr("classes.dex", b"xx not auth deadbeefcafebabe yy")
         zf.writestr("AndroidManifest.xml", b"mf")
     found = embedded_serials_in_apk(apk)
-    assert 0x11223344556677 in found
+    assert 0xDEADBEEFCAFEBABE in found
 
 
 def test_cached_junk_serial_is_ignored(tmp_path, monkeypatch) -> None:
@@ -528,6 +541,35 @@ def test_discover_uses_vecentek_when_no_sideload(tmp_path: Path) -> None:
     assert CHANGAN_SERIAL in candidates
     assert 0xFEDCBA9876543210 not in candidates
     assert any("vecentek" in line.lower() for line in notes)
+    assert candidates[0] in (0xA1B2C3D4E5F60718, CHANGAN_SERIAL)
+
+
+def test_whitelist_extra_paths_keep_services_skip_am() -> None:
+    from hub.installer import MANAGER_PATHS, _whitelist_extra_paths
+
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        fake.shells.append(command)
+        if command == "ls /system/framework/oat/arm64":
+            return CommandResult(
+                True,
+                "am.odex\nam.vdex\nservices.odex\nservices.vdex\nbmgr.vdex\n",
+                "",
+                0,
+                [],
+            )
+        if command == "ls /system/etc":
+            return CommandResult(True, "wutong-cert.xml\nhosts\n", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    paths = _whitelist_extra_paths(fake)
+    joined = " ".join(paths)
+    assert any(item.endswith("services.vdex") for item in MANAGER_PATHS)
+    assert "am.odex" not in joined
+    assert "bmgr.vdex" not in joined
+    assert "wutong-cert.xml" in joined
 
 
 def test_install_tries_remaining_serials_without_rediscover(tmp_path: Path) -> None:
