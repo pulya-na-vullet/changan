@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import zipfile
 from dataclasses import dataclass, field
@@ -54,15 +55,27 @@ PROBE_PACKAGES = (
 )
 
 # Official RU / overlay firmware often has zero /data/app packages.
-# Feiyu CertificateManager lives in boot-ext.vdex (CS75PLUS/Lamore), not in
-# the obfuscated Vecentek APK and not in AOSP services.jar help text.
+# Leosin CertificateManager compares the APK serial to a system cert
+# (Vecentek/publicKey.cert) and a package list in whitelist.json.
 MANAGER_PATHS = (
     "/system/app/VecentekApp/VecentekApp.apk",
+    "/system/framework/ext.jar",
     "/system/framework/arm64/boot-ext.vdex",
-    "/system/framework/services.jar",
 )
-MANAGER_HINTS = ("vecentek", "boot-ext", "certificatemanager", "wutong")
-WHITELIST_HINTS = ("vecentek", "boot-ext", "certificatemanager", "wutong")
+WHITELIST_FILE_PATHS = (
+    "/back_up/allow_uninstall/whitelist.json",
+    "/back_up/allow_uninstall/publicKey.cert",
+    "/system/back_up/allow_uninstall/whitelist.json",
+    "/system/back_up/allow_uninstall/publicKey.cert",
+    "/data/back_up/allow_uninstall/whitelist.json",
+    "/data/back_up/allow_uninstall/publicKey.cert",
+    "/sdcard/back_up/allow_uninstall/whitelist.json",
+    "/sdcard/back_up/allow_uninstall/publicKey.cert",
+    "/storage/emulated/0/back_up/allow_uninstall/whitelist.json",
+    "/storage/emulated/0/back_up/allow_uninstall/publicKey.cert",
+)
+MANAGER_HINTS = ("vecentek", "boot-ext", "certificatemanager", "wutong", "leosin")
+WHITELIST_HINTS = ("vecentek", "boot-ext", "certificatemanager", "wutong", "leosin", "ext.jar")
 _HEX16 = re.compile(rb"(?<![0-9a-fA-F])([0-9a-fA-F]{16})(?![0-9a-fA-F])")
 _AUTH_NEEDLES = (
     b"not auth",
@@ -71,6 +84,10 @@ _AUTH_NEEDLES = (
     b"install failed!",
     b"ddb66eefd98476f3",
     b"DDB66EEFD98476F3",
+    b"allow_uninstall",
+    b"getCertnum",
+    b"Leosin",
+    b"WHITE-LIST",
 )
 _JUNK_SERIALS = {
     0x0123456789ABCDEF,
@@ -235,7 +252,12 @@ def install_apk(
         return report
     if "not auth" in blob or "-118" in blob:
         if not already_signed:
-            for fresh in _next_auth_serials(adb, used_serial, remaining, step):
+            logcat_serials = _auth_logcat_serials(adb, step)
+            retry = list(remaining)
+            for item in logcat_serials:
+                if item != used_serial and item not in retry:
+                    retry.insert(0, item)
+            for fresh in _next_auth_serials(adb, used_serial, retry, step):
                 used_serial, signed, method = _sign_with_serial(
                     adb, apk, fresh, step, retry=True
                 )
@@ -248,7 +270,8 @@ def install_apk(
         step(
             "ГУ показала «is not auth, install failed» (код -118). Это отказ белого "
             "списка Feiyu при установке, не при удалении. Старую панель Hub не снимал. "
-            "Файлы VecentekApp.apk и boot-ext.vdex — в data\\probe, пришлите их с журналом.",
+            "Файлы VecentekApp.apk, boot-ext.vdex, whitelist.json и publicKey.cert — "
+            "в data\\probe, пришлите их с журналом.",
             100,
         )
         return report
@@ -427,7 +450,7 @@ def _next_auth_serials(
     if not ordered:
         step(
             "Другой serial на этой ГУ не нашёл — гайд Feiyu отвергла, сторонних APK нет. "
-            "Смотрите VecentekApp.apk и boot-ext.vdex в data\\probe.",
+            "Смотрите VecentekApp.apk, boot-ext.vdex, whitelist.json и publicKey.cert в data\\probe.",
             80,
         )
     return ordered[:MAX_SERIAL_RETRIES]
@@ -613,6 +636,8 @@ def _plausible_opcode_serial(value: int) -> bool:
     raw = value.to_bytes(8, "little")
     if raw.count(0):
         return False
+    if sum(1 for byte in raw if byte < 0x20) >= 3:
+        return False
     return True
 
 
@@ -755,6 +780,95 @@ def _is_whitelist_blob(pkg: str, remote: str) -> bool:
     return any(hint in blob for hint in WHITELIST_HINTS)
 
 
+def _take_opcodes(pkg: str, remote: str, data: bytes) -> bool:
+    blob = f"{pkg} {remote}".lower()
+    if "vecentek" in blob:
+        return False
+    if any(hint in blob for hint in ("boot-ext", "ext.jar", "certificatemanager")):
+        return True
+    return _dex_has_auth(data)
+
+
+def _probe_local(probe_dir: Path, remote: str) -> Path:
+    name = remote.strip("/").replace("/", "_") or "probe.bin"
+    return probe_dir / name[:180]
+
+
+def _min_probe_size(remote: str) -> int:
+    lower = remote.lower()
+    if lower.endswith((".json", ".cert", ".crt", ".cer", ".pem", ".txt", ".xml")):
+        return 8
+    return 64
+
+
+def _load_x509(data: bytes):
+    from cryptography import x509
+
+    if b"BEGIN CERTIFICATE" in data:
+        return x509.load_pem_x509_certificate(data)
+    return x509.load_der_x509_certificate(data)
+
+
+def cert_file_serials(path: Path) -> list[int]:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return []
+    try:
+        cert = _load_x509(data)
+    except Exception:
+        return []
+    serial = cert.serial_number
+    return [serial] if serial > 0 else []
+
+
+def serials_from_whitelist_json(data: bytes) -> list[int]:
+    found: list[int] = list(extract_hex_serials(data))
+    try:
+        obj = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return found
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+        elif isinstance(node, str):
+            for item in extract_hex_serials(node.encode("ascii", "replace")):
+                if item not in found:
+                    found.append(item)
+        elif isinstance(node, int) and node > 0 and node not in found:
+            found.append(node)
+
+    walk(obj)
+    return found
+
+
+def _auth_logcat_serials(adb: Adb, step: Progress | None = None) -> list[int]:
+    dumped = adb.shell("logcat -d -t 400 -s Leosin-CertificateM:D VecentekPMS:D", timeout=12)
+    blob = f"{dumped.stdout or ''}\n{dumped.stderr or ''}"
+    lines = [
+        line.strip()
+        for line in blob.splitlines()
+        if line.strip() and "password" not in line.lower()
+    ]
+    keep = [
+        line
+        for line in lines
+        if any(
+            token in line.lower()
+            for token in ("cert", "auth", "white", "serial", "leosin", "vecentek", "check")
+        )
+    ]
+    shown = keep[-16:] or lines[-8:]
+    if step and shown:
+        step("logcat auth: " + " | ".join(shown)[:1500], 74)
+    return extract_hex_serials(blob.encode("utf-8", "replace"))
+
+
 def extract_embedded_serials(data: bytes) -> list[int]:
     """Whitelist serials baked into Vecentek/services, not the APK signing cert."""
     found: list[int] = []
@@ -770,7 +884,18 @@ def _interesting_strings(data: bytes, limit: int = 16) -> list[str]:
         low = raw.lower()
         if any(needle.lower() in low for needle in _AUTH_NEEDLES) or any(
             token in low
-            for token in (b"serial", b"cert", b"vecentek", b"whitelist", b"install", b"fail")
+            for token in (
+                b"serial",
+                b"cert",
+                b"vecentek",
+                b"whitelist",
+                b"install",
+                b"fail",
+                b"leosin",
+                b"back_up",
+                b"allow_uninstall",
+                b"publickey",
+            )
         ):
             text = raw.decode("ascii", "replace")
             if text not in found:
@@ -802,14 +927,14 @@ def embedded_serial_groups(apk: Path) -> tuple[list[int], list[int]]:
                     merge(high, extract_hex_serials(zf.read(name)))
                     continue
                 if not lower.endswith(
-                    (".dex", ".jar", ".vdex", ".odex", ".cer", ".crt", ".der", ".pem")
+                    (".dex", ".jar", ".vdex", ".odex", ".cer", ".crt", ".der", ".pem", ".cert")
                 ):
                     continue
                 blob = zf.read(name)
                 merge(high, extract_hex_serials(blob))
                 if lower.endswith((".dex", ".vdex", ".odex", ".jar")):
                     merge(low, extract_opcode_serials(blob))
-                if lower.endswith((".cer", ".crt", ".der", ".pem")):
+                if lower.endswith((".cer", ".crt", ".der", ".pem", ".cert")):
                     try:
                         from cryptography import x509
 
@@ -847,7 +972,7 @@ def _manager_targets(mapping: dict[str, str], extra_paths: list[str] | None = No
             if path not in seen:
                 targets.append((pkg, path))
                 seen.add(path)
-    for path in list(MANAGER_PATHS) + list(extra_paths or []):
+    for path in list(MANAGER_PATHS) + list(WHITELIST_FILE_PATHS) + list(extra_paths or []):
         if path not in seen:
             name = path.rsplit("/", 1)[-1]
             targets.append((name, path))
@@ -867,8 +992,8 @@ def _serials_from_manager(
 
         probe_dir = app_data() / "probe"
         probe_dir.mkdir(parents=True, exist_ok=True)
-        local = probe_dir / remote.rsplit("/", 1)[-1]
-        reused = local.exists() and local.stat().st_size >= 64
+        local = _probe_local(probe_dir, remote)
+        reused = local.exists() and local.stat().st_size >= _min_probe_size(remote)
         if step:
             if reused:
                 step(f"уже скачан: {local.name} ({local.stat().st_size} байт)", 7)
@@ -876,7 +1001,7 @@ def _serials_from_manager(
                 step(f"читаю белый список: {remote}", 7)
         if not reused:
             pulled = adb.raw(["pull", remote, str(local)], timeout=timeout)
-            if not pulled.ok or not local.exists() or local.stat().st_size < 64:
+            if not pulled.ok or not local.exists() or local.stat().st_size < _min_probe_size(remote):
                 if step:
                     step(
                         f"не скачал {remote} code={pulled.code} err={pulled.stderr.strip()[:120]!r}",
@@ -889,17 +1014,47 @@ def _serials_from_manager(
             if step:
                 step(f"{pkg}: не разобрал ({type(exc).__name__}: {exc})", 8)
             continue
+        signing: list[int] = []
+        lower_remote = remote.lower()
+        try:
+            if lower_remote.endswith((".apk", ".jar")) or zipfile.is_zipfile(local):
+                signing = [item for item in apk_certificate_serials(local) if item > 0]
+        except Exception:
+            signing = []
+        if lower_remote.endswith((".cert", ".crt", ".cer", ".der", ".pem")):
+            for item in cert_file_serials(local):
+                if item not in signing:
+                    signing.append(item)
+        if lower_remote.endswith(".json"):
+            try:
+                text = local.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            if step and text:
+                step(f"{pkg} json: {' '.join(text.split())[:1500]}", 8)
+            for item in serials_from_whitelist_json(local.read_bytes()):
+                if item not in group_high:
+                    group_high.append(item)
         if step:
+            if signing:
+                step(
+                    f"{pkg} подпись APK/cert: " + ", ".join(f"0x{item:x}" for item in signing[:6]),
+                    8,
+                )
             shown = ", ".join(f"0x{item:x}" for item in (group_high + group_low)[:6]) or "пусто"
             step(f"{pkg}: вшитые serial {shown}", 8)
             try:
                 with zipfile.ZipFile(local) as zf:
                     names = zf.namelist()
-                    dex_names = [name for name in names if name.lower().endswith((".dex", ".xml"))]
+                    dex_names = [
+                        name
+                        for name in names
+                        if name.lower().endswith((".dex", ".xml", ".json", ".cert", ".rsa"))
+                    ]
                     step(f"{pkg} содержимое: " + ", ".join((dex_names or names)[:12]), 8)
                     inner_hints: list[str] = []
                     for name in names:
-                        if name.lower().endswith((".dex", ".xml")):
+                        if name.lower().endswith((".dex", ".xml", ".json")):
                             inner_hints.extend(_interesting_strings(zf.read(name)))
                     if inner_hints:
                         step(f"{pkg} строки: " + " | ".join(inner_hints[:8]), 8)
@@ -914,13 +1069,11 @@ def _serials_from_manager(
                     text = ""
                 if text:
                     step(f"{pkg} xml: {' '.join(text.split())[:1200]}", 8)
-        take_opcodes = _is_whitelist_blob(pkg, remote)
-        if not take_opcodes:
-            try:
-                take_opcodes = _dex_has_auth(local.read_bytes())
-            except OSError:
-                take_opcodes = False
-        for item in group_high:
+        try:
+            take_opcodes = _take_opcodes(pkg, remote, local.read_bytes())
+        except OSError:
+            take_opcodes = False
+        for item in signing + group_high:
             if item not in high:
                 high.append(item)
         if take_opcodes:
@@ -941,7 +1094,7 @@ def _serials_from_manager(
                 if item not in low and item not in high:
                     low.append(item)
         elif step and group_low:
-            step(f"{pkg}: opcode serial из services не беру — это не boot-ext/Vecentek.", 8)
+            step(f"{pkg}: opcode serial из {pkg} не беру.", 8)
         # Keep probe copies for the next log. Do not unlink.
     return high, low
 
@@ -961,7 +1114,7 @@ def discover_hu_signer_candidates(adb: Adb, step: Progress | None = None) -> lis
         extra = "…" if len(sideload) > 12 else ""
         step(f"сторонние APK на этой ГУ: {shown}{extra}", 7)
     elif step:
-        step("сторонних APK нет (русификация в /system). Читаю Vecentek.", 7)
+        step("сторонних APK нет (русификация в /system). Читаю подпись Vecentek и whitelist.json.", 7)
         ident = adb.shell("getprop ro.build.display.id", timeout=8)
         build = (ident.stdout or "").strip().splitlines()
         build_id = next((line.strip() for line in reversed(build) if line.strip() and "password" not in line.lower()), "")
@@ -1015,8 +1168,14 @@ def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
         ("/system/app/VecentekApp/oat/arm64", True),
         ("/system/framework", False),
         ("/system/framework/arm64", False),
+        ("/back_up/allow_uninstall", True),
+        ("/system/back_up/allow_uninstall", True),
+        ("/data/back_up/allow_uninstall", True),
+        ("/sdcard/back_up/allow_uninstall", True),
+        ("/storage/emulated/0/back_up/allow_uninstall", True),
+        ("/data/deCOREIDPS", True),
     )
-    suffixes = (".vdex", ".apk", ".jar")
+    suffixes = (".vdex", ".apk", ".jar", ".json", ".cert", ".crt", ".pem", ".der", ".txt")
     hints = WHITELIST_HINTS
     found: list[str] = []
     for folder, take_all in folders:
@@ -1031,9 +1190,9 @@ def _whitelist_extra_paths(adb: Adb, step: Progress | None = None) -> list[str]:
             if not take_all and not any(hint in lower for hint in hints):
                 continue
             path = f"{folder}/{name}"
-            if path not in MANAGER_PATHS and path not in found:
+            if path not in MANAGER_PATHS and path not in WHITELIST_FILE_PATHS and path not in found:
                 found.append(path)
-    return found[:12]
+    return found[:16]
 
 
 def discover_hu_signer_serial(adb: Adb, step: Progress | None = None) -> int | None:

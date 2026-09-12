@@ -858,7 +858,7 @@ class HubApp:
                         lambda: messagebox.showerror(
                             "ГУ отказала в установке",
                             "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                            "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
+                            "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                         )
                     )
                 return
@@ -869,7 +869,7 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                     )
                 )
 
@@ -894,7 +894,7 @@ class HubApp:
                         "ГУ отказала в установке",
                         "Окно 提示 «com.changanhub.quickbar is not auth, install failed!» — "
                         "белый список Feiyu (код -118).\n"
-                        "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                     )
                 )
 
@@ -918,7 +918,7 @@ class HubApp:
                     lambda: messagebox.showerror(
                         "ГУ отказала в установке",
                         "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
-                        "Пришлите logs\\hub.log и data\\probe\\boot-ext.vdex (и VecentekApp.apk).",
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
                     )
                 )
 

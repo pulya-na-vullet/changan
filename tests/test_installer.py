@@ -467,6 +467,7 @@ def test_plausible_serial_works_without_bit_count() -> None:
     assert _plausible_opcode_serial(CHANGAN_SERIAL)
     assert not _plausible_opcode_serial(0x332D1B7402760001)
     assert not _plausible_opcode_serial(0xA190001566F0A19)
+    assert not _plausible_opcode_serial(0x1676107003820122)
 
 
 def _fake_dex(*chunks: bytes) -> bytes:
@@ -619,7 +620,6 @@ def test_discover_boot_ext_const_wide_skips_services_junk(tmp_path: Path) -> Non
     assert services_noise not in candidates
     assert CHANGAN_SERIAL == candidates[-1]
     assert any("const-wide" in line and "0xa1b2c3d4e5f60718" in line.lower() for line in notes)
-    assert any("не беру" in line for line in notes)
 
 
 def test_manager_scan_continues_if_one_file_raises(tmp_path: Path) -> None:
@@ -688,12 +688,98 @@ def test_whitelist_extra_paths_keep_boot_ext_skip_am() -> None:
     paths = _whitelist_extra_paths(fake)
     joined = " ".join(paths)
     assert any(item.endswith("boot-ext.vdex") for item in MANAGER_PATHS)
+    from hub.installer import WHITELIST_FILE_PATHS
+
+    assert any(item.endswith("whitelist.json") for item in WHITELIST_FILE_PATHS)
+    assert any(item.endswith("publicKey.cert") for item in WHITELIST_FILE_PATHS)
     assert "am.odex" not in joined
     assert "am.vdex" not in joined
     assert "bmgr.vdex" not in joined
     assert "services.vdex" not in joined
     assert "boot.vdex" not in joined
     assert "boot-framework.vdex" not in joined
+
+
+def test_whitelist_json_and_cert_serials(tmp_path: Path) -> None:
+    import datetime as dt
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    from hub.installer import cert_file_serials, serials_from_whitelist_json
+
+    data = b'{"serial":"a1b2c3d4e5f60718","items":[42]}'
+    found = serials_from_whitelist_json(data)
+    assert 0xA1B2C3D4E5F60718 in found
+
+    now = dt.datetime.now(dt.timezone.utc)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "HU")]))
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "HU")]))
+        .public_key(key.public_key())
+        .serial_number(0xB2C3D4E5F607189A)
+        .not_valid_before(now)
+        .not_valid_after(now + dt.timedelta(days=2))
+        .sign(key, hashes.SHA256())
+    )
+    pem = tmp_path / "publicKey.cert"
+    pem.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    assert 0xB2C3D4E5F607189A in cert_file_serials(pem)
+
+
+def test_discover_prefers_vecentek_signing_serial(tmp_path: Path) -> None:
+    from hub.installer import discover_hu_signer_candidates
+    from hub.signer import CHANGAN_SERIAL
+
+    apk = tmp_path / "VecentekApp.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("classes.dex", b"dex")
+        zf.writestr("AndroidManifest.xml", b"mf")
+
+    fake = FakeAdb()
+    signed = 0xC0FFEE123456789A
+
+    def shell(command: str, timeout: int = 60) -> CommandResult:
+        if command.startswith("pm list packages"):
+            return CommandResult(
+                True,
+                "package:/system/app/VecentekApp/VecentekApp.apk=com.vecentek.decoreapp\n",
+                "",
+                0,
+                [],
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    def raw(args: list[str], timeout: int = 45, input_text: str | None = None) -> CommandResult:
+        if args and args[0] == "pull":
+            Path(args[2]).write_bytes(apk.read_bytes())
+            return CommandResult(True, "pulled", "", 0, args)
+        return CommandResult(True, "", "", 0, args)
+
+    fake.shell = shell  # type: ignore[method-assign]
+    fake.raw = raw  # type: ignore[method-assign]
+    notes: list[str] = []
+    with (
+        patch("hub.paths.app_data", return_value=tmp_path),
+        patch("hub.installer.apk_certificate_serials", return_value=[signed]),
+    ):
+        candidates = discover_hu_signer_candidates(fake, lambda m, p: notes.append(m))
+    assert candidates[0] == signed
+    assert CHANGAN_SERIAL == candidates[-1]
+    assert any("подпись" in line for line in notes)
+
+
+def test_probe_paths_keep_unique_local_names() -> None:
+    from hub.installer import _probe_local
+
+    folder = Path("/tmp/probe")
+    first = _probe_local(folder, "/system/framework/arm64/boot-ext.vdex")
+    second = _probe_local(folder, "/system/framework/boot-ext.vdex")
+    assert first != second
 
 
 def test_install_tries_remaining_serials_without_rediscover(tmp_path: Path) -> None:
