@@ -4,10 +4,80 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 MIN_PY = (3, 10)
+
+
+def python_dir_version(exe: Path) -> tuple[int, int] | None:
+    """Parse …/Python313/python.exe → (3, 13), …/Python39/python.exe → (3, 9)."""
+    name = exe.parent.name.lower().replace("python", "")
+    if not name.isdigit():
+        return None
+    if len(name) == 1:
+        return (int(name), 0)
+    return (int(name[0]), int(name[1:]))
+
+
+def newer_python_exe(current: Path | None = None) -> Path | None:
+    current = (current or Path(sys.executable)).resolve()
+    found: list[tuple[tuple[int, int], Path]] = []
+    bases = []
+    localapp = os.environ.get("LOCALAPPDATA")
+    if localapp:
+        bases.append(Path(localapp) / "Programs" / "Python")
+    bases.append(Path.home() / "AppData" / "Local" / "Programs" / "Python")
+    seen: set[Path] = set()
+    for base in bases:
+        if not base.is_dir():
+            continue
+        try:
+            children = list(base.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            exe = child / "python.exe"
+            try:
+                resolved = exe.resolve()
+            except OSError:
+                continue
+            if not exe.is_file() or resolved in seen or resolved == current:
+                continue
+            version = python_dir_version(exe)
+            if version and version >= MIN_PY:
+                seen.add(resolved)
+                found.append((version, exe))
+    if not found:
+        return None
+    found.sort(key=lambda item: item[0], reverse=True)
+    return found[0][1]
+
+
+def _reexec_or_die() -> None:
+    if sys.version_info >= MIN_PY:
+        return
+    newer = newer_python_exe()
+    if newer is not None:
+        print(
+            f"Git Bash дал Python {sys.version.split()[0]}. "
+            f"Перезапускаю: {newer}"
+        )
+        raise SystemExit(subprocess.call([str(newer), *sys.argv]))
+    print(
+        f"Этот Python слишком старый: {sys.executable} ({sys.version.split()[0]}). "
+        "Нужен 3.10+."
+    )
+    hint = Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python313" / "python.exe"
+    if hint.is_file():
+        print(f'Запустите:\n  "{hint}" app.py')
+    else:
+        print(
+            'Запустите Python 3.13, не python из Git Bash:\n'
+            r'  "/c/Users/79872/AppData/Local/Programs/Python/Python313/python.exe" app.py'
+        )
+    raise SystemExit(1)
 
 
 def project_root(start: Path | None = None) -> Path:
@@ -65,12 +135,7 @@ def _die_missing_hub(root: Path) -> None:
 
 
 def main() -> None:
-    if sys.version_info < MIN_PY:
-        print(
-            f"Этот Python слишком старый: {sys.executable} ({sys.version.split()[0]}). "
-            "Нужен 3.10+. Запустите python.org Python, не старый python из Git Bash."
-        )
-        raise SystemExit(1)
+    _reexec_or_die()
     root = _prepare()
     gui_py = root / "hub" / "gui.py"
     if not gui_py.is_file():

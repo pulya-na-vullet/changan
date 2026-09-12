@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app import project_root
+from app import newer_python_exe, project_root, python_dir_version
 
 
 def test_app_py_exists() -> None:
@@ -28,6 +28,27 @@ def test_project_root_prefers_current_folder(tmp_path: Path) -> None:
     (nested / "hub").mkdir(parents=True)
     (nested / "hub" / "gui.py").write_text("# other\n", encoding="utf-8")
     assert project_root(tmp_path) == tmp_path.resolve()
+
+
+def test_python_dir_version() -> None:
+    assert python_dir_version(Path("/usr/bin/python.exe")) is None
+    assert python_dir_version(Path("/x/Python313/python.exe")) == (3, 13)
+    assert python_dir_version(Path("/x/Python39/python.exe")) == (3, 9)
+    assert python_dir_version(Path("/x/Python310/python.exe")) == (3, 10)
+
+
+def test_newer_python_exe_picks_313(tmp_path: Path, monkeypatch) -> None:
+    programs = tmp_path / "Programs" / "Python"
+    old = programs / "Python39" / "python.exe"
+    new = programs / "Python313" / "python.exe"
+    old.parent.mkdir(parents=True)
+    new.parent.mkdir(parents=True)
+    old.write_text("", encoding="utf-8")
+    new.write_text("", encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    picked = newer_python_exe(current=old)
+    assert picked is not None
+    assert picked.resolve() == new.resolve()
 
 
 def test_run_bat_starts_once() -> None:
