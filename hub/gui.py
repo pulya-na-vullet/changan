@@ -386,7 +386,8 @@ class HubApp:
                 "Заставки: спектр, волна, частицы, круг, OpenGL-туман под ритм. "
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
-                "Пакет: com.changanhub.lamoreplayer. Без Google Play и без Compose."
+                "Пакет: com.changanhub.lamoreplayer. Без Google Play и без Compose. "
+                "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
             wraplength=640,

@@ -118,6 +118,9 @@ python -m hub record --seconds 30
 
 Сборка: `python scripts/build_player.py` → `apps/Player.apk`.
 
+Макет экранов без ГУ: откройте в браузере ноутбука `docs/player-layout.html`
+(1920×720, поля 20%/30%). PNG тех же экранов лежат в `docs/player-layout/`.
+
 ## Демо для клиентов (скриншот и видео)
 
 Отдельное приложение на ГУ не нужно: снимок и ролик идут с ноутбука по ADB.
