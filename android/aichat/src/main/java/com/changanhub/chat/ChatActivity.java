@@ -240,8 +240,8 @@ public class ChatActivity extends Activity {
 
     private void applyCenterPadding() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int padX = Math.max(8, (int) (dm.widthPixels * 0.20f));
-        int padY = Math.max(8, (int) (dm.heightPixels * 0.30f));
+        int padX = Math.max(8, (int) (dm.widthPixels * 0.08f));
+        int padY = Math.max(8, (int) (dm.heightPixels * 0.10f));
         stage.setPadding(padX, padY, padX, padY);
     }
 
@@ -647,7 +647,7 @@ public class ChatActivity extends Activity {
         voiceBox.addView(voiceAuto);
         TextView sttNote = new TextView(this);
         sttNote.setTextColor(0xFF9AA7B8);
-        sttNote.setTextSize(14);
+        sttNote.setTextSize(28);
         sttNote.setPadding(0, 8, 0, 8);
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             sttNote.setText(
@@ -693,7 +693,7 @@ public class ChatActivity extends Activity {
         }));
         voiceWarn = new TextView(this);
         voiceWarn.setTextColor(0xFFFF6B6B);
-        voiceWarn.setTextSize(14);
+        voiceWarn.setTextSize(28);
         voiceBox.addView(voiceWarn);
         Button test = chip("Проверить голос", true);
         test.setOnClickListener(new View.OnClickListener() {
@@ -775,7 +775,8 @@ public class ChatActivity extends Activity {
         b.setText(text);
         b.setTextColor(accent ? 0xFF0B1220 : 0xFFF3F6FB);
         b.setBackgroundColor(accent ? 0xFF3DDC97 : 0xFF223049);
-        b.setMinHeight(48);
+        b.setMinHeight(96);
+        b.setTextSize(32);
         return b;
     }
 
@@ -784,7 +785,7 @@ public class ChatActivity extends Activity {
         b.setText(text);
         b.setTextColor(0xFFF3F6FB);
         b.setChecked(on);
-        b.setTextSize(16);
+        b.setTextSize(32);
         return b;
     }
 
@@ -795,7 +796,7 @@ public class ChatActivity extends Activity {
         e.setHintTextColor(0xFF9AA7B8);
         e.setBackgroundColor(0xFF182235);
         e.setPadding(10, 10, 10, 10);
-        e.setTextSize(15);
+        e.setTextSize(30);
         e.setSingleLine(!password ? false : true);
         if (password) {
             e.setInputType(android.text.InputType.TYPE_CLASS_TEXT
@@ -845,7 +846,7 @@ public class ChatActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(text);
         t.setTextColor(0xFF9AA7B8);
-        t.setTextSize(13);
+        t.setTextSize(26);
         t.setPadding(0, 8, 0, 2);
         box.addView(t);
     }

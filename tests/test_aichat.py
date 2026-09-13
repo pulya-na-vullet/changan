@@ -8,7 +8,7 @@ def test_aichat_sources() -> None:
     root = Path(__file__).resolve().parents[1]
     mf = (root / "android/aichat/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert 'package="com.changanhub.chatrise"' in mf
-    assert 'android:versionName="1.0.1"' in mf
+    assert 'android:versionName="1.0.2"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "INTERNET" in mf
@@ -19,8 +19,8 @@ def test_aichat_sources() -> None:
     ui = (root / "android/aichat/src/main/java/com/changanhub/chat/ChatActivity.java").read_text(
         encoding="utf-8"
     )
-    assert "0.20f" in ui
-    assert "0.30f" in ui
+    assert "0.08f" in ui
+    assert "0.10f" in ui
     assert "tab_chat" in ui
     llm = (root / "android/aichat/src/main/java/com/changanhub/chat/Llm.java").read_text(encoding="utf-8")
     assert "api.deepseek.com" in (root / "android/aichat/src/main/java/com/changanhub/chat/Prefs.java").read_text(
@@ -46,7 +46,7 @@ def test_aichat_sources() -> None:
     )
     assert "export-chat.json" in store
     build = (root / "scripts/build_aichat.py").read_text(encoding="utf-8")
-    assert '"1.0.1"' in build
+    assert '"1.0.2"' in build
     assert PACKAGE == "com.changanhub.chatrise"
     assert "SpeechRecognizer.isRecognitionAvailable" in ui
     assert "setVisibility(View.GONE)" in ui

@@ -150,7 +150,7 @@ def test_quickbar_is_three_times_taller() -> None:
     assert "TEXT_SCALE = 2" in src
     assert "48 * HEIGHT_SCALE" in src
     assert "VERTICAL_MARGIN = 0.20f" in src
-    assert "COLLAPSED_W_DP = 64" in src
+    assert "COLLAPSED_W_DP = 160" in src
     assert "keyboardPeek" in src
     assert "imeHeight()" in src
     assert "buildPeekButton" in src
@@ -170,7 +170,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.8"' in mf
+    assert 'android:versionName="1.3.9"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -276,7 +276,7 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "expandToFull" in src
     assert "recentZone" in src
     assert "evenSpacer" in src
-    assert "COLLAPSED_W_DP = 64" in src
+    assert "COLLAPSED_W_DP = 160" in src
     assert "COLLAPSED_ICON_DP" in src
     assert "collapsedZones" not in src
     assert "buildPeekButton" in src
@@ -287,6 +287,14 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "LEGACY_PACKAGE" in src
     assert "KEY_RECENT" in src
     assert "UsbStorage.apkFiles" in src
+    assert "KEY_WINDOWED" in src
+    assert "startWindowed" in src
+    assert "setLaunchBounds" in src
+    assert "WINDOWING_MODE_FREEFORM" in src
+    assert "windowedToggle" in src
+    assert "collapsedFit" in src
+    assert "COLLAPSED_ICON_DP = 90" in src
+    assert "COLLAPSED_MENU_H_DP = 140" in src
     assert "PackageActions.copyToCache" in src
     assert "uninstallUserApp" not in src
     assert "PackageActions.uninstall" not in src
@@ -320,6 +328,7 @@ def test_quickbar_icons_exist() -> None:
         "ic_collapse.xml",
         "ic_refresh.xml",
         "ic_install.xml",
+        "ic_window.xml",
     ):
         assert (res / name).is_file(), name
     assert not (res / "logo_itm.xml").exists()
@@ -365,6 +374,37 @@ def test_collapsed_gap_leaves_yandex_passthrough() -> None:
         if menu_h + recent_h + 3 * gap <= screen:
             assert recent_y + recent_h == screen - gap
             assert menu_y + menu_h + between + recent_h + gap == screen
+
+
+def test_collapsed_25x_fits_or_scales() -> None:
+    """2.5× chips (140 + 340 dp) fit 1920px; a 720p edge must still leave a gap."""
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "collapsedFit" in src
+    assert "2.5" in src
+    menu_h, recent_h = 140, 340
+    for screen in (1920, 1440, 1280, 720):
+        gap = round(screen * _MARGIN)
+        need = menu_h + recent_h + 3 * gap
+        scale = 1.0 if need <= screen else max(0.45, (screen - 3 * gap) / (menu_h + recent_h))
+        mh = round(menu_h * scale)
+        rh = round(recent_h * scale)
+        _menu_y, _recent_y, between, _peek = _collapsed_layout(screen, mh, rh)
+        assert between >= gap - 1 or scale < 1.0
+
+
+def test_windowed_launch_skips_system_apps() -> None:
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "startWindowed" in src
+    assert "isSystemPackage" in src
+    assert "setLaunchBounds" in src
+    assert "WINDOWING_MODE_FREEFORM" in src
+    assert "KEY_WINDOWED" in src
+    assert "windowed && !isSystemPackage" in src
+    assert "ic_window" in src
 
 
 def test_accessibility_dedupes_and_skips_huge_lists() -> None:

@@ -104,9 +104,9 @@ def main() -> None:
             "--custom-package",
             "com.changanhub.chat",
             "--version-code",
-            "2",
+            "3",
             "--version-name",
-            "1.0.1",
+            "1.0.2",
             "--auto-add-overlay",
             str(res_zip),
         ]

@@ -442,7 +442,7 @@ def _finish_keep_overlay(
     if kind == "player":
         msg = (
             "Плеер с этой подписью уже стоит. Не отключаю. "
-            "Lamore Player 1.1 — пакет com.changanhub.playrise, раздел «Плеер»."
+            "Lamore Player 1.1.1 — пакет com.changanhub.playrise, раздел «Плеер»."
         )
     elif kind == "chat":
         msg = (

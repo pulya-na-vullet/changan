@@ -14,7 +14,7 @@ def test_player_sources_and_formats() -> None:
     mf = (root / "android/player/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert 'package="com.changanhub.playrise"' in mf
     assert "APP_MUSIC" not in mf
-    assert 'android:versionName="1.1.0"' in mf
+    assert 'android:versionName="1.1.1"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "RECORD_AUDIO" in mf
@@ -44,8 +44,8 @@ def test_player_sources_and_formats() -> None:
     ui = (root / "android/player/src/main/java/com/changanhub/player/BrowserActivity.java").read_text(
         encoding="utf-8"
     )
-    assert "0.20f" in ui
-    assert "0.30f" in ui
+    assert "0.08f" in ui
+    assert "0.10f" in ui
     assert "tab_music" in ui
     prefs = (root / "android/player/src/main/java/com/changanhub/player/EqPrefs.java").read_text(
         encoding="utf-8"
@@ -60,7 +60,7 @@ def test_player_sources_and_formats() -> None:
     )
     assert "GLSurfaceView" in fog
     build = (root / "scripts/build_player.py").read_text(encoding="utf-8")
-    assert '"1.1.0"' in build
+    assert '"1.1.1"' in build
     assert '"28"' in build
     assert PACKAGE == "com.changanhub.playrise"
 

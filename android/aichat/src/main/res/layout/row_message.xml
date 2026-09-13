@@ -11,14 +11,14 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@color/accent"
-        android:textSize="12sp" />
+        android:textSize="24sp" />
 
     <TextView
         android:id="@+id/body"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@color/text"
-        android:textSize="16sp"
+        android:textSize="32sp"
         android:textIsSelectable="true" />
 
     <LinearLayout
@@ -33,25 +33,25 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textColor="@color/muted"
-            android:textSize="12sp" />
+            android:textSize="24sp" />
 
         <Button
             android:id="@+id/btn_copy"
-            android:layout_width="72dp"
-            android:layout_height="40dp"
+            android:layout_width="128dp"
+            android:layout_height="72dp"
             android:background="@color/tab_off"
             android:text="Копир"
             android:textColor="@color/text"
-            android:textSize="12sp" />
+            android:textSize="24sp" />
 
         <Button
             android:id="@+id/btn_speak"
-            android:layout_width="72dp"
-            android:layout_height="40dp"
+            android:layout_width="128dp"
+            android:layout_height="72dp"
             android:layout_marginStart="6dp"
             android:background="@color/tab_off"
             android:text="Озвук"
             android:textColor="@color/text"
-            android:textSize="12sp" />
+            android:textSize="24sp" />
     </LinearLayout>
 </LinearLayout>

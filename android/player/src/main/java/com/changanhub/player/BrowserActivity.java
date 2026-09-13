@@ -228,8 +228,8 @@ public class BrowserActivity extends Activity {
 
     private void applyCenterPadding() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int padX = Math.max(8, (int) (dm.widthPixels * 0.20f));
-        int padY = Math.max(8, (int) (dm.heightPixels * 0.30f));
+        int padX = Math.max(8, (int) (dm.widthPixels * 0.08f));
+        int padY = Math.max(8, (int) (dm.heightPixels * 0.10f));
         stage.setPadding(padX, padY, padX, padY);
     }
 
@@ -585,6 +585,7 @@ public class BrowserActivity extends Activity {
             b.setText(EqPrefs.PRESET_NAMES[i]);
             boolean on = i == current;
             b.setTextColor(on ? 0xFF0B1220 : 0xFFF3F6FB);
+            b.setTextSize(28);
             b.setBackgroundColor(on ? 0xFF3DDC97 : 0xFF223049);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -604,7 +605,7 @@ public class BrowserActivity extends Activity {
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 56);
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 96);
             lp.setMargins(0, 0, 8, 0);
             namedPresets.addView(b, lp);
         }
@@ -618,7 +619,7 @@ public class BrowserActivity extends Activity {
             TextView hint = new TextView(this);
             hint.setText("Полосы появятся после старта трека (audioSession ГУ)");
             hint.setTextColor(0xFF9AA7B8);
-            hint.setTextSize(14);
+            hint.setTextSize(28);
             eqBands.addView(hint);
             return;
         }
@@ -631,6 +632,7 @@ public class BrowserActivity extends Activity {
                 int hz = eq.getCenterFreq(b) / 1000;
                 label.setText(hz >= 1000 ? (hz / 1000) + " кГц" : hz + " Гц");
                 label.setTextColor(0xFFF3F6FB);
+                label.setTextSize(28);
                 SeekBar bar = new SeekBar(this);
                 bar.setMax(range[1] - range[0]);
                 bar.setProgress(eq.getBandLevel(b) - range[0]);
@@ -679,6 +681,7 @@ public class BrowserActivity extends Activity {
             boolean on = i == current;
             b.setTextColor(on ? 0xFF0B1220 : 0xFFF3F6FB);
             b.setBackgroundColor(on ? 0xFF3DDC97 : 0xFF223049);
+            b.setTextSize(28);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -688,7 +691,7 @@ public class BrowserActivity extends Activity {
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 48);
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 88);
             lp.setMargins(0, 0, 6, 0);
             vizModes.addView(b, lp);
         }
@@ -696,6 +699,7 @@ public class BrowserActivity extends Activity {
         full.setText("На весь экран");
         full.setTextColor(0xFF0B1220);
         full.setBackgroundColor(0xFF3DDC97);
+        full.setTextSize(28);
         full.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -703,7 +707,7 @@ public class BrowserActivity extends Activity {
             }
         });
         vizModes.addView(full, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, 48));
+                LinearLayout.LayoutParams.WRAP_CONTENT, 88));
         applyVizMode(current);
     }
 
