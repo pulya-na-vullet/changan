@@ -170,7 +170,7 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.9"' in mf
+    assert 'android:versionName="1.3.10"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -295,6 +295,16 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "collapsedFit" in src
     assert "COLLAPSED_ICON_DP = 90" in src
     assert "COLLAPSED_MENU_H_DP = 140" in src
+    assert "KEY_STASHED" in src
+    assert "setStashed(" in src
+    assert "stashPad" in src
+    assert "edgeSwipeBox" in src
+    assert "isStashPad" in src
+    assert "if (stashed)" in src
+    assert ".putBoolean(KEY_STASHED, stashed)" in src
+    # Hub SHOW / boot used to expand a collapsed dock and would unhide it after ACC.
+    assert "Expanding here would reveal the dock after ACC" in src
+    assert "if (collapsed) {\n                setCollapsed(false);" not in src
     assert "PackageActions.copyToCache" in src
     assert "uninstallUserApp" not in src
     assert "PackageActions.uninstall" not in src
@@ -392,6 +402,32 @@ def test_collapsed_25x_fits_or_scales() -> None:
         rh = round(recent_h * scale)
         _menu_y, _recent_y, between, _peek = _collapsed_layout(screen, mh, rh)
         assert between >= gap - 1 or scale < 1.0
+
+
+def test_stashed_dock_is_invisible_and_persists() -> None:
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "KEY_STASHED" in src
+    assert "setStashed(" in src
+    assert "stashPad" in src
+    assert "Color.TRANSPARENT" in src
+    assert "if (stashed)" in src
+    assert "syncKeyboardPeek" in src
+    # Peek chip would reveal the dock to a dealer.
+    peek = src.split("private void syncKeyboardPeek()")[1].split("private int imeHeight()")[0]
+    assert peek.strip().startswith("{\n        if (stashed)")
+    assert ".putBoolean(KEY_STASHED, stashed)" in src
+    assert "getBoolean(KEY_STASHED, false)" in src
+    # Same two windows / Yandex gap as collapsed.
+    relayout = src.split("private void relayout()")[1].split("private View wrapChip")[0]
+    stash_block = relayout.split("if (stashed)")[1].split("if (keyboardPeek)")[0]
+    assert "collapsedMenuY()" in stash_block
+    assert "collapsedRecentY(" in stash_block
+    assert "stashPad()" in stash_block
+    capture = Path("quickbar/capture.html").read_text(encoding="utf-8")
+    assert 'data-state="stash"' in capture or "stash" in capture
+    assert ".chip.stash" in capture
 
 
 def test_windowed_launch_skips_system_apps() -> None:

@@ -77,10 +77,14 @@
     .chip.peek { top: 384px; height: 140px; }
     .chip svg { width: 90px; height: 90px; fill: #cc3ddc97; }
     .mini { width: 90px; height: 90px; border-radius: 18px; }
+    .chip.stash { background: transparent; border: 0; padding: 0; }
     body[data-state="collapsed"] .panel,
-    body[data-state="peek"] .panel { display: none; }
-    body[data-state="collapsed"] .chip.menu,
-    body[data-state="collapsed"] .chip.recent { display: flex; }
+    body[data-state="peek"] .panel,
+    body[data-state="stash"] .panel { display: none; }
+    body[data-state="collapsed"] .chip.menu:not(.stash),
+    body[data-state="collapsed"] .chip.recent:not(.stash) { display: flex; }
+    body[data-state="stash"] .chip.stash.menu,
+    body[data-state="stash"] .chip.stash.recent { display: block; }
     body[data-state="peek"] .chip.peek { display: flex; }
     body[data-state="peek"] .ime { display: block; }
     body[data-state="usb"] #reorderTool,
@@ -126,6 +130,8 @@
     <div class="mini" style="background:#fc3f1d"></div>
   </div>
   <div class="chip peek"><svg><use href="#i-logo"/></svg></div>
+  <div class="chip stash menu"></div>
+  <div class="chip stash recent"></div>
   <div class="ime">клавиатура · панель свернута в уголок, чтобы не перекрывать ввод</div>
 </div>
 <script>
@@ -192,7 +198,7 @@
     document.getElementById("search").value = "яндекс";
     list.insertAdjacentHTML("beforeend", row(apps[0], "fav", '<div class="act">' + eye() + "</div>"));
     list.insertAdjacentHTML("beforeend", row(apps[3], "", '<div class="act">' + eye() + "</div>"));
-  } else if (state !== "collapsed" && state !== "peek") {
+  } else if (state !== "collapsed" && state !== "peek" && state !== "stash") {
     apps.slice(0, 3).forEach(function (a, i) {
       list.insertAdjacentHTML("beforeend", row(a, i === 0 ? "fav" : "", '<div class="act">' + eye() + "</div>"));
     });

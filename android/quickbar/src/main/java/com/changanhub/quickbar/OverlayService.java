@@ -61,6 +61,12 @@ import java.util.Set;
 /**
  * Persistent right-edge launcher dock for Changan portrait head units.
  * Stays above every activity via SYSTEM_ALERT_WINDOW.
+ *
+ * Collapsed chips can be swiped off the right edge into a stashed mode:
+ * the same two hit-targets stay on screen but are fully transparent, so a
+ * dealer does not see the dock. A left swipe on those pads restores the
+ * collapsed chips. SharedPreferences keep stash across ACC, sleep, and reboot.
+ * The gap between the pads stays empty so Yandex Navigator still gets taps.
  */
 public class OverlayService extends Service {
     public static final String ACTION_SHOW = "com.changanhub.quickbar.SHOW";
@@ -101,6 +107,8 @@ public class OverlayService extends Service {
     private static final String KEY_HIDDEN = "hidden";
     private static final String KEY_ORDER = "order";
     private static final String KEY_COLLAPSED = "collapsed";
+    /** Invisible collapsed pads; survives ACC / sleep / reboot. */
+    private static final String KEY_STASHED = "stashed";
     private static final String KEY_WIDE = "wide";
     private static final String KEY_RECENT = "recent";
     private static final int RECENT_MAX = 3;
@@ -131,6 +139,7 @@ public class OverlayService extends Service {
     private TextView titleView;
     private TextView usbStatus;
     private boolean collapsed;
+    private boolean stashed;
     private boolean wide;
     private boolean usbMode;
     private boolean keyboardPeek;
@@ -270,6 +279,10 @@ public class OverlayService extends Service {
         super.onCreate();
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         collapsed = p.getBoolean(KEY_COLLAPSED, false);
+        stashed = p.getBoolean(KEY_STASHED, false);
+        if (stashed) {
+            collapsed = true;
+        }
         windowed = p.getBoolean(KEY_WINDOWED, true);
         wide = true;
         startInForeground();
@@ -303,7 +316,9 @@ public class OverlayService extends Service {
         suppressLegacy();
         if (ACTION_PAUSE.equals(action)) {
             overlayPausedUntil = SystemClock.elapsedRealtime() + 90_000L;
-            setCollapsed(true);
+            if (!stashed) {
+                setCollapsed(true);
+            }
             return START_STICKY;
         }
         if (ACTION_KEEPALIVE.equals(action)
@@ -312,13 +327,16 @@ public class OverlayService extends Service {
             return START_STICKY;
         }
         if (ACTION_TOGGLE.equals(action)) {
-            setCollapsed(!collapsed);
+            if (stashed) {
+                setStashed(false);
+            } else {
+                setCollapsed(!collapsed);
+            }
         } else if (ACTION_REFRESH.equals(action)) {
             reloadApps();
         } else {
-            if (collapsed) {
-                setCollapsed(false);
-            }
+            // SHOW / Hub / boot: restore persisted collapsed or stashed mode.
+            // Expanding here would reveal the dock after ACC — dealer would see it.
             reloadApps();
         }
         return START_STICKY;
@@ -470,6 +488,38 @@ public class OverlayService extends Service {
         if (windowManager == null) {
             windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         }
+        if (stashed) {
+            keyboardPeek = false;
+            removeView(root);
+            root = null;
+            removeView(peekView);
+            peekView = null;
+            int menuH = collapsedMenuHeight();
+            int recentH = collapsedRecentHeight();
+            int topY = collapsedMenuY();
+            int bottomY = collapsedRecentY(recentH);
+            if (!isStashPad(dockMenu)) {
+                removeView(dockMenu);
+                dockMenu = null;
+            }
+            if (!isStashPad(dockRecent)) {
+                removeView(dockRecent);
+                dockRecent = null;
+            }
+            if (dockMenu == null) {
+                dockMenu = stashPad();
+                menuParams = addOverlay(dockMenu, dp(COLLAPSED_W_DP), menuH, topY);
+            } else {
+                applyChip(dockMenu, menuParams, dp(COLLAPSED_W_DP), menuH, topY);
+            }
+            if (dockRecent == null) {
+                dockRecent = stashPad();
+                recentParams = addOverlay(dockRecent, dp(COLLAPSED_W_DP), recentH, bottomY);
+            } else {
+                applyChip(dockRecent, recentParams, dp(COLLAPSED_W_DP), recentH, bottomY);
+            }
+            return;
+        }
         if (keyboardPeek) {
             removeView(root);
             root = null;
@@ -494,6 +544,14 @@ public class OverlayService extends Service {
             int recentH = collapsedRecentHeight();
             int topY = collapsedMenuY();
             int bottomY = collapsedRecentY(recentH);
+            if (isStashPad(dockMenu)) {
+                removeView(dockMenu);
+                dockMenu = null;
+            }
+            if (isStashPad(dockRecent)) {
+                removeView(dockRecent);
+                dockRecent = null;
+            }
             if (dockMenu == null) {
                 dockMenu = wrapChip(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
                     @Override
@@ -526,7 +584,8 @@ public class OverlayService extends Service {
     }
 
     private View wrapChip(View inner) {
-        LinearLayout box = new LinearLayout(this);
+        LinearLayout box = edgeSwipeBox(false);
+        box.setTag("chip");
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
         box.setBackground(panelBackground(true));
@@ -534,6 +593,92 @@ public class OverlayService extends Service {
         box.addView(inner, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         return box;
+    }
+
+    /** Same size/position as a collapsed chip, fully transparent for dealer hide. */
+    private View stashPad() {
+        LinearLayout pad = edgeSwipeBox(true);
+        pad.setTag("stash");
+        pad.setBackgroundColor(Color.TRANSPARENT);
+        pad.setClickable(true);
+        pad.setFocusable(false);
+        return pad;
+    }
+
+    private boolean isStashPad(View view) {
+        return view != null && "stash".equals(view.getTag());
+    }
+
+    /**
+     * Right swipe on collapsed chips stashes them. Left swipe on stash pads
+     * restores collapsed chips. Left swipe on collapsed chips still expands.
+     */
+    private LinearLayout edgeSwipeBox(final boolean fromStash) {
+        return new LinearLayout(this) {
+            float startX;
+            boolean tracking;
+
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    startX = event.getRawX();
+                    tracking = true;
+                    return false;
+                }
+                if (action == MotionEvent.ACTION_MOVE && tracking) {
+                    return shouldConsumeSwipe(fromStash, event.getRawX() - startX);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    startX = event.getRawX();
+                    tracking = true;
+                    return true;
+                }
+                if (!tracking) {
+                    return super.onTouchEvent(event);
+                }
+                float dx = event.getRawX() - startX;
+                if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
+                    if (applyEdgeSwipe(fromStash, dx)) {
+                        tracking = false;
+                        return true;
+                    }
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    tracking = false;
+                }
+                return true;
+            }
+        };
+    }
+
+    private boolean shouldConsumeSwipe(boolean fromStash, float dx) {
+        if (fromStash) {
+            return dx < -dp(24);
+        }
+        return dx > dp(28) || dx < -dp(20);
+    }
+
+    private boolean applyEdgeSwipe(boolean fromStash, float dx) {
+        if (fromStash && dx < -dp(24)) {
+            setStashed(false);
+            return true;
+        }
+        if (!fromStash && dx > dp(28)) {
+            setStashed(true);
+            return true;
+        }
+        if (!fromStash && dx < -dp(20)) {
+            expandToFull();
+            return true;
+        }
+        return false;
     }
 
     private View buildPeekButton() {
@@ -643,7 +788,7 @@ public class OverlayService extends Service {
     }
 
     private void applySize() {
-        if (keyboardPeek || collapsed) {
+        if (keyboardPeek || collapsed || stashed) {
             relayout();
             return;
         }
@@ -729,6 +874,13 @@ public class OverlayService extends Service {
     }
 
     private void syncKeyboardPeek() {
+        if (stashed) {
+            if (keyboardPeek) {
+                keyboardPeek = false;
+                relayout();
+            }
+            return;
+        }
         if (SystemClock.elapsedRealtime() < overlayPausedUntil) {
             return;
         }
@@ -1049,6 +1201,7 @@ public class OverlayService extends Service {
     private void setCollapsed(boolean value) {
         keyboardPeek = false;
         collapsed = value;
+        stashed = false;
         persist();
         relayout();
         if (!collapsed) {
@@ -1056,10 +1209,19 @@ public class OverlayService extends Service {
         }
     }
 
+    private void setStashed(boolean value) {
+        stashed = value;
+        collapsed = true;
+        keyboardPeek = false;
+        persist();
+        relayout();
+    }
+
     private void expandToFull() {
         usbMode = false;
         wide = true;
         collapsed = false;
+        stashed = false;
         keyboardPeek = false;
         persist();
         relayout();
@@ -1070,6 +1232,7 @@ public class OverlayService extends Service {
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_COLLAPSED, collapsed)
+                .putBoolean(KEY_STASHED, stashed)
                 .putBoolean(KEY_WIDE, wide)
                 .putBoolean(KEY_WINDOWED, windowed)
                 .apply();

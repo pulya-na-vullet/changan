@@ -35,6 +35,7 @@ def test_quickbar_landing_page_and_photos() -> None:
         "search",
         "collapsed",
         "peek",
+        "stash",
     ):
         assert f'state === "{state}"' in capture or f'data-state="{state}"' in capture or state == "list"
     assert "width: 160px" in capture
