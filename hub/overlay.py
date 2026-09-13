@@ -11,17 +11,22 @@ from hub.paths import bundled_apps
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.quickrise"
+PACKAGE = "com.changanhub.quickstash"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
     "com.changanhub.quicklane",
     "com.changanhub.quickkeep",
+    "com.changanhub.quickrise",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
 # settings put of the raw string raises WinError 206 and kills Hub.
 _MAX_SETTINGS_CMD = 3500
+# Regular APK uninstall on Feiyu can take tens of seconds. 8s made Hub treat
+# a slow Success as «auth app» and disable-user instead of waiting.
+UNINSTALL_TIMEOUT_SEC = 45
+UNINSTALL_RETRY_SEC = 60
 JAVA_SERVICE = "com.changanhub.quickbar.OverlayService"
 JAVA_BOOT = "com.changanhub.quickbar.BootActivity"
 JAVA_ACCESS = "com.changanhub.quickbar.KeepAliveAccessibility"
@@ -147,8 +152,14 @@ def enable_accessibility(adb: Adb, progress: Progress | None = None) -> list[str
     return log
 
 
+def _package_installed(adb: Adb, package: str) -> bool:
+    present = adb.shell(f"pm path {package}", timeout=10)
+    blob = f"{present.stdout or ''}\n{present.stderr or ''}"
+    return "package:" in blob
+
+
 def disable_user_package(adb: Adb, package: str, progress: Progress | None = None) -> list[str]:
-    """Feiyu refuses pm uninstall on whitelist-signed apps. Disable instead."""
+    """Try a real uninstall first. Overlay leftovers cannot be deleted on Feiyu."""
     log: list[str] = []
 
     def step(message: str, percent: int = 70) -> None:
@@ -156,9 +167,17 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
         if progress:
             progress(message, percent)
 
+    if package == PACKAGE:
+        step(
+            f"{package} — рабочая панель. Не удаляю и не отключаю, иначе пропадёт колонка. "
+            "Обновление — раздел «Правая панель».",
+            100,
+        )
+        return log
+
     if is_overlay_package(package):
         step(
-            f"{package} — auth-панель, pm uninstall покажет 提示 not allow delete. "
+            f"{package} — старая auth-панель, pm uninstall покажет 提示 not allow delete. "
             "Отключаю без удаления.",
             60,
         )
@@ -169,16 +188,46 @@ def disable_user_package(adb: Adb, package: str, progress: Progress | None = Non
     from hub.aichat import is_aichat_package
 
     protected = is_player_package(package) or is_aichat_package(package)
-    step(f"пробую pm uninstall --user 0 {package} (лимит 8с)", 60)
-    gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=8)
+    step(f"пробую pm uninstall --user 0 {package} (лимит {UNINSTALL_TIMEOUT_SEC}с)", 60)
+    gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=UNINSTALL_TIMEOUT_SEC)
     log.append(
         f"pm uninstall --user 0 {package} code={gone.code} "
         f"out={gone.stdout.strip()!r} err={gone.stderr.strip()!r}"
     )
     blob = f"{gone.stdout}\n{gone.stderr}".lower()
+    timed_out = gone.code == 124 or "timeout" in blob
+    if timed_out and not _package_installed(adb, package):
+        step(f"{package} снят (ответ ADB оборвался, пакета уже нет)", 100)
+        return log
     if gone.code != 124 and "success" in blob and "failure" not in blob and "not allow" not in blob:
         step(f"{package} снят", 100)
         return log
+    if timed_out:
+        step(
+            f"pm uninstall не ответил за {UNINSTALL_TIMEOUT_SEC}с — это не окно auth. "
+            f"Повторяю, лимит {UNINSTALL_RETRY_SEC}с.",
+            65,
+        )
+        gone = adb.shell(f"pm uninstall --user 0 {package}", timeout=UNINSTALL_RETRY_SEC)
+        log.append(
+            f"повтор pm uninstall --user 0 {package} code={gone.code} "
+            f"out={gone.stdout.strip()!r} err={gone.stderr.strip()!r}"
+        )
+        blob = f"{gone.stdout}\n{gone.stderr}".lower()
+        if (gone.code == 124 or "timeout" in blob) and not _package_installed(adb, package):
+            step(f"{package} снят после повторного ожидания", 100)
+            return log
+        if "success" in blob and "failure" not in blob and "not allow" not in blob:
+            step(f"{package} снят", 100)
+            return log
+        if "not allow" not in blob and "auth app" not in blob:
+            step(
+                f"{package} всё ещё на ГУ, но Feiyu не показала 提示 not allow delete. "
+                "Не отключаю наугад — иначе ярлык пропадёт, а пакет останется. "
+                "Повторите удаление позже.",
+                100,
+            )
+            return log
     if protected:
         step(
             "Feiyu не удаляет этот пакет. Плеер и чат не отключаю — иначе рабочее "

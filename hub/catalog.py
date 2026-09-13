@@ -26,10 +26,10 @@ CATALOG: list[CatalogApp] = [
         id="quickbar",
         name="QuickBar (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
-        package="com.changanhub.quickrise",
+        package="com.changanhub.quickstash",
         kind="dock",
         source="bundled",
-        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickrise. Скрытие и сортировка — в зелёной колонке справа. Свёрнутые кнопки ×2.5. Сторонние приложения — кнопка «окно» (freeform, если ГУ умеет). Старые quickbar / quickdock / quicklane / quickkeep Feiyu не удаляет (auth) — это не новая панель.",
+        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickstash. Скрытие, сортировка и свайп «спрятать от дилера» — в зелёной колонке справа. Свёрнутые кнопки ×2.5. Сторонние приложения — кнопка «окно» (freeform, если ГУ умеет). Старые quickbar / quickdock / quicklane / quickkeep / quickrise Feiyu не удаляет (auth) — это не новая панель.",
     ),
     CatalogApp(
         id="player",
@@ -143,6 +143,7 @@ _EXTRA_LABELS = {
     "com.changanhub.quickdock": "QuickBar (старая, без скрытия/сортировки)",
     "com.changanhub.quicklane": "QuickBar (старая, без скрытия/сортировки)",
     "com.changanhub.quickkeep": "QuickBar (старая, без скрытия/сортировки)",
+    "com.changanhub.quickrise": "QuickBar (старая, без свайпа спрятать)",
     "com.changanhub.lamoreplayer": "Lamore Player (старый пакет)",
     "com.changanhub.aichat": "AI Chat (старый пакет)",
 }

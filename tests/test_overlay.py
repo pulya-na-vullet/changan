@@ -56,13 +56,15 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert f"pm disable-user --user 0 com.changanhub.quickdock" in joined
     assert f"pm disable-user --user 0 com.changanhub.quicklane" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickkeep" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quickrise" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
     assert f"pm disable {LEGACY_PACKAGE}" not in joined
-    assert PACKAGE == "com.changanhub.quickrise"
+    assert PACKAGE == "com.changanhub.quickstash"
     assert "com.changanhub.quickdock" in LEGACY_PACKAGES
     assert "com.changanhub.quicklane" in LEGACY_PACKAGES
     assert "com.changanhub.quickkeep" in LEGACY_PACKAGES
+    assert "com.changanhub.quickrise" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -142,6 +144,74 @@ def test_disable_user_package_does_not_disable_player_or_chat() -> None:
         assert "не отключаю" in joined
 
 
+def test_disable_user_package_keeps_working_overlay() -> None:
+    fake = FakeAdb()
+    from hub.overlay import PACKAGE
+
+    lines = disable_user_package(fake, PACKAGE)
+    joined = "\n".join(fake.shells + lines)
+    assert "pm uninstall" not in joined
+    assert "pm disable-user" not in joined
+    assert "рабочая панель" in joined.lower()
+
+
+def test_disable_user_package_timeout_then_gone_is_success() -> None:
+    fake = FakeAdb()
+    timeouts: list[int] = []
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        timeouts.append(timeout)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "timeout after 45s", 124, [])
+        if command.startswith("pm path"):
+            return CommandResult(True, "", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = disable_user_package(fake, "ru.dublgis.dgismobile")
+    joined = "\n".join(fake.shells + lines)
+    assert 45 in timeouts
+    assert "pm uninstall --user 0 ru.dublgis.dgismobile" in joined
+    assert "pm disable-user" not in joined
+    assert "снят" in joined
+    assert "auth-приложение" not in joined
+
+
+def test_disable_user_package_timeout_without_auth_does_not_disable() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "timeout after 45s", 124, [])
+        if command.startswith("pm path"):
+            return CommandResult(
+                True, "package:/data/app/ru.dublgis.dgismobile-xx/base.apk", "", 0, []
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = disable_user_package(fake, "ru.dublgis.dgismobile")
+    joined = "\n".join(fake.shells + lines)
+    uninstalls = [cmd for cmd in fake.shells if cmd.startswith("pm uninstall")]
+    assert len(uninstalls) == 2
+    assert "pm disable-user" not in joined
+    assert "не отключаю наугад" in joined.lower()
+
+
+def test_apk_picker_opens_local_apps_folder() -> None:
+    src = Path("hub/gui.py").read_text(encoding="utf-8")
+    assert "initialdir=str(bundled_apps())" in src
+    assert 'parent=self.root' in src
+    assert '("APK", "*.apk")' in src
+    assert "PACKAGE_FILE_TYPES" not in src
+
+
 def test_quickbar_is_three_times_taller() -> None:
     src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
         encoding="utf-8"
@@ -170,14 +240,14 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.10"' in mf
+    assert 'android:versionName="1.3.11"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.quickrise"' in mf
+    assert 'package="com.changanhub.quickstash"' in mf
     assert "android:persistent" not in mf
     assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
@@ -212,6 +282,7 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "com.changanhub.quickdock" in overlay
     assert "com.changanhub.quicklane" in overlay
     assert "com.changanhub.quickkeep" in overlay
+    assert "com.changanhub.quickrise" in overlay
     assert "getInstalledApplications" in overlay
     assert "launchIntentFallback" in overlay
     assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
@@ -534,10 +605,16 @@ def test_install_overlay_keeps_working_package_on_failed_update(tmp_path: Path) 
 def test_disable_overlay_never_uninstalls() -> None:
     fake = FakeAdb()
     lines = disable_user_package(fake, PACKAGE)
-    joined = "\n".join(fake.shells)
     assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
-    assert f"pm disable-user --user 0 {PACKAGE}" in joined
-    assert "auth-панель" in "\n".join(lines)
+    assert not any(f"pm disable-user --user 0 {PACKAGE}" in cmd for cmd in fake.shells)
+    assert "рабочая панель" in "\n".join(lines).lower()
+
+    leftover = FakeAdb()
+    leftover_lines = disable_user_package(leftover, "com.changanhub.quickrise")
+    joined = "\n".join(leftover.shells)
+    assert not any(cmd.startswith("pm uninstall") for cmd in leftover.shells)
+    assert "pm disable-user --user 0 com.changanhub.quickrise" in joined
+    assert "старая auth-панель" in "\n".join(leftover_lines)
 
 
 def test_adb_raw_swallows_filename_too_long(monkeypatch) -> None:

@@ -15,7 +15,7 @@ from typing import Callable
 from hub.adb import ENGINEERING_CODE, ENGINEERING_PIN, SHELL_PASSWORD, Adb, AdbError
 from hub.capture import Recorder, take_screenshot as capture_screenshot, CAPTURE_VERSION
 from hub.catalog import CATALOG, package_from_row, package_label
-from hub.bundle import PACKAGE_FILE_TYPES, PACKAGE_SUFFIXES
+from hub.bundle import PACKAGE_SUFFIXES
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
 from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
@@ -302,9 +302,10 @@ class HubApp:
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
             "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
             "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
-            "Панель QuickBar — пакет com.changanhub.quickrise; старые "
-            "quickbar/quickkeep Hub только отключает, не удаляет. Повторная установка панели "
-            "из новой папки Hub колонку не обновляет (другая подпись) — «Только запустить». "
+            "Панель QuickBar — пакет com.changanhub.quickstash; старые "
+            "quickbar/quickkeep/quickrise Hub только отключает, не удаляет. "
+            "Если новая папка Hub не обновляет колонку (другая подпись) — "
+            "«Установить и запустить» ставит новый id, не ломая старый. "
             "Свежий Chrome (SDK 29) на Feiyu Android 9 не встанет — Браузер Лайт уже на ГУ. "
             "Скрытие и сортировка — колонка справа из «Правая панель», не раздел «Плеер». "
             "В штатном меню Feiyu сторонних иконок нет — это нормально: открывайте из QuickBar "
@@ -355,8 +356,8 @@ class HubApp:
         ).pack(anchor="w")
         body = (
             "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
-            "Старые quickbar/quickkeep не удаляются и новых кнопок в них нет. "
-            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickrise. "
+            "Старые quickbar/quickkeep/quickrise не удаляются и новых кнопок в них нет. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickstash. "
             "Плеер — отдельный раздел."
         )
         ttk.Label(
@@ -391,7 +392,7 @@ class HubApp:
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
                 "Пакет: com.changanhub.playrise. Старый lamoreplayer Feiyu не удаляет — "
-                "Hub ставит новый id, как QuickBar → quickrise. Без Google Play и без Compose. "
+                "Hub ставит новый id, как QuickBar → quickstash. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -477,9 +478,9 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Рабочая панель: QuickBar · com.changanhub.quickrise. "
+                "Рабочая панель: QuickBar · com.changanhub.quickstash. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
-                "Ярлыки старых quickbar/quickkeep без скрытия и сортировки. "
+                "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
                 "«Запустить выбранное» на них поднимает колонку справа. "
                 "Фильтр: пустое поле показывает все; «ch» прячет Яндекс."
             ),
@@ -841,7 +842,19 @@ class HubApp:
 
     def pick_apk(self) -> None:
         self.journal.action("выбрать APK")
-        path = filedialog.askopenfilename(filetypes=PACKAGE_FILE_TYPES)
+        self.root.update_idletasks()
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            title="Выберите APK или XAPK",
+            initialdir=str(bundled_apps()),
+            filetypes=(
+                ("APK", "*.apk"),
+                ("XAPK", "*.xapk"),
+                ("APKM", "*.apkm"),
+                ("APKS", "*.apks"),
+                ("Все файлы", "*.*"),
+            ),
+        )
         if not path:
             self.journal.write("INFO", "ui", "выбор APK отменён")
             return
@@ -863,9 +876,17 @@ class HubApp:
             self.log(f"Флешка: {len(apks)} APK/XAPK. Hub переподпишет выбранный под белый список ГУ.")
             return
         initial = str(roots[0]) if roots else None
+        self.root.update_idletasks()
         path = filedialog.askopenfilename(
+            parent=self.root,
             title="APK / XAPK на флешке",
-            filetypes=PACKAGE_FILE_TYPES,
+            filetypes=(
+                ("APK", "*.apk"),
+                ("XAPK", "*.xapk"),
+                ("APKM", "*.apkm"),
+                ("APKS", "*.apks"),
+                ("Все файлы", "*.*"),
+            ),
             initialdir=initial,
         )
         if not path:
