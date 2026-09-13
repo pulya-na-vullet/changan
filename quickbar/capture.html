@@ -205,6 +205,11 @@
     list.insertAdjacentHTML("beforeend", '<div class="sec">▸  Системные  ·  18</div>');
     list.insertAdjacentHTML("beforeend", '<div class="sec">▸  Скрытые  ·  2</div>');
   }
+  if (state === "stash" && q.get("guide") === "1") {
+    document.querySelectorAll(".chip.stash").forEach(function (el) {
+      el.style.outline = "3px dashed rgba(61,220,151,.55)";
+    });
+  }
 </script>
 </body>
 </html>
