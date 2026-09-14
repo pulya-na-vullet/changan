@@ -13,8 +13,6 @@ import android.os.PowerManager;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
-import android.speech.tts.TextToSpeech;
-import android.speech.tts.Voice;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.ViewGroup;
@@ -40,7 +38,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 public class ChatActivity extends Activity {
     private View stage;
@@ -231,7 +228,7 @@ public class ChatActivity extends Activity {
         buildVoice();
         loadSession();
         showTab(0);
-        TtsService.stop(this);
+        TtsService.prepare(this);
         String warn = TtsService.warning();
         if (warn.length() > 0) {
             status.setText(warn);
@@ -657,7 +654,7 @@ public class ChatActivity extends Activity {
                     + "Голосовой помощник машины (iFlytek) к этому чату не подключён. "
                     + "Пишите текстом — Яндекс-клавиатура работает. "
                     + "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
-                    + "Озвучка ответов ниже — это TTS, не распознавание речи."
+                    + "Озвучка ответов — встроенный RHVoice (голоса внутри APK), не синтез Android."
             );
         } else {
             sttNote.setText("Голосовой ввод — кнопка микрофона в чате.");
@@ -705,69 +702,62 @@ public class ChatActivity extends Activity {
             }
         });
         voiceBox.addView(test);
-        loadVoices();
+        voiceBox.post(new Runnable() {
+            int tries;
+
+            @Override
+            public void run() {
+                fillVoices(TtsService.voiceNames());
+                if (voiceWarn != null) {
+                    String warn = TtsService.warning();
+                    voiceWarn.setText(warn.length() > 0 ? warn : "RHVoice внутри приложения, голос Елена. Системный TTS Android не нужен.");
+                    if (warn.length() == 0) {
+                        voiceWarn.setTextColor(0xFF9AA7B8);
+                    }
+                }
+                tries++;
+                if (tries < 12 && !TtsService.isReady() && TtsService.warning().length() == 0) {
+                    voiceBox.postDelayed(this, 500);
+                }
+            }
+        });
     }
 
-    private TextToSpeech voiceProbe;
-
-    private void loadVoices() {
-        if (voiceProbe != null) {
-            try {
-                voiceProbe.shutdown();
-            } catch (Exception ignored) {
+    private void fillVoices(List<String> engineNames) {
+        final List<String> labels = new ArrayList<>();
+        final List<String> ids = new ArrayList<>();
+        if (engineNames == null || engineNames.isEmpty()) {
+            labels.add("Елена (RHVoice)");
+            ids.add("Elena");
+        } else {
+            for (int i = 0; i < engineNames.size(); i++) {
+                String id = engineNames.get(i);
+                labels.add("Elena".equalsIgnoreCase(id) ? "Елена (RHVoice)" : (id + " (RHVoice)"));
+                ids.add(id);
             }
         }
-        voiceProbe = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+        String current = Prefs.voiceName(this);
+        int selected = 0;
+        for (int i = 0; i < ids.size(); i++) {
+            if (ids.get(i).equals(current) || (current.length() == 0 && i == 0)) {
+                selected = i;
+            }
+        }
+        ArrayAdapter<String> ad = new ArrayAdapter<String>(
+                this, android.R.layout.simple_spinner_item, labels);
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        voiceSpinner.setAdapter(ad);
+        voiceSpinner.setSelection(Math.min(selected, labels.size() - 1));
+        voiceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
-            public void onInit(int status) {
-                if (status != TextToSpeech.SUCCESS || voiceProbe == null) {
-                    voiceWarn.setText("На ГУ нет TTS-движка. Откройте системные настройки синтеза речи.");
-                    return;
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position >= 0 && position < ids.size()) {
+                    Prefs.put(ChatActivity.this, "tts_voice", ids.get(position));
                 }
-                try {
-                    int lang = voiceProbe.setLanguage(new Locale("ru", "RU"));
-                    if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        voiceWarn.setText("Русский голос недоступен. Выберите другой движок в настройках Android.");
-                    }
-                    List<String> names = new ArrayList<>();
-                    names.add("по умолчанию (ru-RU)");
-                    Set<Voice> voices = voiceProbe.getVoices();
-                    String current = Prefs.voiceName(ChatActivity.this);
-                    int selected = 0;
-                    if (voices != null) {
-                        int i = 1;
-                        for (Voice voice : voices) {
-                            Locale loc = voice.getLocale();
-                            String label = voice.getName();
-                            if (loc != null) {
-                                label = loc.getLanguage() + " · " + voice.getName();
-                            }
-                            names.add(label + "\t" + voice.getName());
-                            if (voice.getName().equals(current)) {
-                                selected = i;
-                            }
-                            i++;
-                        }
-                    }
-                    ArrayAdapter<String> ad = new ArrayAdapter<String>(
-                            ChatActivity.this, android.R.layout.simple_spinner_item, names);
-                    ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-                    voiceSpinner.setAdapter(ad);
-                    voiceSpinner.setSelection(Math.min(selected, names.size() - 1));
-                    voiceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-                        @Override
-                        public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                            String item = String.valueOf(parent.getItemAtPosition(position));
-                            int tabAt = item.lastIndexOf('\t');
-                            Prefs.put(ChatActivity.this, "tts_voice", tabAt > 0 ? item.substring(tabAt + 1) : "");
-                        }
+            }
 
-                        @Override
-                        public void onNothingSelected(AdapterView<?> parent) {
-                        }
-                    });
-                } catch (Exception ignored) {
-                }
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
             }
         });
     }
@@ -890,13 +880,7 @@ public class ChatActivity extends Activity {
             } catch (Exception ignored) {
             }
         }
-        if (voiceProbe != null) {
-            try {
-                voiceProbe.shutdown();
-            } catch (Exception ignored) {
-            }
-            voiceProbe = null;
-        }
+        TtsService.stop(this);
         super.onDestroy();
     }
 

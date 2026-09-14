@@ -98,8 +98,9 @@ def install_aichat(adb: Adb, progress: Progress | None = None) -> list[str]:
     lines += start_aichat(adb, progress=progress)
     lines += retire_legacy(adb, progress=progress)
     lines.append(
-        "Ключи DeepSeek / Yandex — вкладка Настройки. Автоозвучка — переключатель в шапке. "
-        "Интернет на ГУ обязателен. На Feiyu нет Google STT: пишите текстом (Яндекс-клавиатура). "
+        "Ключи DeepSeek / Yandex — вкладка Настройки. Автоозвучка — встроенный RHVoice (Елена), "
+        "системный TTS Android не нужен. Интернет на ГУ обязателен. "
+        "На Feiyu нет Google STT: пишите текстом (Яндекс-клавиатура). "
         "Русский интерфейс — из приложения, язык системы ГУ может остаться китайским."
     )
     return lines

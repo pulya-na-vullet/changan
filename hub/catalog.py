@@ -47,7 +47,7 @@ CATALOG: list[CatalogApp] = [
         package="com.changanhub.chatrise",
         kind="chat",
         source="bundled",
-        notes="Ставится из раздела «Чат ИИ». Пакет com.changanhub.chatrise. Шрифты ×2. Интернет на ГУ. Ключи в Настройках. TTS русский. На Feiyu нет Google STT — пишите текстом (Яндекс-клавиатура). Русский UI из приложения, не из языка системы.",
+        notes="Ставится из раздела «Чат ИИ». Пакет com.changanhub.chatrise. Шрифты ×2. Интернет на ГУ. Ключи в Настройках. Озвучка — RHVoice (Елена) внутри APK, не системный TTS. На Feiyu нет Google STT — пишите текстом (Яндекс-клавиатура). Русский UI из приложения, не из языка системы.",
     ),
     CatalogApp(
         id="files",

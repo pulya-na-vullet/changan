@@ -7,35 +7,61 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioFormat;
 import android.media.AudioManager;
+import android.media.AudioTrack;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.IBinder;
-import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
-import android.speech.tts.Voice;
+import android.util.Log;
 
+import com.github.olga_yakovleva.rhvoice.LogLevel;
+import com.github.olga_yakovleva.rhvoice.Logger;
+import com.github.olga_yakovleva.rhvoice.RHVoiceException;
+import com.github.olga_yakovleva.rhvoice.SynthesisParameters;
+import com.github.olga_yakovleva.rhvoice.TTSClient;
+import com.github.olga_yakovleva.rhvoice.TTSEngine;
+import com.github.olga_yakovleva.rhvoice.VoiceInfo;
+
+import java.io.File;
 import java.util.ArrayDeque;
-import java.util.Locale;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Speaks AI replies in the background so Nav/climate do not kill TTS. */
-public class TtsService extends Service implements TextToSpeech.OnInitListener {
+/**
+ * Speaks AI replies with bundled RHVoice (Elena). Does not use Android TTS,
+ * so Feiyu's missing Google/iFlytek engine does not matter.
+ */
+public class TtsService extends Service implements TTSClient, Logger {
     public static final String ACTION_SPEAK = "com.changanhub.aichat.SPEAK";
     public static final String ACTION_STOP = "com.changanhub.aichat.STOP";
+    public static final String ACTION_PREPARE = "com.changanhub.aichat.PREPARE";
     public static final String ACTION_STATUS = "com.changanhub.aichat.TTS_STATUS";
     public static final String EXTRA_TEXT = "text";
 
-    private static TextToSpeech tts;
+    private static TTSEngine engine;
     private static boolean ready;
     private static String warning = "";
     private static final ArrayDeque<String> queue = new ArrayDeque<>();
     private static boolean speaking;
+    private static boolean stopRequested;
+    private static String defaultVoice = "Elena";
+    private static final List<String> voices = new ArrayList<>();
+
+    private AudioTrack track;
+    private int sampleRate = 16000;
+    private Thread worker;
+    private boolean quit;
 
     public static void speak(Context context, String text) {
         Intent intent = new Intent(context, TtsService.class);
         intent.setAction(ACTION_SPEAK);
         intent.putExtra(EXTRA_TEXT, text);
+        start(context, intent);
+    }
+
+    public static void prepare(Context context) {
+        Intent intent = new Intent(context, TtsService.class);
+        intent.setAction(ACTION_PREPARE);
         start(context, intent);
     }
 
@@ -45,12 +71,22 @@ public class TtsService extends Service implements TextToSpeech.OnInitListener {
         start(context, intent);
     }
 
+    public static boolean isReady() {
+        return ready;
+    }
+
     public static String warning() {
         return warning == null ? "" : warning;
     }
 
     public static boolean isSpeaking() {
         return speaking;
+    }
+
+    public static List<String> voiceNames() {
+        synchronized (voices) {
+            return new ArrayList<String>(voices);
+        }
     }
 
     private static void start(Context context, Intent intent) {
@@ -77,7 +113,14 @@ public class TtsService extends Service implements TextToSpeech.OnInitListener {
     public void onCreate() {
         super.onCreate();
         startInForeground();
-        tts = new TextToSpeech(this, this);
+        quit = false;
+        worker = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                loop();
+            }
+        }, "rhvoice");
+        worker.start();
     }
 
     @Override
@@ -87,108 +130,182 @@ public class TtsService extends Service implements TextToSpeech.OnInitListener {
         if (ACTION_SPEAK.equals(action) && intent != null) {
             String text = intent.getStringExtra(EXTRA_TEXT);
             if (text != null && text.trim().length() > 0) {
-                queue.addLast(text.trim());
-                pump();
+                synchronized (queue) {
+                    queue.addLast(text.trim());
+                    queue.notifyAll();
+                }
             }
         } else if (ACTION_STOP.equals(action)) {
-            queue.clear();
-            speaking = false;
-            try {
-                if (tts != null) {
-                    tts.stop();
-                }
-            } catch (Exception ignored) {
-            }
+            stopNow();
         }
         return START_STICKY;
     }
 
-    @Override
-    public void onInit(int status) {
-        ready = status == TextToSpeech.SUCCESS;
-        warning = "";
-        if (!ready) {
-            warning = "На ГУ нет TTS-движка. Установите синтез речи в системных настройках Android.";
-            return;
-        }
+    private void loop() {
         try {
-            int lang = tts.setLanguage(new Locale("ru", "RU"));
-            if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
-                warning = "Русский голос TTS недоступен. Выберите другой движок в настройках Android.";
+            File data = RhVoiceData.ensure(this);
+            File cfg = RhVoiceData.configDir(this);
+            engine = new TTSEngine(data.getAbsolutePath(), cfg.getAbsolutePath(), new String[0], "", this);
+            List list = engine.getVoices();
+            synchronized (voices) {
+                voices.clear();
+                if (list != null) {
+                    for (int i = 0; i < list.size(); i++) {
+                        Object item = list.get(i);
+                        if (item instanceof VoiceInfo) {
+                            String name = ((VoiceInfo) item).getName();
+                            if (name != null && name.length() > 0) {
+                                voices.add(name);
+                            }
+                        }
+                    }
+                }
+                if (voices.isEmpty()) {
+                    voices.add("Elena");
+                }
+                defaultVoice = voices.get(0);
             }
-            applyVoice();
-            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override
-                public void onStart(String utteranceId) {
-                    speaking = true;
-                }
-
-                @Override
-                public void onDone(String utteranceId) {
-                    speaking = false;
-                    pump();
-                }
-
-                @Override
-                public void onError(String utteranceId) {
-                    speaking = false;
-                    pump();
-                }
-            });
-        } catch (Exception e) {
-            warning = "TTS не запустился: " + e.getMessage();
+            ready = true;
+            warning = "";
+        } catch (Throwable e) {
+            ready = false;
+            warning = "RHVoice не запустился: " + e.getMessage();
+            Log.e("RHVoice", warning, e);
         }
-        pump();
+        while (!quit) {
+            String next = null;
+            synchronized (queue) {
+                while (!quit && queue.isEmpty()) {
+                    try {
+                        queue.wait();
+                    } catch (InterruptedException ignored) {
+                    }
+                }
+                if (!quit) {
+                    next = queue.pollFirst();
+                }
+            }
+            if (next == null) {
+                continue;
+            }
+            speakNow(next);
+        }
     }
 
-    private void applyVoice() {
-        if (tts == null) {
+    private void speakNow(String text) {
+        if (!ready || engine == null) {
             return;
         }
+        stopRequested = false;
+        speaking = true;
+        startInForeground();
         try {
-            tts.setSpeechRate(Prefs.speechRate(this));
-            tts.setPitch(Prefs.pitch(this));
+            SynthesisParameters params = new SynthesisParameters();
             String wanted = Prefs.voiceName(this);
-            if (wanted.length() == 0) {
-                return;
-            }
-            Set<Voice> voices = tts.getVoices();
-            if (voices == null) {
-                return;
-            }
-            for (Voice voice : voices) {
-                if (wanted.equals(voice.getName())) {
-                    tts.setVoice(voice);
-                    return;
-                }
-            }
-        } catch (Exception ignored) {
+            params.setVoiceProfile(wanted.length() > 0 ? wanted : defaultVoice);
+            params.setRate(clampRel(Prefs.speechRate(this)));
+            params.setPitch(clampRel(Prefs.pitch(this)));
+            params.setVolume(clampRel(Prefs.volume(this)));
+            engine.speak(text, params, this);
+        } catch (RHVoiceException e) {
+            warning = "RHVoice: " + e.getMessage();
+            Log.e("RHVoice", warning, e);
+        } catch (Throwable e) {
+            warning = "озвучка: " + e.getMessage();
+            Log.e("RHVoice", warning, e);
+        } finally {
+            releaseTrack();
+            speaking = false;
+            startInForeground();
         }
     }
 
-    private void pump() {
-        if (!ready || tts == null || speaking) {
-            return;
+    private static double clampRel(float value) {
+        if (value < 0.2f) {
+            return 0.2;
         }
-        String next = queue.pollFirst();
-        if (next == null) {
-            return;
+        if (value > 2f) {
+            return 2;
         }
-        applyVoice();
+        return value;
+    }
+
+    private void stopNow() {
+        stopRequested = true;
+        synchronized (queue) {
+            queue.clear();
+            queue.notifyAll();
+        }
         try {
-            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (am != null) {
-                int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                int vol = Math.round(Prefs.volume(this) * max);
-                am.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0);
+            if (track != null) {
+                track.stop();
             }
-            Bundle params = new Bundle();
-            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, Prefs.volume(this));
-            tts.speak(next, TextToSpeech.QUEUE_FLUSH, params, "aichat");
-            speaking = true;
         } catch (Exception ignored) {
-            speaking = false;
         }
+        speaking = false;
+    }
+
+    @Override
+    public boolean setSampleRate(int rate) {
+        if (rate <= 0) {
+            return false;
+        }
+        if (track != null && sampleRate == rate) {
+            return true;
+        }
+        releaseTrack();
+        sampleRate = rate;
+        int min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        if (min < 4096) {
+            min = 4096;
+        }
+        track = new AudioTrack(AudioManager.STREAM_MUSIC, rate, AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, min * 2, AudioTrack.MODE_STREAM);
+        track.play();
+        return true;
+    }
+
+    @Override
+    public boolean playSpeech(short[] samples) {
+        if (stopRequested || samples == null || samples.length == 0) {
+            return !stopRequested;
+        }
+        if (track == null) {
+            setSampleRate(sampleRate);
+        }
+        int offset = 0;
+        while (offset < samples.length && !stopRequested) {
+            int n = track.write(samples, offset, samples.length - offset);
+            if (n <= 0) {
+                break;
+            }
+            offset += n;
+        }
+        return !stopRequested;
+    }
+
+    @Override
+    public boolean rangeStart(int start, int end) {
+        return !stopRequested;
+    }
+
+    @Override
+    public void log(String tag, LogLevel level, String message) {
+        if (level == LogLevel.ERROR) {
+            Log.e("RHVoice", message);
+        }
+    }
+
+    private void releaseTrack() {
+        if (track == null) {
+            return;
+        }
+        try {
+            track.stop();
+            track.release();
+        } catch (Exception ignored) {
+        }
+        track = null;
     }
 
     private void startInForeground() {
@@ -215,7 +332,7 @@ public class TtsService extends Service implements TextToSpeech.OnInitListener {
         }
         Notification n = b
                 .setContentTitle("AI Chat")
-                .setContentText(speaking ? "озвучка ответа" : "голос готов")
+                .setContentText(speaking ? "озвучка RHVoice" : "голос RHVoice готов")
                 .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
                 .setContentIntent(pi)
                 .setOngoing(true)
@@ -225,15 +342,21 @@ public class TtsService extends Service implements TextToSpeech.OnInitListener {
 
     @Override
     public void onDestroy() {
-        queue.clear();
-        speaking = false;
-        if (tts != null) {
+        quit = true;
+        stopNow();
+        if (worker != null) {
+            worker.interrupt();
             try {
-                tts.stop();
-                tts.shutdown();
+                worker.join(1500);
+            } catch (InterruptedException ignored) {
+            }
+        }
+        if (engine != null) {
+            try {
+                engine.shutdown();
             } catch (Exception ignored) {
             }
-            tts = null;
+            engine = null;
         }
         ready = false;
         super.onDestroy();

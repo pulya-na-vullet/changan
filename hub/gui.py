@@ -415,12 +415,14 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "AI Chat 1.0.3 ходит в интернет с ГУ (SIM/Wi‑Fi), без Google Play. "
+                "AI Chat 1.0.4 ходит в интернет с ГУ (SIM/Wi‑Fi), без Google Play. "
+                "Озвучка ответов — встроенный RHVoice (голос Елена внутри APK), "
+                "системный TTS Android на Feiyu не нужен. "
                 "Вкладки: Чат / Настройки / История / Голос. Шрифты ×2, поля 8%/10% "
                 "плюс зазор справа под свёрнутый QuickBar. "
                 "Провайдеры: DeepSeek (api.deepseek.com) и YandexGPT. Ключи в Android Keystore. "
-                "Ответы озвучивает системный TTS (русский). Микрофона на Feiyu нет: голосовой "
-                "помощник машины — iFlytek, это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
+                "Микрофона на Feiyu нет: голосовой помощник машины — iFlytek, "
+                "это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
                 "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
                 "Пакет: com.changanhub.chatrise (старый aichat Feiyu не удаляет). "
                 "Макет: docs\\aichat-layout.html."
