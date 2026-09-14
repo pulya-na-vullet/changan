@@ -66,12 +66,19 @@ public class BrowserActivity extends Activity {
     private int sortMode;
     private int attachedSession = -1;
     private boolean scanning;
+    private boolean flatScan;
     private final List<UsbMedia.Entry> rows = new ArrayList<>();
     private final Adapter adapter = new Adapter();
     private final BroadcastReceiver status = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             refreshNow();
+        }
+    };
+    private final BroadcastReceiver volumes = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            refreshVolumes();
         }
     };
 
@@ -141,10 +148,19 @@ public class BrowserActivity extends Activity {
                 goUp();
             }
         });
+        findViewById(R.id.btn_volumes).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                sortMode = 0;
+                EqPrefs.putInt(BrowserActivity.this, "sort", sortMode);
+                labelSort();
+                showRoots();
+            }
+        });
         findViewById(R.id.btn_scan).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                scanUsb(true);
+                refreshVolumes();
             }
         });
         btnSort.setOnClickListener(new View.OnClickListener() {
@@ -222,7 +238,7 @@ public class BrowserActivity extends Activity {
         labelSort();
         showTab(0);
         requestPerms();
-        scanUsb(true);
+        showRoots();
         handleViewIntent(getIntent());
     }
 
@@ -230,7 +246,8 @@ public class BrowserActivity extends Activity {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int padX = Math.max(8, (int) (dm.widthPixels * 0.08f));
         int padY = Math.max(8, (int) (dm.heightPixels * 0.10f));
-        stage.setPadding(padX, padY, padX, padY);
+        int dock = (int) (160f * dm.density);
+        stage.setPadding(padX, padY, padX + dock, padY);
     }
 
     private void requestPerms() {
@@ -255,6 +272,7 @@ public class BrowserActivity extends Activity {
     protected void onResume() {
         super.onResume();
         registerReceiver(status, new IntentFilter(PlayerService.ACTION_STATUS));
+        registerReceiver(volumes, volumeFilter());
         refreshNow();
         if (tab == 3) {
             attachViz();
@@ -266,6 +284,10 @@ public class BrowserActivity extends Activity {
     protected void onPause() {
         try {
             unregisterReceiver(status);
+        } catch (Exception ignored) {
+        }
+        try {
+            unregisterReceiver(volumes);
         } catch (Exception ignored) {
         }
         viz.release();
@@ -339,7 +361,13 @@ public class BrowserActivity extends Activity {
         pageViz.setVisibility(next == 3 ? View.VISIBLE : View.GONE);
         btnSort.setVisibility(next == 0 ? View.VISIBLE : View.GONE);
         if (next <= 1) {
-            scanUsb(false);
+            if (flatScan || sortMode != 0) {
+                scanUsb(false);
+            } else if (cwd == null) {
+                showRoots();
+            } else {
+                openDir(cwd);
+            }
         }
         if (next == 2) {
             buildEqBands();
@@ -374,32 +402,48 @@ public class BrowserActivity extends Activity {
 
     private void showRoots() {
         cwd = null;
+        flatScan = false;
         rows.clear();
-        List<File> roots = UsbMedia.roots(this);
-        for (int i = 0; i < roots.size(); i++) {
-            File root = roots.get(i);
-            UsbMedia.Entry e = new UsbMedia.Entry();
-            e.file = root;
-            e.directory = true;
-            e.label = "Флешка · " + root.getName();
-            e.meta = root.getAbsolutePath();
-            rows.add(e);
-        }
-        pathView.setText(getString(R.string.usb));
+        rows.addAll(UsbMedia.volumes(this));
+        pathView.setText(getString(R.string.usb) + " · " + rows.size());
         apply();
     }
 
     private void openDir(File dir) {
         cwd = dir;
+        flatScan = false;
         rows.clear();
-        rows.addAll(UsbMedia.list(dir));
+        rows.addAll(UsbMedia.list(dir, tab == 0, tab == 1));
         UsbMedia.sortEntries(rows, sortMode);
         pathView.setText(dir.getAbsolutePath());
         apply();
     }
 
+    private void refreshVolumes() {
+        if (flatScan || sortMode != 0) {
+            scanUsb(true);
+            return;
+        }
+        if (cwd != null && cwd.isDirectory()) {
+            openDir(cwd);
+            return;
+        }
+        showRoots();
+    }
+
+    private IntentFilter volumeFilter() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
+        filter.addAction(Intent.ACTION_MEDIA_UNMOUNTED);
+        filter.addAction(Intent.ACTION_MEDIA_REMOVED);
+        filter.addAction(Intent.ACTION_MEDIA_BAD_REMOVAL);
+        filter.addAction(Intent.ACTION_MEDIA_EJECT);
+        filter.addDataScheme("file");
+        return filter;
+    }
+
     private void goUp() {
-        if (tab == 1 || sortMode != 0) {
+        if (sortMode != 0 || flatScan) {
             showRoots();
             return;
         }
@@ -408,7 +452,9 @@ public class BrowserActivity extends Activity {
             return;
         }
         File parent = cwd.getParentFile();
-        List<File> roots = UsbMedia.roots(this);
+        List<File> roots = new ArrayList<>();
+        roots.addAll(UsbMedia.roots(this));
+        roots.addAll(UsbMedia.memoryRoots());
         for (int i = 0; i < roots.size(); i++) {
             if (cwd.equals(roots.get(i))) {
                 showRoots();
@@ -451,6 +497,7 @@ public class BrowserActivity extends Activity {
                     public void run() {
                         scanning = false;
                         cwd = null;
+                        flatScan = true;
                         rows.clear();
                         rows.addAll(found);
                         pathView.setText((video ? "видео · " : "музыка · ") + found.size() + " файлов");
@@ -506,6 +553,15 @@ public class BrowserActivity extends Activity {
         boolean none = rows.isEmpty();
         empty.setVisibility(none ? View.VISIBLE : View.GONE);
         list.setVisibility(none ? View.GONE : View.VISIBLE);
+        if (none) {
+            if (cwd == null && !flatScan) {
+                empty.setText(R.string.empty);
+            } else if (tab == 1) {
+                empty.setText("В этой папке нет видео.");
+            } else {
+                empty.setText("В этой папке нет музыки.");
+            }
+        }
         adapter.notifyDataSetChanged();
     }
 
@@ -597,6 +653,7 @@ public class BrowserActivity extends Activity {
                     v.postDelayed(new Runnable() {
                         @Override
                         public void run() {
+                            loadFxSliders();
                             buildNamedPresets();
                             buildEqBands();
                             eqCurve.capture(PlayerService.equalizer());
@@ -748,7 +805,9 @@ public class BrowserActivity extends Activity {
             TextView kind = convertView.findViewById(R.id.kind);
             TextView name = convertView.findViewById(R.id.name);
             TextView meta = convertView.findViewById(R.id.meta);
-            if (e.directory) {
+            if (e.volume) {
+                kind.setText(e.removable ? "USB" : "ГУ");
+            } else if (e.directory) {
                 kind.setText("📁");
             } else if (e.video) {
                 kind.setText("▶");

@@ -1,6 +1,7 @@
 package com.changanhub.player;
 
 import android.content.Context;
+import android.os.Environment;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 
@@ -24,6 +25,8 @@ public final class UsbMedia {
         public boolean directory;
         public boolean audio;
         public boolean video;
+        public boolean volume;
+        public boolean removable;
         public String label;
         public String meta;
         public String artist = "";
@@ -34,14 +37,16 @@ public final class UsbMedia {
     public static List<File> roots(Context context) {
         List<File> found = new ArrayList<>();
         addStorageVolumes(context, found);
-        addIfDir(found, new File("/mnt/media_rw"));
-        addIfDir(found, new File("/mnt/usb_storage"));
+        addWithChildren(found, new File("/mnt/media_rw"));
+        addWithChildren(found, new File("/mnt/usb_storage"));
         addIfDir(found, new File("/mnt/usbhost"));
         addIfDir(found, new File("/mnt/udisk"));
         addIfDir(found, new File("/storage/usb0"));
         addIfDir(found, new File("/storage/usbotg"));
         addIfDir(found, new File("/storage/udisk"));
         addIfDir(found, new File("/storage/usbdisk"));
+        addIfDir(found, new File("/mnt/usb"));
+        addIfDir(found, new File("/storage/usb"));
         File storage = new File("/storage");
         File[] kids = storage.listFiles();
         if (kids != null) {
@@ -78,6 +83,43 @@ public final class UsbMedia {
         } catch (Exception ignored) {
         }
         return uniqueExisting(found);
+    }
+
+    public static List<File> memoryRoots() {
+        List<File> found = new ArrayList<>();
+        try {
+            addIfDir(found, Environment.getExternalStorageDirectory());
+        } catch (Exception ignored) {
+        }
+        addIfDir(found, new File("/storage/emulated/0"));
+        addIfDir(found, new File("/sdcard"));
+        addIfDir(found, new File("/storage/sdcard0"));
+        addIfDir(found, new File("/mnt/sdcard"));
+        return uniqueExisting(found);
+    }
+
+    public static List<Entry> volumes(Context context) {
+        List<Entry> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        List<File> sticks = roots(context);
+        for (int i = 0; i < sticks.size(); i++) {
+            File root = sticks.get(i);
+            String key = canon(root);
+            if (!seen.add(key) || isMemoryPath(key)) {
+                continue;
+            }
+            out.add(volumeEntry(root, true));
+        }
+        List<File> memory = memoryRoots();
+        for (int i = 0; i < memory.size(); i++) {
+            File root = memory.get(i);
+            String key = canon(root);
+            if (!seen.add(key)) {
+                continue;
+            }
+            out.add(volumeEntry(root, false));
+        }
+        return out;
     }
 
     public static void fillTags(Entry e) {
@@ -145,6 +187,10 @@ public final class UsbMedia {
     }
 
     public static List<Entry> list(File dir) {
+        return list(dir, true, true);
+    }
+
+    public static List<Entry> list(File dir, boolean wantAudio, boolean wantVideo) {
         List<Entry> out = new ArrayList<>();
         if (dir == null || !dir.isDirectory()) {
             return out;
@@ -168,10 +214,18 @@ public final class UsbMedia {
                 e.meta = "папка";
                 out.add(e);
             } else if (MediaTypes.isMedia(name) && file.length() > 0) {
+                boolean audio = MediaTypes.isAudio(name);
+                boolean video = MediaTypes.isVideo(name);
+                if ((audio && !wantAudio) || (video && !wantVideo)) {
+                    continue;
+                }
+                if (!audio && !video) {
+                    continue;
+                }
                 Entry e = new Entry();
                 e.file = file;
-                e.audio = MediaTypes.isAudio(name);
-                e.video = MediaTypes.isVideo(name);
+                e.audio = audio;
+                e.video = video;
                 e.label = name;
                 fillTags(e);
                 out.add(e);
@@ -209,6 +263,11 @@ public final class UsbMedia {
         List<Entry> out = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         List<File> volumes = roots(context);
+        List<File> memory = memoryRoots();
+        for (int i = 0; i < memory.size(); i++) {
+            volumes.add(memory.get(i));
+        }
+        volumes = uniqueExisting(volumes);
         for (int i = 0; i < volumes.size(); i++) {
             List<Entry> chunk = scanEntries(volumes.get(i), video);
             for (int j = 0; j < chunk.size(); j++) {
@@ -279,9 +338,52 @@ public final class UsbMedia {
         }
     }
 
+    private static void addWithChildren(List<File> found, File dir) {
+        addIfDir(found, dir);
+        if (dir == null || !dir.isDirectory()) {
+            return;
+        }
+        File[] kids = dir.listFiles();
+        if (kids == null) {
+            return;
+        }
+        for (int i = 0; i < kids.length; i++) {
+            File child = kids[i];
+            if (child.isDirectory() && !child.getName().startsWith(".")) {
+                addIfDir(found, child);
+            }
+        }
+    }
+
     private static void addIfDir(List<File> found, File dir) {
         if (dir != null && dir.isDirectory()) {
             found.add(dir);
+        }
+    }
+
+    private static Entry volumeEntry(File root, boolean removable) {
+        Entry e = new Entry();
+        e.file = root;
+        e.directory = true;
+        e.volume = true;
+        e.removable = removable;
+        e.label = removable ? ("Флешка · " + root.getName()) : ("Память ГУ · " + root.getName());
+        e.meta = root.getAbsolutePath();
+        return e;
+    }
+
+    private static boolean isMemoryPath(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        return lower.contains("/emulated/") || lower.endsWith("/emulated")
+                || lower.equals("/sdcard") || lower.endsWith("/sdcard")
+                || lower.contains("/sdcard0");
+    }
+
+    private static String canon(File dir) {
+        try {
+            return dir.getCanonicalPath();
+        } catch (Exception e) {
+            return dir.getAbsolutePath();
         }
     }
 
@@ -290,13 +392,7 @@ public final class UsbMedia {
         List<File> out = new ArrayList<>();
         for (int i = 0; i < input.size(); i++) {
             File dir = input.get(i);
-            String key;
-            try {
-                key = dir.getCanonicalPath();
-            } catch (Exception e) {
-                key = dir.getAbsolutePath();
-            }
-            if (seen.add(key)) {
+            if (seen.add(canon(dir))) {
                 out.add(dir);
             }
         }

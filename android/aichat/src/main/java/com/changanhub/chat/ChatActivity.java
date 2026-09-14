@@ -242,7 +242,8 @@ public class ChatActivity extends Activity {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int padX = Math.max(8, (int) (dm.widthPixels * 0.08f));
         int padY = Math.max(8, (int) (dm.heightPixels * 0.10f));
-        stage.setPadding(padX, padY, padX, padY);
+        int dock = (int) (160f * dm.density);
+        stage.setPadding(padX, padY, padX + dock, padY);
     }
 
     private void showTab(int next) {
@@ -484,8 +485,9 @@ public class ChatActivity extends Activity {
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 40);
-            lp.setMargins(0, 0, 6, 6);
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, 8, 0);
             prompts.addView(b, lp);
         }
     }
@@ -773,11 +775,20 @@ public class ChatActivity extends Activity {
     private Button chip(String text, boolean accent) {
         Button b = new Button(this);
         b.setText(text);
+        b.setAllCaps(false);
         b.setTextColor(accent ? 0xFF0B1220 : 0xFFF3F6FB);
         b.setBackgroundColor(accent ? 0xFF3DDC97 : 0xFF223049);
-        b.setMinHeight(96);
-        b.setTextSize(32);
+        int h = dp(96);
+        b.setMinHeight(h);
+        b.setMinimumHeight(h);
+        b.setPadding(dp(18), dp(8), dp(18), dp(8));
+        b.setTextSize(28);
+        b.setIncludeFontPadding(false);
         return b;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private RadioButton radio(String text, boolean on) {

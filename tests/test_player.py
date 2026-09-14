@@ -14,7 +14,7 @@ def test_player_sources_and_formats() -> None:
     mf = (root / "android/player/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert 'package="com.changanhub.playrise"' in mf
     assert "APP_MUSIC" not in mf
-    assert 'android:versionName="1.1.1"' in mf
+    assert 'android:versionName="1.1.2"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "RECORD_AUDIO" in mf
@@ -60,9 +60,36 @@ def test_player_sources_and_formats() -> None:
     )
     assert "GLSurfaceView" in fog
     build = (root / "scripts/build_player.py").read_text(encoding="utf-8")
-    assert '"1.1.1"' in build
+    assert '"1.1.2"' in build
     assert '"28"' in build
     assert PACKAGE == "com.changanhub.playrise"
+    assert "effectiveShape" in eq
+    assert "applyEffectiveBands" in eq
+    assert "private void applyTone" not in eq
+    assert "putTone" in prefs
+    assert "toneDefault" in prefs
+    rock = "{600, 400, 200, 0, -200, 0, 300, 500, 400, 300}"
+    pop = "{-200, 0, 300, 400, 200, 0, 200, 300, 200, 0}"
+    jazz = "{200, 100, 0, 200, 300, 200, 0, 100, 200, 100}"
+    assert rock in prefs
+    assert pop in prefs
+    assert jazz in prefs
+    assert rock != pop
+    assert "memoryRoots" in usb
+    assert "volumes(" in usb
+    assert "/mnt/media_rw" in usb
+    assert "btn_volumes" in ui
+    assert "refreshVolumes" in ui
+    assert "showRoots()" in ui
+    assert "160f * dm.density" in ui
+    assert "ACTION_MEDIA_MOUNTED" in ui
+    xml = (root / "android/player/src/main/res/layout/activity_browser.xml").read_text(encoding="utf-8")
+    assert 'android:textSize="40sp"' in xml
+    assert 'android:layout_height="88dp"' in xml
+    assert 'android:id="@+id/btn_volumes"' in xml
+    mock = (root / "docs/player-layout.html").read_text(encoding="utf-8")
+    assert "Lamore Player 1.1.2" in mock
+    assert "Флешки" in mock
 
 
 def test_hub_installs_player() -> None:

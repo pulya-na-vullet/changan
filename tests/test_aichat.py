@@ -8,7 +8,7 @@ def test_aichat_sources() -> None:
     root = Path(__file__).resolve().parents[1]
     mf = (root / "android/aichat/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert 'package="com.changanhub.chatrise"' in mf
-    assert 'android:versionName="1.0.2"' in mf
+    assert 'android:versionName="1.0.3"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "INTERNET" in mf
@@ -46,13 +46,28 @@ def test_aichat_sources() -> None:
     )
     assert "export-chat.json" in store
     build = (root / "scripts/build_aichat.py").read_text(encoding="utf-8")
-    assert '"1.0.2"' in build
+    assert '"1.0.3"' in build
     assert PACKAGE == "com.changanhub.chatrise"
     assert "SpeechRecognizer.isRecognitionAvailable" in ui
     assert "setVisibility(View.GONE)" in ui
     assert "iFlytek" in ui
     assert "Яндекс-клавиатура" in ui
     assert "Распознавание речи на этой ГУ недоступно (нет Google STT)" not in ui
+    assert "WRAP_CONTENT, 40" not in ui
+    assert "setAllCaps(false)" in ui
+    assert "160f * dm.density" in ui
+    layout = (root / "android/aichat/src/main/res/layout/activity_chat.xml").read_text(encoding="utf-8")
+    assert 'android:id="@+id/composer"' in layout
+    assert 'android:id="@+id/btn_send"' in layout
+    assert 'android:textAllCaps="false"' in layout
+    assert 'android:maxLines="1"' in layout
+    assert 'android:layout_width="168dp"' not in layout
+    assert 'android:minHeight="104dp"' in layout
+    mock = (root / "docs/aichat-layout.html").read_text(encoding="utf-8")
+    assert "AI Chat 1.0.3" in mock
+    assert "Переведи" in mock
+    assert "Объясни" in mock
+    assert "Сократи" in mock
 
 
 def test_hub_installs_aichat() -> None:

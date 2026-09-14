@@ -33,15 +33,15 @@ public final class EqPrefs {
     }
 
     public static int bass(Context context) {
-        return prefs(context).getInt("bass", 500);
+        return tone(context, "bass", namedPreset(context));
     }
 
     public static int virt(Context context) {
-        return prefs(context).getInt("virt", 400);
+        return tone(context, "virt", namedPreset(context));
     }
 
     public static int loud(Context context) {
-        return prefs(context).getInt("loud", 0);
+        return tone(context, "loud", namedPreset(context));
     }
 
     public static int balance(Context context) {
@@ -49,11 +49,11 @@ public final class EqPrefs {
     }
 
     public static int mids(Context context) {
-        return prefs(context).getInt("mids", 500);
+        return tone(context, "mids", namedPreset(context));
     }
 
     public static int highs(Context context) {
-        return prefs(context).getInt("highs", 500);
+        return tone(context, "highs", namedPreset(context));
     }
 
     public static int volume(Context context) {
@@ -70,6 +70,55 @@ public final class EqPrefs {
 
     public static void putBool(Context context, String key, boolean value) {
         prefs(context).edit().putBoolean(key, value).apply();
+    }
+
+    public static void putTone(Context context, String key, int value) {
+        int named = namedPreset(context);
+        SharedPreferences.Editor edit = prefs(context).edit();
+        edit.putInt(key + "_" + named, value);
+        if ("volume".equals(key) || "balance".equals(key)) {
+            edit.putInt(key, value);
+        }
+        edit.apply();
+    }
+
+    public static int tone(Context context, String key, int named) {
+        String namedKey = key + "_" + named;
+        SharedPreferences p = prefs(context);
+        if (p.contains(namedKey)) {
+            return p.getInt(namedKey, toneDefault(named, key));
+        }
+        if (named == 7 && p.contains(key) && isPerPreset(key)) {
+            return p.getInt(key, toneDefault(named, key));
+        }
+        return toneDefault(named, key);
+    }
+
+    public static int toneDefault(int named, String key) {
+        if ("virt".equals(key)) {
+            return 400;
+        }
+        if ("loud".equals(key)) {
+            return 0;
+        }
+        if ("bass".equals(key) || "mids".equals(key) || "highs".equals(key)) {
+            return millibelToSlider(thirdAverage(shape(named), key));
+        }
+        return 500;
+    }
+
+    /** Factory 10-band shape plus per-genre slider overlays. */
+    public static short[] effectiveShape(Context context, int named) {
+        short[] shape = shape(named);
+        if (named == 7) {
+            for (int i = 0; i < shape.length; i++) {
+                shape[i] = customBand(context, i);
+            }
+        }
+        overlayThird(shape, "bass", tone(context, "bass", named) - toneDefault(named, "bass"));
+        overlayThird(shape, "mids", tone(context, "mids", named) - toneDefault(named, "mids"));
+        overlayThird(shape, "highs", tone(context, "highs", named) - toneDefault(named, "highs"));
+        return shape;
     }
 
     /** 10-band shape in millibels-ish -1200..1200, mapped onto hardware bands. */
@@ -100,5 +149,70 @@ public final class EqPrefs {
 
     public static void saveCustomBand(Context context, int band, short level) {
         prefs(context).edit().putInt("eq_named", 7).putInt("band_" + band, level).apply();
+    }
+
+    public static int millibelToSlider(int millibel) {
+        int slider = 500 + millibel * 500 / 1200;
+        if (slider < 0) {
+            return 0;
+        }
+        if (slider > 1000) {
+            return 1000;
+        }
+        return slider;
+    }
+
+    private static boolean isPerPreset(String key) {
+        return "bass".equals(key) || "mids".equals(key) || "highs".equals(key)
+                || "virt".equals(key) || "loud".equals(key);
+    }
+
+    private static int thirdAverage(short[] shape, String key) {
+        int start = 0;
+        int end = 3;
+        if ("mids".equals(key)) {
+            start = 3;
+            end = 7;
+        } else if ("highs".equals(key)) {
+            start = 7;
+            end = 10;
+        }
+        if (end > shape.length) {
+            end = shape.length;
+        }
+        if (end <= start) {
+            return 0;
+        }
+        int sum = 0;
+        for (int i = start; i < end; i++) {
+            sum += shape[i];
+        }
+        return sum / (end - start);
+    }
+
+    private static void overlayThird(short[] shape, String key, int sliderDelta) {
+        int start = 0;
+        int end = 3;
+        if ("mids".equals(key)) {
+            start = 3;
+            end = 7;
+        } else if ("highs".equals(key)) {
+            start = 7;
+            end = 10;
+        }
+        int millibel = sliderDelta * 1200 / 500;
+        if (end > shape.length) {
+            end = shape.length;
+        }
+        for (int i = start; i < end; i++) {
+            int next = shape[i] + millibel;
+            if (next > 1500) {
+                next = 1500;
+            }
+            if (next < -1500) {
+                next = -1500;
+            }
+            shape[i] = (short) next;
+        }
     }
 }
