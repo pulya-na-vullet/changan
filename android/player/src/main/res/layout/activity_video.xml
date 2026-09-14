@@ -18,7 +18,7 @@
         android:gravity="center"
         android:padding="12dp"
         android:textColor="#FFFFFFFF"
-        android:textSize="22sp"
+        android:textSize="44sp"
         android:shadowColor="#FF000000"
         android:shadowDx="1"
         android:shadowDy="1"
@@ -39,7 +39,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/text"
-            android:textSize="20sp"
+            android:textSize="40sp"
             android:maxLines="2" />
 
         <SeekBar
@@ -56,43 +56,43 @@
 
             <Button
                 android:id="@+id/btn_prev"
-                android:layout_width="80dp"
-                android:layout_height="64dp"
+                android:layout_width="140dp"
+                android:layout_height="112dp"
                 android:text="⏮"
-                android:textSize="20sp" />
+                android:textSize="40sp" />
 
             <Button
                 android:id="@+id/btn_play"
-                android:layout_width="100dp"
-                android:layout_height="64dp"
+                android:layout_width="160dp"
+                android:layout_height="112dp"
                 android:layout_margin="8dp"
                 android:background="@color/accent"
                 android:text="▶"
                 android:textColor="@color/bg_solid"
-                android:textSize="22sp" />
+                android:textSize="44sp" />
 
             <Button
                 android:id="@+id/btn_next"
-                android:layout_width="80dp"
-                android:layout_height="64dp"
+                android:layout_width="140dp"
+                android:layout_height="112dp"
                 android:text="⏭"
-                android:textSize="20sp" />
+                android:textSize="40sp" />
 
             <Button
                 android:id="@+id/btn_audio"
-                android:layout_width="100dp"
-                android:layout_height="64dp"
+                android:layout_width="160dp"
+                android:layout_height="112dp"
                 android:layout_marginStart="8dp"
                 android:text="Звук"
-                android:textSize="16sp" />
+                android:textSize="32sp" />
 
             <Button
                 android:id="@+id/btn_subs"
-                android:layout_width="100dp"
-                android:layout_height="64dp"
+                android:layout_width="160dp"
+                android:layout_height="112dp"
                 android:layout_marginStart="8dp"
                 android:text="Субтитры"
-                android:textSize="16sp" />
+                android:textSize="32sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

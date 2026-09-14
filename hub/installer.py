@@ -22,6 +22,7 @@ from hub.bundle import (
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.quickstash",
     "com.changanhub.quickrise",
     "com.changanhub.quickkeep",
     "com.changanhub.quicklane",
@@ -301,7 +302,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
-                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickrise.",
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickstash.",
                 72,
             )
             if conflict:
@@ -316,11 +317,11 @@ def install_apk(
         else:
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Пробую pm uninstall --user 0 "
-                "(лимит 8с), затем повторную установку.",
+                "(лимит 45с), затем повторную установку.",
                 72,
             )
             if conflict:
-                gone = adb.shell(f"pm uninstall --user 0 {conflict}", timeout=8)
+                gone = adb.shell(f"pm uninstall --user 0 {conflict}", timeout=45)
                 step(
                     f"pm uninstall --user 0 {conflict} code={gone.code} "
                     f"stdout={gone.stdout.strip()!r} stderr={gone.stderr.strip()!r}",
@@ -345,7 +346,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quickrise не появится.",
+            "в списке com.changanhub.quickstash не появится.",
             100,
         )
         return report
@@ -442,7 +443,7 @@ def _finish_keep_overlay(
     if kind == "player":
         msg = (
             "Плеер с этой подписью уже стоит. Не отключаю. "
-            "Lamore Player 1.1 — пакет com.changanhub.playrise, раздел «Плеер»."
+            "Lamore Player 1.1.2 — пакет com.changanhub.playrise, раздел «Плеер»."
         )
     elif kind == "chat":
         msg = (
@@ -1771,8 +1772,8 @@ def apk_package_name(apk: Path) -> str | None:
         return bundle_package_name(apk)
 
     stem = apk.name.lower()
-    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise")):
-        return "com.changanhub.quickrise"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash")):
+        return "com.changanhub.quickstash"
     if any(token in stem for token in ("player", "lamoreplayer", "playrise")):
         return "com.changanhub.playrise"
     if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise")):

@@ -1,6 +1,7 @@
 package com.changanhub.quickbar;
 
 import android.app.ActivityManager;
+import android.app.ActivityOptions;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -21,10 +22,12 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Handler;
 import android.os.Looper;
@@ -58,6 +61,12 @@ import java.util.Set;
 /**
  * Persistent right-edge launcher dock for Changan portrait head units.
  * Stays above every activity via SYSTEM_ALERT_WINDOW.
+ *
+ * Collapsed chips can be swiped off the right edge into a stashed mode:
+ * the same two hit-targets stay on screen but are fully transparent, so a
+ * dealer does not see the dock. A left swipe on those pads restores the
+ * collapsed chips. SharedPreferences keep stash across ACC, sleep, and reboot.
+ * The gap between the pads stays empty so Yandex Navigator still gets taps.
  */
 public class OverlayService extends Service {
     public static final String ACTION_SHOW = "com.changanhub.quickbar.SHOW";
@@ -77,6 +86,7 @@ public class OverlayService extends Service {
             "com.changanhub.quickdock",
             "com.changanhub.quicklane",
             "com.changanhub.quickkeep",
+            "com.changanhub.quickrise",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -98,11 +108,19 @@ public class OverlayService extends Service {
     private static final String KEY_HIDDEN = "hidden";
     private static final String KEY_ORDER = "order";
     private static final String KEY_COLLAPSED = "collapsed";
+    /** Invisible collapsed pads; survives ACC / sleep / reboot. */
+    private static final String KEY_STASHED = "stashed";
     private static final String KEY_WIDE = "wide";
     private static final String KEY_RECENT = "recent";
     private static final int RECENT_MAX = 3;
-    private static final int COLLAPSED_W_DP = 64;
-    private static final int COLLAPSED_ICON_DP = 36;
+    /** Collapsed chips are 2.5× the original 64×36 so they stay tappable at arm's length. */
+    private static final int COLLAPSED_W_DP = 160;
+    private static final int COLLAPSED_ICON_DP = 90;
+    private static final int COLLAPSED_MENU_H_DP = 140;
+    private static final int COLLAPSED_RECENT_PAD_DP = 70;
+    private static final String KEY_WINDOWED = "windowed";
+    /** Hidden ActivityOptions.setLaunchWindowingMode(FREEFORM). */
+    private static final int WINDOWING_MODE_FREEFORM = 5;
     private static final int WATCHDOG_REQ = 7;
     private static final long WATCHDOG_MS = 20_000L;
     private static final int[] BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120};
@@ -122,6 +140,7 @@ public class OverlayService extends Service {
     private TextView titleView;
     private TextView usbStatus;
     private boolean collapsed;
+    private boolean stashed;
     private boolean wide;
     private boolean usbMode;
     private boolean keyboardPeek;
@@ -132,6 +151,9 @@ public class OverlayService extends Service {
     private long lastReattachElapsed;
     private View usbToggle;
     private View reorderToggle;
+    private View windowedToggle;
+    /** Non-system apps launch in a freeform-sized window when the HU allows it. */
+    private boolean windowed;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<AppItem> apps = new ArrayList<>();
     private String query = "";
@@ -258,6 +280,11 @@ public class OverlayService extends Service {
         super.onCreate();
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         collapsed = p.getBoolean(KEY_COLLAPSED, false);
+        stashed = p.getBoolean(KEY_STASHED, false);
+        if (stashed) {
+            collapsed = true;
+        }
+        windowed = p.getBoolean(KEY_WINDOWED, true);
         wide = true;
         startInForeground();
         registerLifeReceiver();
@@ -290,7 +317,9 @@ public class OverlayService extends Service {
         suppressLegacy();
         if (ACTION_PAUSE.equals(action)) {
             overlayPausedUntil = SystemClock.elapsedRealtime() + 90_000L;
-            setCollapsed(true);
+            if (!stashed) {
+                setCollapsed(true);
+            }
             return START_STICKY;
         }
         if (ACTION_KEEPALIVE.equals(action)
@@ -299,13 +328,16 @@ public class OverlayService extends Service {
             return START_STICKY;
         }
         if (ACTION_TOGGLE.equals(action)) {
-            setCollapsed(!collapsed);
+            if (stashed) {
+                setStashed(false);
+            } else {
+                setCollapsed(!collapsed);
+            }
         } else if (ACTION_REFRESH.equals(action)) {
             reloadApps();
         } else {
-            if (collapsed) {
-                setCollapsed(false);
-            }
+            // SHOW / Hub / boot: restore persisted collapsed or stashed mode.
+            // Expanding here would reveal the dock after ACC — dealer would see it.
             reloadApps();
         }
         return START_STICKY;
@@ -457,6 +489,38 @@ public class OverlayService extends Service {
         if (windowManager == null) {
             windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         }
+        if (stashed) {
+            keyboardPeek = false;
+            removeView(root);
+            root = null;
+            removeView(peekView);
+            peekView = null;
+            int menuH = collapsedMenuHeight();
+            int recentH = collapsedRecentHeight();
+            int topY = collapsedMenuY();
+            int bottomY = collapsedRecentY(recentH);
+            if (!isStashPad(dockMenu)) {
+                removeView(dockMenu);
+                dockMenu = null;
+            }
+            if (!isStashPad(dockRecent)) {
+                removeView(dockRecent);
+                dockRecent = null;
+            }
+            if (dockMenu == null) {
+                dockMenu = stashPad();
+                menuParams = addOverlay(dockMenu, dp(COLLAPSED_W_DP), menuH, topY);
+            } else {
+                applyChip(dockMenu, menuParams, dp(COLLAPSED_W_DP), menuH, topY);
+            }
+            if (dockRecent == null) {
+                dockRecent = stashPad();
+                recentParams = addOverlay(dockRecent, dp(COLLAPSED_W_DP), recentH, bottomY);
+            } else {
+                applyChip(dockRecent, recentParams, dp(COLLAPSED_W_DP), recentH, bottomY);
+            }
+            return;
+        }
         if (keyboardPeek) {
             removeView(root);
             root = null;
@@ -466,9 +530,9 @@ public class OverlayService extends Service {
             dockRecent = null;
             if (peekView == null) {
                 peekView = buildPeekButton();
-                peekParams = addOverlay(peekView, dp(COLLAPSED_W_DP), dp(56), overlayTop());
+                peekParams = addOverlay(peekView, dp(COLLAPSED_W_DP), collapsedMenuHeight(), overlayTop());
             } else {
-                applyChip(peekView, peekParams, dp(COLLAPSED_W_DP), dp(56), overlayTop());
+                applyChip(peekView, peekParams, dp(COLLAPSED_W_DP), collapsedMenuHeight(), overlayTop());
             }
             return;
         }
@@ -481,6 +545,14 @@ public class OverlayService extends Service {
             int recentH = collapsedRecentHeight();
             int topY = collapsedMenuY();
             int bottomY = collapsedRecentY(recentH);
+            if (isStashPad(dockMenu)) {
+                removeView(dockMenu);
+                dockMenu = null;
+            }
+            if (isStashPad(dockRecent)) {
+                removeView(dockRecent);
+                dockRecent = null;
+            }
             if (dockMenu == null) {
                 dockMenu = wrapChip(collapseZone(R.drawable.ic_menu, new View.OnClickListener() {
                     @Override
@@ -513,7 +585,8 @@ public class OverlayService extends Service {
     }
 
     private View wrapChip(View inner) {
-        LinearLayout box = new LinearLayout(this);
+        LinearLayout box = edgeSwipeBox(false);
+        box.setTag("chip");
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
         box.setBackground(panelBackground(true));
@@ -523,6 +596,92 @@ public class OverlayService extends Service {
         return box;
     }
 
+    /** Same size/position as a collapsed chip, fully transparent for dealer hide. */
+    private View stashPad() {
+        LinearLayout pad = edgeSwipeBox(true);
+        pad.setTag("stash");
+        pad.setBackgroundColor(Color.TRANSPARENT);
+        pad.setClickable(true);
+        pad.setFocusable(false);
+        return pad;
+    }
+
+    private boolean isStashPad(View view) {
+        return view != null && "stash".equals(view.getTag());
+    }
+
+    /**
+     * Right swipe on collapsed chips stashes them. Left swipe on stash pads
+     * restores collapsed chips. Left swipe on collapsed chips still expands.
+     */
+    private LinearLayout edgeSwipeBox(final boolean fromStash) {
+        return new LinearLayout(this) {
+            float startX;
+            boolean tracking;
+
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    startX = event.getRawX();
+                    tracking = true;
+                    return false;
+                }
+                if (action == MotionEvent.ACTION_MOVE && tracking) {
+                    return shouldConsumeSwipe(fromStash, event.getRawX() - startX);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    startX = event.getRawX();
+                    tracking = true;
+                    return true;
+                }
+                if (!tracking) {
+                    return super.onTouchEvent(event);
+                }
+                float dx = event.getRawX() - startX;
+                if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
+                    if (applyEdgeSwipe(fromStash, dx)) {
+                        tracking = false;
+                        return true;
+                    }
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    tracking = false;
+                }
+                return true;
+            }
+        };
+    }
+
+    private boolean shouldConsumeSwipe(boolean fromStash, float dx) {
+        if (fromStash) {
+            return dx < -dp(24);
+        }
+        return dx > dp(28) || dx < -dp(20);
+    }
+
+    private boolean applyEdgeSwipe(boolean fromStash, float dx) {
+        if (fromStash && dx < -dp(24)) {
+            setStashed(false);
+            return true;
+        }
+        if (!fromStash && dx > dp(28)) {
+            setStashed(true);
+            return true;
+        }
+        if (!fromStash && dx < -dp(20)) {
+            expandToFull();
+            return true;
+        }
+        return false;
+    }
+
     private View buildPeekButton() {
         LinearLayout box = new LinearLayout(this);
         box.setGravity(Gravity.CENTER);
@@ -530,7 +689,8 @@ public class OverlayService extends Service {
         ImageView image = new ImageView(this);
         image.setImageResource(R.drawable.ic_logo);
         image.setColorFilter(Color.parseColor("#CC3DDC97"));
-        box.addView(image, new LinearLayout.LayoutParams(dp(COLLAPSED_ICON_DP), dp(COLLAPSED_ICON_DP)));
+        int icon = collapsedPx(COLLAPSED_ICON_DP);
+        box.addView(image, new LinearLayout.LayoutParams(icon, icon));
         box.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -629,7 +789,7 @@ public class OverlayService extends Service {
     }
 
     private void applySize() {
-        if (keyboardPeek || collapsed) {
+        if (keyboardPeek || collapsed || stashed) {
             relayout();
             return;
         }
@@ -660,11 +820,42 @@ public class OverlayService extends Service {
     }
 
     private int collapsedMenuHeight() {
-        return dp(56);
+        return collapsedPx(COLLAPSED_MENU_H_DP);
     }
 
     private int collapsedRecentHeight() {
-        return dp(COLLAPSED_ICON_DP) * RECENT_MAX + dp(28);
+        return collapsedPx(COLLAPSED_ICON_DP) * RECENT_MAX + collapsedPx(COLLAPSED_RECENT_PAD_DP);
+    }
+
+    /**
+     * 2.5× chips must still leave the 20% Yandex gap. On a short 720p edge the
+     * scale drops so menu + recents + three gaps still fit.
+     */
+    private float collapsedFit() {
+        int screen = displayHeight();
+        int gap = Math.round(screen * VERTICAL_MARGIN);
+        int menu = dp(COLLAPSED_MENU_H_DP);
+        int recent = dp(COLLAPSED_ICON_DP) * RECENT_MAX + dp(COLLAPSED_RECENT_PAD_DP);
+        int need = menu + recent + 3 * gap;
+        if (need <= screen || menu + recent <= 0) {
+            return 1f;
+        }
+        int budget = screen - 3 * gap;
+        if (budget <= 0) {
+            return 0.45f;
+        }
+        float scale = (float) budget / (float) (menu + recent);
+        if (scale < 0.45f) {
+            return 0.45f;
+        }
+        if (scale > 1f) {
+            return 1f;
+        }
+        return scale;
+    }
+
+    private int collapsedPx(int dpValue) {
+        return Math.max(1, Math.round(dp(dpValue) * collapsedFit()));
     }
 
     private int collapsedMenuY() {
@@ -684,6 +875,13 @@ public class OverlayService extends Service {
     }
 
     private void syncKeyboardPeek() {
+        if (stashed) {
+            if (keyboardPeek) {
+                keyboardPeek = false;
+                relayout();
+            }
+            return;
+        }
         if (SystemClock.elapsedRealtime() < overlayPausedUntil) {
             return;
         }
@@ -751,6 +949,24 @@ public class OverlayService extends Service {
         return getResources().getDisplayMetrics().heightPixels;
     }
 
+    private int displayWidth() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        WindowManager wm = windowManager;
+        if (wm == null) {
+            wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        }
+        if (wm != null) {
+            Display display = wm.getDefaultDisplay();
+            if (display != null) {
+                display.getRealMetrics(metrics);
+                if (metrics.widthPixels > 0) {
+                    return metrics.widthPixels;
+                }
+            }
+        }
+        return getResources().getDisplayMetrics().widthPixels;
+    }
+
     private View buildView() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -815,6 +1031,15 @@ public class OverlayService extends Service {
             }
         });
         tools.addView(reorderToggle);
+        windowedToggle = toolIcon(R.drawable.ic_window, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                windowed = !windowed;
+                persist();
+                refreshChrome();
+            }
+        });
+        tools.addView(windowedToggle);
         panel.addView(tools);
 
         usbStatus = new TextView(this);
@@ -919,6 +1144,11 @@ public class OverlayService extends Service {
                     reorderMode ? Color.parseColor("#3DDC97") : Color.WHITE);
             reorderToggle.setVisibility(usbMode || collapsed ? View.GONE : chrome);
         }
+        if (windowedToggle instanceof ImageView) {
+            ((ImageView) windowedToggle).setColorFilter(
+                    windowed ? Color.parseColor("#3DDC97") : Color.WHITE);
+            windowedToggle.setVisibility(usbMode || collapsed ? View.GONE : chrome);
+        }
         if (collapsed) {
             root.setPadding(dp(2), dp(4), dp(2), dp(4));
         } else {
@@ -972,6 +1202,7 @@ public class OverlayService extends Service {
     private void setCollapsed(boolean value) {
         keyboardPeek = false;
         collapsed = value;
+        stashed = false;
         persist();
         relayout();
         if (!collapsed) {
@@ -979,10 +1210,19 @@ public class OverlayService extends Service {
         }
     }
 
+    private void setStashed(boolean value) {
+        stashed = value;
+        collapsed = true;
+        keyboardPeek = false;
+        persist();
+        relayout();
+    }
+
     private void expandToFull() {
         usbMode = false;
         wide = true;
         collapsed = false;
+        stashed = false;
         keyboardPeek = false;
         persist();
         relayout();
@@ -993,7 +1233,9 @@ public class OverlayService extends Service {
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_COLLAPSED, collapsed)
+                .putBoolean(KEY_STASHED, stashed)
                 .putBoolean(KEY_WIDE, wide)
+                .putBoolean(KEY_WINDOWED, windowed)
                 .apply();
     }
 
@@ -1331,7 +1573,8 @@ public class OverlayService extends Service {
         ImageView image = new ImageView(this);
         image.setImageResource(icon);
         image.setColorFilter(Color.parseColor("#CC3DDC97"));
-        zone.addView(image, new LinearLayout.LayoutParams(dp(COLLAPSED_ICON_DP), dp(COLLAPSED_ICON_DP)));
+        zone.addView(image, new LinearLayout.LayoutParams(
+                collapsedPx(COLLAPSED_ICON_DP), collapsedPx(COLLAPSED_ICON_DP)));
         return zone;
     }
 
@@ -1345,7 +1588,7 @@ public class OverlayService extends Service {
         for (int i = 0; i < RECENT_MAX; i++) {
             ImageView image = new ImageView(this);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    dp(COLLAPSED_ICON_DP), dp(COLLAPSED_ICON_DP));
+                    collapsedPx(COLLAPSED_ICON_DP), collapsedPx(COLLAPSED_ICON_DP));
             lp.gravity = Gravity.CENTER_HORIZONTAL;
             if (i < recent.size()) {
                 final String pkg = recent.get(i);
@@ -1645,9 +1888,68 @@ public class OverlayService extends Service {
                 return;
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
+            if (windowed && !isSystemPackage(pkg) && !getPackageName().equals(pkg)) {
+                startWindowed(intent);
+            } else {
+                startActivity(intent);
+            }
             rememberLaunch(pkg);
         } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * Ask Android for a freeform window inset from the HU chrome and the dock.
+     * Feiyu often ignores launchBounds; then the app still opens fullscreen.
+     */
+    private void startWindowed(Intent intent) {
+        try {
+            if (Build.VERSION.SDK_INT >= 24) {
+                ActivityOptions opts = ActivityOptions.makeBasic();
+                Rect bounds = windowBounds();
+                opts.setLaunchBounds(bounds);
+                try {
+                    Method mode = ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class);
+                    mode.invoke(opts, WINDOWING_MODE_FREEFORM);
+                } catch (Exception ignoredMode) {
+                }
+                Bundle extras = opts.toBundle();
+                if (extras != null) {
+                    startActivity(intent, extras);
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        startActivity(intent);
+    }
+
+    private Rect windowBounds() {
+        int w = displayWidth();
+        int h = displayHeight();
+        int left = Math.max(dp(24), w * 8 / 100);
+        int top = Math.max(dp(24), h * 8 / 100);
+        int right = w - Math.max(dp(COLLAPSED_W_DP + 8), w * 10 / 100);
+        int bottom = h - Math.max(dp(72), h * 12 / 100);
+        if (right - left < dp(280)) {
+            right = Math.min(w - dp(8), left + dp(280));
+        }
+        if (bottom - top < dp(200)) {
+            bottom = Math.min(h - dp(8), top + dp(200));
+        }
+        return new Rect(left, top, right, bottom);
+    }
+
+    private boolean isSystemPackage(String pkg) {
+        if (pkg == null) {
+            return true;
+        }
+        try {
+            ApplicationInfo ai = getPackageManager().getApplicationInfo(pkg, 0);
+            return (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                    || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+        } catch (Exception e) {
+            return false;
         }
     }
 

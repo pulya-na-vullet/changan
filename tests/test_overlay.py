@@ -56,13 +56,15 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert f"pm disable-user --user 0 com.changanhub.quickdock" in joined
     assert f"pm disable-user --user 0 com.changanhub.quicklane" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickkeep" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quickrise" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
     assert f"pm disable {LEGACY_PACKAGE}" not in joined
-    assert PACKAGE == "com.changanhub.quickrise"
+    assert PACKAGE == "com.changanhub.quickstash"
     assert "com.changanhub.quickdock" in LEGACY_PACKAGES
     assert "com.changanhub.quicklane" in LEGACY_PACKAGES
     assert "com.changanhub.quickkeep" in LEGACY_PACKAGES
+    assert "com.changanhub.quickrise" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -142,6 +144,74 @@ def test_disable_user_package_does_not_disable_player_or_chat() -> None:
         assert "не отключаю" in joined
 
 
+def test_disable_user_package_keeps_working_overlay() -> None:
+    fake = FakeAdb()
+    from hub.overlay import PACKAGE
+
+    lines = disable_user_package(fake, PACKAGE)
+    joined = "\n".join(fake.shells + lines)
+    assert "pm uninstall" not in joined
+    assert "pm disable-user" not in joined
+    assert "рабочая панель" in joined.lower()
+
+
+def test_disable_user_package_timeout_then_gone_is_success() -> None:
+    fake = FakeAdb()
+    timeouts: list[int] = []
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        timeouts.append(timeout)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "timeout after 45s", 124, [])
+        if command.startswith("pm path"):
+            return CommandResult(True, "", "", 0, [])
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = disable_user_package(fake, "ru.dublgis.dgismobile")
+    joined = "\n".join(fake.shells + lines)
+    assert 45 in timeouts
+    assert "pm uninstall --user 0 ru.dublgis.dgismobile" in joined
+    assert "pm disable-user" not in joined
+    assert "снят" in joined
+    assert "auth-приложение" not in joined
+
+
+def test_disable_user_package_timeout_without_auth_does_not_disable() -> None:
+    fake = FakeAdb()
+
+    def shell(command: str, timeout: int = 60):
+        from hub.adb import CommandResult
+
+        fake.shells.append(command)
+        if command.startswith("pm uninstall"):
+            return CommandResult(False, "", "timeout after 45s", 124, [])
+        if command.startswith("pm path"):
+            return CommandResult(
+                True, "package:/data/app/ru.dublgis.dgismobile-xx/base.apk", "", 0, []
+            )
+        return CommandResult(True, "", "", 0, [])
+
+    fake.shell = shell  # type: ignore[method-assign]
+    lines = disable_user_package(fake, "ru.dublgis.dgismobile")
+    joined = "\n".join(fake.shells + lines)
+    uninstalls = [cmd for cmd in fake.shells if cmd.startswith("pm uninstall")]
+    assert len(uninstalls) == 2
+    assert "pm disable-user" not in joined
+    assert "не отключаю наугад" in joined.lower()
+
+
+def test_apk_picker_opens_local_apps_folder() -> None:
+    src = Path("hub/gui.py").read_text(encoding="utf-8")
+    assert "initialdir=str(bundled_apps())" in src
+    assert 'parent=self.root' in src
+    assert '("APK", "*.apk")' in src
+    assert "PACKAGE_FILE_TYPES" not in src
+
+
 def test_quickbar_is_three_times_taller() -> None:
     src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
         encoding="utf-8"
@@ -150,7 +220,7 @@ def test_quickbar_is_three_times_taller() -> None:
     assert "TEXT_SCALE = 2" in src
     assert "48 * HEIGHT_SCALE" in src
     assert "VERTICAL_MARGIN = 0.20f" in src
-    assert "COLLAPSED_W_DP = 64" in src
+    assert "COLLAPSED_W_DP = 160" in src
     assert "keyboardPeek" in src
     assert "imeHeight()" in src
     assert "buildPeekButton" in src
@@ -170,14 +240,14 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.8"' in mf
+    assert 'android:versionName="1.3.11"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.quickrise"' in mf
+    assert 'package="com.changanhub.quickstash"' in mf
     assert "android:persistent" not in mf
     assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
@@ -212,6 +282,7 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "com.changanhub.quickdock" in overlay
     assert "com.changanhub.quicklane" in overlay
     assert "com.changanhub.quickkeep" in overlay
+    assert "com.changanhub.quickrise" in overlay
     assert "getInstalledApplications" in overlay
     assert "launchIntentFallback" in overlay
     assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
@@ -276,7 +347,7 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "expandToFull" in src
     assert "recentZone" in src
     assert "evenSpacer" in src
-    assert "COLLAPSED_W_DP = 64" in src
+    assert "COLLAPSED_W_DP = 160" in src
     assert "COLLAPSED_ICON_DP" in src
     assert "collapsedZones" not in src
     assert "buildPeekButton" in src
@@ -287,6 +358,24 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "LEGACY_PACKAGE" in src
     assert "KEY_RECENT" in src
     assert "UsbStorage.apkFiles" in src
+    assert "KEY_WINDOWED" in src
+    assert "startWindowed" in src
+    assert "setLaunchBounds" in src
+    assert "WINDOWING_MODE_FREEFORM" in src
+    assert "windowedToggle" in src
+    assert "collapsedFit" in src
+    assert "COLLAPSED_ICON_DP = 90" in src
+    assert "COLLAPSED_MENU_H_DP = 140" in src
+    assert "KEY_STASHED" in src
+    assert "setStashed(" in src
+    assert "stashPad" in src
+    assert "edgeSwipeBox" in src
+    assert "isStashPad" in src
+    assert "if (stashed)" in src
+    assert ".putBoolean(KEY_STASHED, stashed)" in src
+    # Hub SHOW / boot used to expand a collapsed dock and would unhide it after ACC.
+    assert "Expanding here would reveal the dock after ACC" in src
+    assert "if (collapsed) {\n                setCollapsed(false);" not in src
     assert "PackageActions.copyToCache" in src
     assert "uninstallUserApp" not in src
     assert "PackageActions.uninstall" not in src
@@ -320,6 +409,7 @@ def test_quickbar_icons_exist() -> None:
         "ic_collapse.xml",
         "ic_refresh.xml",
         "ic_install.xml",
+        "ic_window.xml",
     ):
         assert (res / name).is_file(), name
     assert not (res / "logo_itm.xml").exists()
@@ -365,6 +455,63 @@ def test_collapsed_gap_leaves_yandex_passthrough() -> None:
         if menu_h + recent_h + 3 * gap <= screen:
             assert recent_y + recent_h == screen - gap
             assert menu_y + menu_h + between + recent_h + gap == screen
+
+
+def test_collapsed_25x_fits_or_scales() -> None:
+    """2.5× chips (140 + 340 dp) fit 1920px; a 720p edge must still leave a gap."""
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "collapsedFit" in src
+    assert "2.5" in src
+    menu_h, recent_h = 140, 340
+    for screen in (1920, 1440, 1280, 720):
+        gap = round(screen * _MARGIN)
+        need = menu_h + recent_h + 3 * gap
+        scale = 1.0 if need <= screen else max(0.45, (screen - 3 * gap) / (menu_h + recent_h))
+        mh = round(menu_h * scale)
+        rh = round(recent_h * scale)
+        _menu_y, _recent_y, between, _peek = _collapsed_layout(screen, mh, rh)
+        assert between >= gap - 1 or scale < 1.0
+
+
+def test_stashed_dock_is_invisible_and_persists() -> None:
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "KEY_STASHED" in src
+    assert "setStashed(" in src
+    assert "stashPad" in src
+    assert "Color.TRANSPARENT" in src
+    assert "if (stashed)" in src
+    assert "syncKeyboardPeek" in src
+    # Peek chip would reveal the dock to a dealer.
+    peek = src.split("private void syncKeyboardPeek()")[1].split("private int imeHeight()")[0]
+    assert peek.strip().startswith("{\n        if (stashed)")
+    assert ".putBoolean(KEY_STASHED, stashed)" in src
+    assert "getBoolean(KEY_STASHED, false)" in src
+    # Same two windows / Yandex gap as collapsed.
+    relayout = src.split("private void relayout()")[1].split("private View wrapChip")[0]
+    stash_block = relayout.split("if (stashed)")[1].split("if (keyboardPeek)")[0]
+    assert "collapsedMenuY()" in stash_block
+    assert "collapsedRecentY(" in stash_block
+    assert "stashPad()" in stash_block
+    capture = Path("quickbar/capture.html").read_text(encoding="utf-8")
+    assert 'data-state="stash"' in capture or "stash" in capture
+    assert ".chip.stash" in capture
+
+
+def test_windowed_launch_skips_system_apps() -> None:
+    src = Path("android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java").read_text(
+        encoding="utf-8"
+    )
+    assert "startWindowed" in src
+    assert "isSystemPackage" in src
+    assert "setLaunchBounds" in src
+    assert "WINDOWING_MODE_FREEFORM" in src
+    assert "KEY_WINDOWED" in src
+    assert "windowed && !isSystemPackage" in src
+    assert "ic_window" in src
 
 
 def test_accessibility_dedupes_and_skips_huge_lists() -> None:
@@ -458,10 +605,16 @@ def test_install_overlay_keeps_working_package_on_failed_update(tmp_path: Path) 
 def test_disable_overlay_never_uninstalls() -> None:
     fake = FakeAdb()
     lines = disable_user_package(fake, PACKAGE)
-    joined = "\n".join(fake.shells)
     assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
-    assert f"pm disable-user --user 0 {PACKAGE}" in joined
-    assert "auth-панель" in "\n".join(lines)
+    assert not any(f"pm disable-user --user 0 {PACKAGE}" in cmd for cmd in fake.shells)
+    assert "рабочая панель" in "\n".join(lines).lower()
+
+    leftover = FakeAdb()
+    leftover_lines = disable_user_package(leftover, "com.changanhub.quickrise")
+    joined = "\n".join(leftover.shells)
+    assert not any(cmd.startswith("pm uninstall") for cmd in leftover.shells)
+    assert "pm disable-user --user 0 com.changanhub.quickrise" in joined
+    assert "старая auth-панель" in "\n".join(leftover_lines)
 
 
 def test_adb_raw_swallows_filename_too_long(monkeypatch) -> None:

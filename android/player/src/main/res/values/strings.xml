@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lamore Player</string>
-    <string name="usb">Флешка ГУ</string>
+    <string name="usb">Флешки и память ГУ</string>
+    <string name="volumes">Флешки</string>
     <string name="scan">Обновить</string>
     <string name="up">Назад</string>
-    <string name="empty">На флешке нет файлов.\nВставьте USB в разъём ГУ.</string>
+    <string name="empty">Нет томов.\nВставьте флешку и нажмите Обновить.</string>
     <string name="eq">Эквалайзер</string>
     <string name="now_playing">Сейчас играет</string>
     <string name="tab_music">Музыка</string>

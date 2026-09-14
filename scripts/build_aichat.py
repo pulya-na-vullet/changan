@@ -104,10 +104,12 @@ def main() -> None:
             "--custom-package",
             "com.changanhub.chat",
             "--version-code",
-            "2",
+            "5",
             "--version-name",
-            "1.0.1",
+            "1.0.4",
             "--auto-add-overlay",
+            "-A",
+            str(SRC / "assets"),
             str(res_zip),
         ]
     )
@@ -159,9 +161,17 @@ def main() -> None:
         for item in src.infolist():
             dst.writestr(item, src.read(item.filename))
         dst.write(dex, "classes.dex")
+        jni = SRC / "jniLibs"
+        if jni.is_dir():
+            for so in sorted(jni.rglob("*.so")):
+                rel = so.relative_to(jni).as_posix()
+                info = zipfile.ZipInfo("lib/" + rel)
+                info.compress_type = zipfile.ZIP_STORED
+                info.external_attr = 0o100644 << 16
+                dst.writestr(info, so.read_bytes())
 
     aligned = OUT / "aligned.apk"
-    run([str(zipalign), "-f", "4", str(tmp), str(aligned)])
+    run([str(zipalign), "-p", "-f", "4", str(tmp), str(aligned)])
 
     sys.path.insert(0, str(ROOT))
     from hub.signer import ensure_keystore, sign_apk

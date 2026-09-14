@@ -410,15 +410,16 @@ public class PlayerService extends Service implements
 
     private void applyNamed(int named) {
         EqPrefs.putInt(this, "eq_named", named);
+        applyEffectiveBands();
+        syncFxFromPrefs();
+    }
+
+    private void applyEffectiveBands() {
         if (equalizer == null) {
             return;
         }
-        short[] shape = EqPrefs.shape(named);
-        if (named == 7) {
-            for (int i = 0; i < shape.length; i++) {
-                shape[i] = EqPrefs.customBand(this, i);
-            }
-        }
+        int named = EqPrefs.namedPreset(this);
+        short[] shape = EqPrefs.effectiveShape(this, named);
         try {
             short n = equalizer.getNumberOfBands();
             short[] range = equalizer.getBandLevelRange();
@@ -437,12 +438,34 @@ public class PlayerService extends Service implements
         }
     }
 
+    private void syncFxFromPrefs() {
+        try {
+            if (bass != null) {
+                bass.setStrength((short) clamp(EqPrefs.bass(this), 0, 1000));
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (virtualizer != null) {
+                virtualizer.setStrength((short) clamp(EqPrefs.virt(this), 0, 1000));
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (loudness != null) {
+                loudness.setTargetGain(Math.max(0, EqPrefs.loud(this)));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     private void applyFx(String kind, int value) {
         if (kind == null) {
             return;
         }
         if ("bass".equals(kind)) {
-            EqPrefs.putInt(this, "bass", value);
+            EqPrefs.putTone(this, "bass", value);
+            applyEffectiveBands();
             try {
                 if (bass != null) {
                     bass.setStrength((short) clamp(value, 0, 1000));
@@ -450,13 +473,13 @@ public class PlayerService extends Service implements
             } catch (Exception ignored) {
             }
         } else if ("mids".equals(kind)) {
-            EqPrefs.putInt(this, "mids", value);
-            applyTone(1, value);
+            EqPrefs.putTone(this, "mids", value);
+            applyEffectiveBands();
         } else if ("highs".equals(kind)) {
-            EqPrefs.putInt(this, "highs", value);
-            applyTone(2, value);
+            EqPrefs.putTone(this, "highs", value);
+            applyEffectiveBands();
         } else if ("virt".equals(kind)) {
-            EqPrefs.putInt(this, "virt", value);
+            EqPrefs.putTone(this, "virt", value);
             try {
                 if (virtualizer != null) {
                     virtualizer.setStrength((short) clamp(value, 0, 1000));
@@ -464,7 +487,7 @@ public class PlayerService extends Service implements
             } catch (Exception ignored) {
             }
         } else if ("loud".equals(kind)) {
-            EqPrefs.putInt(this, "loud", value);
+            EqPrefs.putTone(this, "loud", value);
             try {
                 if (loudness != null) {
                     loudness.setTargetGain(Math.max(0, value));
@@ -480,31 +503,6 @@ public class PlayerService extends Service implements
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,
                         clamp(value, 0, 100) * max / 100, 0);
             }
-        }
-    }
-
-    /** third: 0 bass bands, 1 mids, 2 highs. value 0..1000 mapped to chip range. */
-    private void applyTone(int third, int value) {
-        if (equalizer == null) {
-            return;
-        }
-        try {
-            short n = equalizer.getNumberOfBands();
-            if (n <= 0) {
-                return;
-            }
-            short[] range = equalizer.getBandLevelRange();
-            int start = third * n / 3;
-            int end = third == 2 ? n : (third + 1) * n / 3;
-            if (end <= start) {
-                end = Math.min(n, start + 1);
-            }
-            short level = (short) (range[0] + (range[1] - range[0]) * clamp(value, 0, 1000) / 1000);
-            for (short b = (short) start; b < end; b++) {
-                equalizer.setBandLevel(b, level);
-            }
-            EqPrefs.putInt(this, "eq_named", 7);
-        } catch (Exception ignored) {
         }
     }
 

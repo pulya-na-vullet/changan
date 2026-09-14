@@ -24,6 +24,25 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "380 dp" not in html
     assert "×3" not in html
     assert "Скрытые" in html
+    capture = (ROOT / "quickbar" / "capture.html").read_text(encoding="utf-8")
+    for state in (
+        "list",
+        "system",
+        "hidden",
+        "hide",
+        "reorder",
+        "usb",
+        "search",
+        "collapsed",
+        "peek",
+        "stash",
+    ):
+        assert f'state === "{state}"' in capture or f'data-state="{state}"' in capture or state == "list"
+    assert "width: 160px" in capture
+    assert "height: 140px" in capture
+    assert "height: 340px" in capture
+    assert "i-window" in capture
+    assert 'id="windowTool"' in capture
     photos = ROOT / "quickbar" / "photos"
     for name in (
         "01-panel.jpg",

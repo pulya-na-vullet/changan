@@ -209,10 +209,11 @@ def test_matching_signature_replaces_without_uninstall(tmp_path: Path) -> None:
 def test_apk_package_name_quickbar_is_new_id(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickrise"
-    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickrise"
-    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.quickrise"
-    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.quickrise"
+    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickstash"
+    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickstash"
+    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.quickstash"
+    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.quickstash"
+    assert apk_package_name(tmp_path / "quickrise.apk") == "com.changanhub.quickstash"
 
 
 def test_install_skips_uninstall_on_overlay_signature_mismatch(tmp_path: Path) -> None:
@@ -247,7 +248,7 @@ def test_install_skips_uninstall_on_overlay_signature_mismatch(tmp_path: Path) -
     assert not report.ok
     assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
     assert installs["n"] == 1
-    assert any("not allow delete" in line.lower() or "quickrise" in line.lower() for line in report.log)
+    assert any("not allow delete" in line.lower() or "quickstash" in line.lower() for line in report.log)
     assert any("pm disable-user --user 0 com.changanhub.quicklane" in cmd for cmd in fake.shells)
 
 
@@ -325,7 +326,7 @@ def test_install_keeps_auth_package_if_uninstall_blocked(tmp_path: Path) -> None
     assert any("не отключаю" in line.lower() or "уже стоит" in line.lower() for line in report.log)
 
 
-def test_install_does_not_disable_working_quickrise_on_self_mismatch(tmp_path: Path) -> None:
+def test_install_does_not_disable_working_quickstash_on_self_mismatch(tmp_path: Path) -> None:
     apk = tmp_path / "QuickBar.apk"
     with zipfile.ZipFile(apk, "w") as zf:
         zf.writestr("AndroidManifest.xml", b"mf")
@@ -338,7 +339,7 @@ def test_install_does_not_disable_working_quickrise_on_self_mismatch(tmp_path: P
         if command.startswith("pm install"):
             return CommandResult(
                 False,
-                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quickrise signatures do not match previously installed version; ignoring!]",
+                "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.changanhub.quickstash signatures do not match previously installed version; ignoring!]",
                 "",
                 1,
                 [],
@@ -346,7 +347,7 @@ def test_install_does_not_disable_working_quickrise_on_self_mismatch(tmp_path: P
         if command.startswith("pm path"):
             return CommandResult(
                 True,
-                "package:/data/app/com.changanhub.quickrise-VsvJPSJO/base.apk",
+                "package:/data/app/com.changanhub.quickstash-VsvJPSJO/base.apk",
                 "",
                 0,
                 [],
@@ -358,9 +359,9 @@ def test_install_does_not_disable_working_quickrise_on_self_mismatch(tmp_path: P
         patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")),
         patch("hub.installer.time.sleep"),
     ):
-        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickrise")
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickstash")
     assert report.ok
-    assert not any("pm disable-user --user 0 com.changanhub.quickrise" in cmd for cmd in fake.shells)
+    assert not any("pm disable-user --user 0 com.changanhub.quickstash" in cmd for cmd in fake.shells)
     assert any("не отключаю" in line.lower() for line in report.log)
 
 

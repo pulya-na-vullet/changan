@@ -18,13 +18,13 @@
             android:gravity="center"
             android:text="@string/app_name"
             android:textColor="@color/accent"
-            android:textSize="22sp"
+            android:textSize="40sp"
             android:textStyle="bold" />
 
         <LinearLayout
             android:id="@+id/tabs"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="88dp"
             android:layout_marginTop="6dp"
             android:orientation="horizontal">
 
@@ -36,7 +36,7 @@
                 android:gravity="center"
                 android:text="@string/tab_music"
                 android:textColor="@color/bg_solid"
-                android:textSize="16sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/accent" />
 
@@ -49,7 +49,7 @@
                 android:gravity="center"
                 android:text="@string/tab_video"
                 android:textColor="@color/text"
-                android:textSize="16sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/tab_off" />
 
@@ -62,7 +62,7 @@
                 android:gravity="center"
                 android:text="@string/tab_eq"
                 android:textColor="@color/text"
-                android:textSize="16sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/tab_off" />
 
@@ -75,7 +75,7 @@
                 android:gravity="center"
                 android:text="@string/tab_viz"
                 android:textColor="@color/text"
-                android:textSize="16sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/tab_off" />
         </LinearLayout>
@@ -95,7 +95,7 @@
 
                 <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
+                    android:layout_height="88dp"
                     android:orientation="horizontal">
 
                     <Button
@@ -106,7 +106,18 @@
                         android:background="@color/card"
                         android:text="@string/up"
                         android:textColor="@color/text"
-                        android:textSize="15sp" />
+                        android:textSize="26sp" />
+
+                    <Button
+                        android:id="@+id/btn_volumes"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:background="@color/card"
+                        android:text="@string/volumes"
+                        android:textColor="@color/text"
+                        android:textSize="26sp" />
 
                     <Button
                         android:id="@+id/btn_scan"
@@ -117,7 +128,7 @@
                         android:background="@color/card"
                         android:text="@string/scan"
                         android:textColor="@color/text"
-                        android:textSize="15sp" />
+                        android:textSize="26sp" />
 
                     <Button
                         android:id="@+id/btn_sort"
@@ -128,7 +139,7 @@
                         android:background="@color/card"
                         android:text="@string/sort_folder"
                         android:textColor="@color/accent"
-                        android:textSize="15sp" />
+                        android:textSize="26sp" />
                 </LinearLayout>
 
                 <TextView
@@ -138,7 +149,7 @@
                     android:layout_marginTop="4dp"
                     android:text="@string/usb"
                     android:textColor="@color/muted"
-                    android:textSize="13sp"
+                    android:textSize="26sp"
                     android:maxLines="2" />
 
                 <ListView
@@ -157,7 +168,7 @@
                     android:gravity="center"
                     android:text="@string/empty"
                     android:textColor="@color/muted"
-                    android:textSize="16sp"
+                    android:textSize="32sp"
                     android:visibility="gone" />
             </LinearLayout>
 
@@ -192,7 +203,7 @@
                         android:layout_marginTop="6dp"
                         android:text="Бас"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_bass"
@@ -205,7 +216,7 @@
                         android:layout_height="wrap_content"
                         android:text="Средние"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_mids"
@@ -218,7 +229,7 @@
                         android:layout_height="wrap_content"
                         android:text="Высокие"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_highs"
@@ -231,7 +242,7 @@
                         android:layout_height="wrap_content"
                         android:text="Громкость"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_volume"
@@ -244,7 +255,7 @@
                         android:layout_height="wrap_content"
                         android:text="Баланс L / R"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_balance"
@@ -257,7 +268,7 @@
                         android:layout_height="wrap_content"
                         android:text="Virtualizer"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_virt"
@@ -270,7 +281,7 @@
                         android:layout_height="wrap_content"
                         android:text="Loudness"
                         android:textColor="@color/text"
-                        android:textSize="14sp" />
+                        android:textSize="28sp" />
 
                     <SeekBar
                         android:id="@+id/eq_loud"
@@ -327,7 +338,7 @@
         <LinearLayout
             android:id="@+id/nowbar"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="96dp"
             android:layout_marginTop="6dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
@@ -341,57 +352,57 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:textColor="@color/text"
-                android:textSize="14sp"
+                android:textSize="28sp"
                 android:maxLines="2" />
 
             <Button
                 android:id="@+id/btn_shuffle"
-                android:layout_width="56dp"
-                android:layout_height="48dp"
+                android:layout_width="96dp"
+                android:layout_height="88dp"
                 android:background="@color/tab_off"
                 android:text="⇄"
                 android:textColor="@color/text"
-                android:textSize="16sp" />
+                android:textSize="32sp" />
 
             <Button
                 android:id="@+id/btn_repeat"
-                android:layout_width="56dp"
-                android:layout_height="48dp"
+                android:layout_width="96dp"
+                android:layout_height="88dp"
                 android:layout_marginStart="4dp"
                 android:background="@color/tab_off"
                 android:text="1"
                 android:textColor="@color/text"
-                android:textSize="16sp" />
+                android:textSize="32sp" />
 
             <Button
                 android:id="@+id/btn_prev"
-                android:layout_width="56dp"
-                android:layout_height="48dp"
+                android:layout_width="96dp"
+                android:layout_height="88dp"
                 android:layout_marginStart="4dp"
                 android:background="@color/tab_off"
                 android:text="⏮"
                 android:textColor="@color/text"
-                android:textSize="16sp" />
+                android:textSize="32sp" />
 
             <Button
                 android:id="@+id/btn_play"
-                android:layout_width="64dp"
-                android:layout_height="48dp"
+                android:layout_width="112dp"
+                android:layout_height="88dp"
                 android:layout_marginStart="4dp"
                 android:background="@color/accent"
                 android:text="▶"
                 android:textColor="@color/bg_solid"
-                android:textSize="18sp" />
+                android:textSize="36sp" />
 
             <Button
                 android:id="@+id/btn_next"
-                android:layout_width="56dp"
-                android:layout_height="48dp"
+                android:layout_width="96dp"
+                android:layout_height="88dp"
                 android:layout_marginStart="4dp"
                 android:background="@color/tab_off"
                 android:text="⏭"
                 android:textColor="@color/text"
-                android:textSize="16sp" />
+                android:textSize="32sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

@@ -3,16 +3,16 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
-    android:minHeight="72dp"
+    android:minHeight="120dp"
     android:orientation="horizontal"
     android:padding="12dp">
 
     <TextView
         android:id="@+id/kind"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="96dp"
+        android:layout_height="96dp"
         android:gravity="center"
-        android:textSize="22sp"
+        android:textSize="44sp"
         android:textColor="@color/accent"
         android:background="@color/card" />
 
@@ -28,7 +28,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/text"
-            android:textSize="18sp"
+            android:textSize="36sp"
             android:maxLines="2" />
 
         <TextView
@@ -36,7 +36,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/muted"
-            android:textSize="13sp"
+            android:textSize="26sp"
             android:maxLines="1" />
     </LinearLayout>
 </LinearLayout>

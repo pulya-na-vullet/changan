@@ -26,10 +26,10 @@ CATALOG: list[CatalogApp] = [
         id="quickbar",
         name="QuickBar (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
-        package="com.changanhub.quickrise",
+        package="com.changanhub.quickstash",
         kind="dock",
         source="bundled",
-        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickrise. Скрытие и сортировка — в зелёной колонке справа. Старые quickbar / quickdock / quicklane / quickkeep Feiyu не удаляет (auth) — это не новая панель.",
+        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickstash. Скрытие, сортировка и свайп «спрятать от дилера» — в зелёной колонке справа. Свёрнутые кнопки ×2.5. Сторонние приложения — кнопка «окно» (freeform, если ГУ умеет). Старые quickbar / quickdock / quicklane / quickkeep / quickrise Feiyu не удаляет (auth) — это не новая панель.",
     ),
     CatalogApp(
         id="player",
@@ -38,7 +38,7 @@ CATALOG: list[CatalogApp] = [
         package="com.changanhub.playrise",
         kind="media",
         source="bundled",
-        notes="Ставится из раздела «Плеер». Пакет com.changanhub.playrise (старый lamoreplayer Feiyu не удаляет). Читает USB ГУ (не ноутбука). Вкладки музыка/видео/эквалайзер/визуализация. Форматы Feiyu: MP3/AAC/FLAC/WAV/OGG/OPUS, MP4/MKV/WebM/MOV/TS и др.",
+        notes="Ставится из раздела «Плеер». Пакет com.changanhub.playrise (старый lamoreplayer Feiyu не удаляет). Шрифты ×2. Читает USB ГУ (не ноутбука). Вкладки музыка/видео/эквалайзер/визуализация. Форматы Feiyu: MP3/AAC/FLAC/WAV/OGG/OPUS, MP4/MKV/WebM/MOV/TS и др.",
     ),
     CatalogApp(
         id="aichat",
@@ -47,7 +47,7 @@ CATALOG: list[CatalogApp] = [
         package="com.changanhub.chatrise",
         kind="chat",
         source="bundled",
-        notes="Ставится из раздела «Чат ИИ». Пакет com.changanhub.chatrise. Интернет на ГУ. Ключи в Настройках. TTS русский. На Feiyu нет Google STT — пишите текстом (Яндекс-клавиатура). Русский UI из приложения, не из языка системы.",
+        notes="Ставится из раздела «Чат ИИ». Пакет com.changanhub.chatrise. Шрифты ×2. Интернет на ГУ. Ключи в Настройках. Озвучка — RHVoice (Елена) внутри APK, не системный TTS. На Feiyu нет Google STT — пишите текстом (Яндекс-клавиатура). Русский UI из приложения, не из языка системы.",
     ),
     CatalogApp(
         id="files",
@@ -143,6 +143,7 @@ _EXTRA_LABELS = {
     "com.changanhub.quickdock": "QuickBar (старая, без скрытия/сортировки)",
     "com.changanhub.quicklane": "QuickBar (старая, без скрытия/сортировки)",
     "com.changanhub.quickkeep": "QuickBar (старая, без скрытия/сортировки)",
+    "com.changanhub.quickrise": "QuickBar (старая, без свайпа спрятать)",
     "com.changanhub.lamoreplayer": "Lamore Player (старый пакет)",
     "com.changanhub.aichat": "AI Chat (старый пакет)",
 }

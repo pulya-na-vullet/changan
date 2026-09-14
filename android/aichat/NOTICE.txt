@@ -1,0 +1,12 @@
+RHVoice speech engine (LGPL-2.1+)
+  https://github.com/RHVoice/RHVoice
+  Native library: libRHVoice_jni.so from the F-Droid RHVoice APK
+  (com.github.olga_yakovleva.rhvoice.android). Java JNI wrappers are
+  from RHVoice-core.
+
+Elena Russian voice (GPL-3.0)
+  https://github.com/RHVoice/elena-rus
+  Bundled under assets/rhvoice/voices/elena and languages/Russian.
+
+AI Chat loads RHVoice itself and plays PCM with AudioTrack. It does not
+use Android's TextToSpeech API, so Feiyu does not need a system TTS engine.

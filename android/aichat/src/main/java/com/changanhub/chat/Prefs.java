@@ -94,7 +94,7 @@ public final class Prefs {
     }
 
     public static String voiceName(Context context) {
-        return raw(context).getString("tts_voice", "");
+        return raw(context).getString("tts_voice", "Elena");
     }
 
     public static String chatId(Context context) {

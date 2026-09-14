@@ -24,7 +24,7 @@
                 android:layout_weight="1"
                 android:text="@string/app_name"
                 android:textColor="@color/accent"
-                android:textSize="20sp"
+                android:textSize="40sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -33,7 +33,7 @@
                 android:layout_height="wrap_content"
                 android:text="@string/tts_on"
                 android:textColor="@color/text"
-                android:textSize="14sp"
+                android:textSize="28sp"
                 android:layout_marginEnd="6dp" />
 
             <Switch
@@ -45,7 +45,7 @@
         <LinearLayout
             android:id="@+id/tabs"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="88dp"
             android:layout_marginTop="6dp"
             android:orientation="horizontal">
 
@@ -57,7 +57,7 @@
                 android:gravity="center"
                 android:text="@string/tab_chat"
                 android:textColor="@color/bg_solid"
-                android:textSize="15sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/accent" />
 
@@ -70,7 +70,7 @@
                 android:gravity="center"
                 android:text="@string/tab_settings"
                 android:textColor="@color/text"
-                android:textSize="15sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/tab_off" />
 
@@ -83,7 +83,7 @@
                 android:gravity="center"
                 android:text="@string/tab_history"
                 android:textColor="@color/text"
-                android:textSize="15sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/tab_off" />
 
@@ -96,7 +96,7 @@
                 android:gravity="center"
                 android:text="@string/tab_voice"
                 android:textColor="@color/text"
-                android:textSize="15sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:background="@color/tab_off" />
         </LinearLayout>
@@ -116,12 +116,17 @@
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
+                    android:layout_height="wrap_content"
+                    android:minHeight="104dp"
+                    android:paddingBottom="4dp"
+                    android:scrollbars="none">
 
                     <LinearLayout
                         android:id="@+id/prompts"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:minHeight="104dp"
                         android:orientation="horizontal" />
                 </HorizontalScrollView>
 
@@ -143,7 +148,7 @@
                     android:gravity="center"
                     android:text="@string/empty"
                     android:textColor="@color/muted"
-                    android:textSize="15sp"
+                    android:textSize="30sp"
                     android:visibility="gone" />
 
                 <TextView
@@ -151,59 +156,69 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textColor="@color/muted"
-                    android:textSize="13sp"
+                    android:textSize="26sp"
                     android:maxLines="2" />
 
                 <LinearLayout
+                    android:id="@+id/composer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="bottom">
+                    android:gravity="center_vertical"
+                    android:minHeight="96dp">
 
                     <EditText
                         android:id="@+id/input"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="96dp"
                         android:layout_weight="1"
                         android:background="@color/card"
                         android:hint="@string/hint"
                         android:textColor="@color/text"
                         android:textColorHint="@color/muted"
-                        android:textSize="16sp"
-                        android:minHeight="52dp"
+                        android:textSize="28sp"
+                        android:gravity="center_vertical|start"
                         android:padding="10dp"
                         android:inputType="textCapSentences|textMultiLine"
-                        android:maxLines="4" />
+                        android:maxLines="2" />
 
                     <Button
                         android:id="@+id/btn_mic"
-                        android:layout_width="56dp"
-                        android:layout_height="52dp"
+                        android:layout_width="88dp"
+                        android:layout_height="96dp"
                         android:layout_marginStart="6dp"
                         android:background="@color/tab_off"
                         android:text="🎙"
-                        android:textSize="16sp"
+                        android:textSize="28sp"
                         android:textColor="@color/text" />
 
                     <Button
                         android:id="@+id/btn_stop"
-                        android:layout_width="56dp"
-                        android:layout_height="52dp"
+                        android:layout_width="88dp"
+                        android:layout_height="96dp"
                         android:layout_marginStart="6dp"
                         android:background="@color/tab_off"
                         android:text="■"
-                        android:textSize="16sp"
+                        android:textSize="28sp"
                         android:textColor="@color/danger" />
 
                     <Button
                         android:id="@+id/btn_send"
-                        android:layout_width="96dp"
-                        android:layout_height="52dp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="96dp"
                         android:layout_marginStart="6dp"
+                        android:minWidth="120dp"
+                        android:maxWidth="152dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
                         android:background="@color/accent"
                         android:text="@string/send"
+                        android:textAllCaps="false"
                         android:textColor="@color/bg_solid"
-                        android:textSize="15sp" />
+                        android:textSize="22sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="none" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -231,7 +246,7 @@
 
                 <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
+                    android:layout_height="88dp"
                     android:orientation="horizontal">
 
                     <Button
@@ -241,7 +256,8 @@
                         android:layout_weight="1"
                         android:background="@color/card"
                         android:text="Новый"
-                        android:textColor="@color/text" />
+                        android:textColor="@color/text"
+                        android:textSize="30sp" />
 
                     <Button
                         android:id="@+id/btn_export"
@@ -251,7 +267,8 @@
                         android:layout_marginStart="6dp"
                         android:background="@color/card"
                         android:text="Экспорт"
-                        android:textColor="@color/text" />
+                        android:textColor="@color/text"
+                        android:textSize="30sp" />
 
                     <Button
                         android:id="@+id/btn_import"
@@ -261,7 +278,8 @@
                         android:layout_marginStart="6dp"
                         android:background="@color/card"
                         android:text="Импорт"
-                        android:textColor="@color/text" />
+                        android:textColor="@color/text"
+                        android:textSize="30sp" />
                 </LinearLayout>
 
                 <ListView

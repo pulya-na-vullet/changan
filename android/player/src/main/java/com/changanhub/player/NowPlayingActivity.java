@@ -224,6 +224,7 @@ public class NowPlayingActivity extends Activity {
             boolean on = i == current;
             b.setTextColor(on ? 0xFF0B1220 : 0xFFF3F6FB);
             b.setBackgroundColor(on ? 0xFF3DDC97 : 0xFF223049);
+            b.setTextSize(28);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -233,7 +234,7 @@ public class NowPlayingActivity extends Activity {
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 48);
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 88);
             lp.setMargins(0, 0, 6, 0);
             vizModes.addView(b, lp);
         }
