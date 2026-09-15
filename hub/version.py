@@ -1,3 +1,3 @@
 """Desktop Hub version shown in the sidebar."""
 
-VERSION = "1.4.2"
+VERSION = "1.4.3"

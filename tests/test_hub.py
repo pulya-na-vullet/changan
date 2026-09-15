@@ -77,3 +77,11 @@ def test_nav_credit_matches_hub_title_style() -> None:
     assert 'fg=ACCENT' in src
     assert 'font=("Segoe UI", 16, "bold")' in src
     assert 'font=("Segoe UI", 9, "bold")' in src
+    assert "_scrollable_inner" in src
+    assert "_wire_mousewheel" in src
+    assert "def _card" in src
+    assert "MouseWheel" in src
+    assert "page._hub_canvas" in src
+    assert "Список прокручивается колёсиком" in src
+    assert "height=4" in src
+    assert "self.chat_install_btn" in src

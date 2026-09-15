@@ -240,7 +240,7 @@ class HubApp:
         ttk.Button(log_top, text="Очистить экран", command=self.clear_log_view).pack(side=tk.RIGHT, padx=4)
         self.log_widget = tk.Text(
             log_frame,
-            height=7,
+            height=4,
             bg="#0A101C",
             fg=TEXT,
             insertbackground=TEXT,
@@ -269,6 +269,53 @@ class HubApp:
         self.show("connect", "Подключение")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(500, self._tick_record)
+
+    def _scrollable_inner(self, page: ttk.Frame) -> ttk.Frame:
+        """Page body that fits the leftover stack (loader + log stay on screen)."""
+        holder = ttk.Frame(page)
+        holder.pack(fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(holder, bg=BG, highlightthickness=0, borderwidth=0)
+        scroll = ttk.Scrollbar(holder, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def sync_region(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all") or (0, 0, 0, 0))
+
+        def sync_width(event: tk.Event) -> None:
+            canvas.itemconfigure(window, width=max(event.width, 1))
+
+        inner.bind("<Configure>", sync_region)
+        canvas.bind("<Configure>", sync_width)
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        page._hub_canvas = canvas  # type: ignore[attr-defined]
+        return inner
+
+    def _wire_mousewheel(self, canvas: tk.Canvas, inner: tk.Widget) -> None:
+        def wheel(event: tk.Event, view=canvas) -> str:
+            delta = int(getattr(event, "delta", 0) or 0)
+            if delta:
+                units = int(-delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1)
+                view.yview_scroll(units, "units")
+            elif int(getattr(event, "num", 0) or 0) == 4:
+                view.yview_scroll(-1, "units")
+            elif int(getattr(event, "num", 0) or 0) == 5:
+                view.yview_scroll(1, "units")
+            return "break"
+
+        def bind_tree(widget: tk.Widget) -> None:
+            widget.bind("<MouseWheel>", wheel)
+            widget.bind("<Button-4>", wheel)
+            widget.bind("<Button-5>", wheel)
+            for child in widget.winfo_children():
+                bind_tree(child)
+
+        bind_tree(inner)
+        canvas.bind("<MouseWheel>", wheel)
+        canvas.bind("<Button-4>", wheel)
+        canvas.bind("<Button-5>", wheel)
 
     def _card(self, parent: tk.Widget, title: str, body: str) -> tk.Frame:
         card = tk.Frame(parent, bg=CARD, padx=16, pady=14)
@@ -304,45 +351,47 @@ class HubApp:
 
     def _page_ours(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
-        ttk.Label(page, text="Три приложения этой сборки", style="Title.TLabel").pack(anchor="w")
+        inner = self._scrollable_inner(page)
+        ttk.Label(inner, text="Три приложения этой сборки", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
-            page,
+            inner,
             text="Одна зелёная кнопка ставит пакет на ГУ. «Открыть» только запускает уже стоящее. "
             "Новая папка Hub не обновляет старый id — поэтому панель, плеер и чат ставятся новым именем. "
-            "Флешка с музыкой и APK — в USB магнитолы, не в ноутбуке.",
+            "Флешка с музыкой и APK — в USB магнитолы, не в ноутбуке. "
+            "Список прокручивается колёсиком и полосой справа.",
             style="Muted.TLabel",
             wraplength=720,
             justify="left",
         ).pack(anchor="w", pady=(6, 10))
 
-        def card(title: str, bundled: str, status: tk.StringVar, install, open_fn) -> None:
-            box = tk.Frame(page, bg=CARD, padx=16, pady=12)
+        def card(title: str, bundled: str, status: tk.StringVar, install, open_fn) -> ttk.Button:
+            box = tk.Frame(inner, bg=CARD, padx=16, pady=12)
             box.pack(fill=tk.X, pady=6)
             tk.Label(box, text=title, bg=CARD, fg=ACCENT, font=FONT_H).pack(anchor="w")
             tk.Label(box, text=bundled, bg=CARD, fg=MUTED, font=FONT).pack(anchor="w", pady=(2, 0))
             tk.Label(box, textvariable=status, bg=CARD, fg=TEXT, font=FONT).pack(anchor="w", pady=(2, 8))
             row = tk.Frame(box, bg=CARD)
             row.pack(anchor="w")
-            ttk.Button(row, text="Поставить эту версию", style="Accent.TButton", command=install).pack(
-                side=tk.LEFT
-            )
+            btn = ttk.Button(row, text="Поставить эту версию", style="Accent.TButton", command=install)
+            btn.pack(side=tk.LEFT)
             ttk.Button(row, text="Открыть", command=open_fn).pack(side=tk.LEFT, padx=8)
+            return btn
 
-        card(
+        self.overlay_install_btn = card(
             "QuickBar — правая колонка",
             f"в ZIP: 1.3.16 · {OVERLAY_PACKAGE}",
             self.overlay_hu_ver,
             self.deploy_overlay,
             self.resume_overlay,
         )
-        card(
+        self.player_install_btn = card(
             "Lamore Player — музыка и видео",
             f"в ZIP: 1.1.4 · {PLAYER_PACKAGE}",
             self.player_hu_ver,
             self.deploy_player,
             self.resume_player,
         )
-        card(
+        self.chat_install_btn = card(
             "AI Chat — DeepSeek / YandexGPT",
             f"в ZIP: 1.0.5 · {AICHAT_PACKAGE}",
             self.chat_hu_ver,
@@ -350,10 +399,11 @@ class HubApp:
             self.resume_aichat,
         )
         ttk.Label(
-            page,
+            inner,
             text="Отключить старую колонку — «Приложения ГУ». Скриншот и запись экрана — «Сервис».",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(8, 0))
+        self._wire_mousewheel(page._hub_canvas, inner)  # type: ignore[attr-defined]
         return page
 
     def _page_install(self) -> ttk.Frame:
@@ -568,18 +618,14 @@ class HubApp:
 
     def _page_catalog(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
-        ttk.Label(page, text="Что имеет смысл поставить", style="Title.TLabel").pack(anchor="w", pady=(0, 8))
-        canvas = tk.Canvas(page, bg=BG, highlightthickness=0)
-        scroll = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
-        inner = ttk.Frame(canvas)
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        inner = self._scrollable_inner(page)
+        ttk.Label(inner, text="Что имеет смысл поставить", style="Title.TLabel").pack(
+            anchor="w", pady=(0, 8)
+        )
         for app in CATALOG:
             card = self._card(inner, app.name, f"{app.summary}\n{app.notes} {app.url or ''}".strip())
             card.pack(fill=tk.X, pady=6)
+        self._wire_mousewheel(page._hub_canvas, inner)  # type: ignore[attr-defined]
         return page
 
     def _page_tools(self) -> ttk.Frame:

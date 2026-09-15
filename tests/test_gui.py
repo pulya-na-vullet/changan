@@ -12,13 +12,14 @@ def test_gui_pages_render() -> None:
     app = HubApp()
     try:
         app.root.update()
-        for name in ("connect", "install", "overlay", "player", "aichat", "demo", "apps", "catalog", "tools"):
+        for name in ("connect", "install", "ours", "overlay", "player", "aichat", "demo", "apps", "catalog", "tools"):
             app.show(name)
             app.root.update_idletasks()
             app.root.update()
         assert app.pages.keys() >= {
             "connect",
             "install",
+            "ours",
             "overlay",
             "player",
             "aichat",
@@ -83,10 +84,21 @@ def test_install_button_visible_at_laptop_size() -> None:
         assert _inside_window(app.install_btn, app.root)
         assert app.usb_btn.winfo_ismapped()
         assert _inside_window(app.usb_btn, app.root)
-        app.show("overlay", "Правая панель")
+        app.show("ours", "Наши приложения")
+        app.root.update_idletasks()
         app.root.update()
+        canvas = app.pages["ours"]._hub_canvas
+        canvas.update_idletasks()
+        bbox = canvas.bbox("all")
+        assert bbox is not None
+        assert bbox[3] > canvas.winfo_height()
         assert app.overlay_install_btn.winfo_ismapped()
         assert _inside_window(app.overlay_install_btn, app.root)
+        canvas.yview_moveto(1.0)
+        app.root.update_idletasks()
+        app.root.update()
+        assert app.chat_install_btn.winfo_ismapped()
+        assert _inside_window(app.chat_install_btn, app.root)
         app.show("demo", "Демо")
         app.root.update()
         assert app.demo_shot_btn.winfo_ismapped()
