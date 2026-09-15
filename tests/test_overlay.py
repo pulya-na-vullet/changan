@@ -240,8 +240,8 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.12"' in mf
-    assert 'android:versionCode="16"' in mf
+    assert 'android:versionName="1.3.13"' in mf
+    assert 'android:versionCode="17"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -388,7 +388,14 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "HuSigner.sign" in src
     assert "qb-sign" in src
     assert "qb-install" in src
-    assert "подписать белым списком ГУ" in src
+    assert "sourcePicker" in src
+    assert "sourceChip" in src
+    assert "KEY_APK_SOURCE" in src
+    assert "Память ГУ" in src
+    assert "UsbStorage.usbRoots" in src
+    assert "UsbStorage.memoryRoots" in src
+    assert "UsbStorage.volumes" in src
+    assert "подписать белым списком" in src
     assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/HuSigner.java").is_file()
     signer = Path(
         "android/quickbar/src/main/java/com/changanhub/quickbar/sign/FeiyuSigner.java"

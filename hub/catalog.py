@@ -29,7 +29,7 @@ CATALOG: list[CatalogApp] = [
         package="com.changanhub.quickstash",
         kind="dock",
         source="bundled",
-        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickstash. Скрытие, сортировка и свайп «спрятать от дилера» — в зелёной колонке справа. USB: ключ подписывает APK v1+v2 серийником Feiyu (как Hub), зелёная кнопка ставит. Свёрнутые кнопки ×2.5. Сторонние приложения — кнопка «окно» (freeform, если ГУ умеет). Старые quickbar / quickdock / quicklane / quickkeep / quickrise Feiyu не удаляет (auth) — это не новая панель.",
+        notes="Ставится из раздела «Правая панель». В списке ГУ: QuickBar · com.changanhub.quickstash. Скрытие, сортировка и свайп «спрятать от дилера» — в зелёной колонке справа. USB или память ГУ: ключ подписывает APK v1+v2 серийником Feiyu (как Hub), зелёная кнопка ставит. Свёрнутые кнопки ×2.5. Сторонние приложения — кнопка «окно» (freeform, если ГУ умеет). Старые quickbar / quickdock / quicklane / quickkeep / quickrise Feiyu не удаляет (auth) — это не новая панель.",
     ),
     CatalogApp(
         id="player",

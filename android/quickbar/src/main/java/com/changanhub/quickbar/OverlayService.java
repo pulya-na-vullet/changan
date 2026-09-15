@@ -119,6 +119,8 @@ public class OverlayService extends Service {
     private static final int COLLAPSED_MENU_H_DP = 140;
     private static final int COLLAPSED_RECENT_PAD_DP = 70;
     private static final String KEY_WINDOWED = "windowed";
+    /** USB port vs internal HU storage for APK install. */
+    private static final String KEY_APK_SOURCE = "apk_source";
     /** Hidden ActivityOptions.setLaunchWindowingMode(FREEFORM). */
     private static final int WINDOWING_MODE_FREEFORM = 5;
     private static final int WATCHDOG_REQ = 7;
@@ -154,6 +156,8 @@ public class OverlayService extends Service {
     private View windowedToggle;
     /** Non-system apps launch in a freeform-sized window when the HU allows it. */
     private boolean windowed;
+    /** {@link UsbStorage#ID_USB} / a usb:path / {@link UsbStorage#ID_MEMORY}. */
+    private String apkSource = UsbStorage.ID_USB;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<AppItem> apps = new ArrayList<>();
     private String query = "";
@@ -285,6 +289,10 @@ public class OverlayService extends Service {
             collapsed = true;
         }
         windowed = p.getBoolean(KEY_WINDOWED, true);
+        apkSource = p.getString(KEY_APK_SOURCE, UsbStorage.ID_USB);
+        if (apkSource == null || apkSource.length() == 0) {
+            apkSource = UsbStorage.ID_USB;
+        }
         wide = true;
         startInForeground();
         registerLifeReceiver();
@@ -1236,6 +1244,7 @@ public class OverlayService extends Service {
                 .putBoolean(KEY_STASHED, stashed)
                 .putBoolean(KEY_WIDE, wide)
                 .putBoolean(KEY_WINDOWED, windowed)
+                .putString(KEY_APK_SOURCE, apkSource)
                 .apply();
     }
 
@@ -1618,8 +1627,15 @@ public class OverlayService extends Service {
     }
 
     private void renderUsb() {
+        List<UsbStorage.Volume> vols = UsbStorage.volumes(this);
+        final UsbStorage.Volume selected = UsbStorage.volumeById(this, apkSource);
+        appList.addView(sourcePicker(vols, selected));
         TextView hint = new TextView(this);
-        hint.setText("APK с флешки в USB ГУ. Ключ — подписать белым списком ГУ (как Hub, v1+v2). Зелёная кнопка — подписать при необходимости и поставить.");
+        if (selected.removable) {
+            hint.setText("Флешка в USB-разъёме ГУ. Ключ — подписать белым списком (как Hub). Зелёная кнопка — поставить.");
+        } else {
+            hint.setText("Память самого ГУ, не флешка. Ключ — подписать, зелёная — поставить.");
+        }
         hint.setTextColor(Color.parseColor("#9AA7B8"));
         hint.setTextSize(textSp(11));
         hint.setPadding(dp(4), 0, dp(4), dp(8));
@@ -1632,7 +1648,7 @@ public class OverlayService extends Service {
             copy.setPadding(dp(4), 0, dp(4), dp(8));
             appList.addView(copy);
         }
-        List<File> apks = UsbStorage.apkFiles(this);
+        List<File> apks = UsbStorage.apkFiles(this, selected);
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         int shown = 0;
         for (int i = 0; i < apks.size(); i++) {
@@ -1647,7 +1663,9 @@ public class OverlayService extends Service {
         }
         if (shown == 0) {
             TextView empty = new TextView(this);
-            List<File> roots = UsbStorage.roots(this);
+            List<File> roots = selected.removable
+                    ? UsbStorage.usbRoots(this)
+                    : UsbStorage.memoryRoots();
             StringBuilder paths = new StringBuilder();
             for (int i = 0; i < roots.size() && i < 6; i++) {
                 if (paths.length() > 0) {
@@ -1655,15 +1673,57 @@ public class OverlayService extends Service {
                 }
                 paths.append(roots.get(i).getAbsolutePath());
             }
-            empty.setText(apks.isEmpty()
-                    ? "APK не найдены.\nВставьте USB в разъём ГУ.\n" + paths
-                    : "нет APK по поиску");
+            String where = selected.removable
+                    ? "APK не найдены.\nВставьте флешку в USB-разъём ГУ."
+                    : "APK не найдены.\nПоложите файл в Память ГУ (Download).";
+            empty.setText(apks.isEmpty() ? where + "\n" + paths : "нет APK по поиску");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
             empty.setTextSize(textSp(14));
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(12), 0, dp(12));
             appList.addView(empty);
         }
+    }
+
+    private View sourcePicker(List<UsbStorage.Volume> vols, UsbStorage.Volume selected) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(vols.size() <= 2 ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        box.setPadding(dp(2), dp(2), dp(2), dp(4));
+        String sel = selected == null ? "" : selected.id;
+        for (int i = 0; i < vols.size(); i++) {
+            final UsbStorage.Volume volume = vols.get(i);
+            box.addView(sourceChip(volume, sel.equals(volume.id), vols.size() <= 2));
+        }
+        return box;
+    }
+
+    private View sourceChip(final UsbStorage.Volume volume, boolean on, boolean shareRow) {
+        TextView chip = new TextView(this);
+        chip.setText(volume.label);
+        chip.setGravity(Gravity.CENTER);
+        chip.setTextColor(on ? Color.parseColor("#0B1220") : Color.WHITE);
+        chip.setTextSize(textSp(12));
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setPadding(dp(6), dp(10), dp(6), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor(on ? "#3DDC97" : "#31405C"));
+        bg.setCornerRadius(dp(10));
+        chip.setBackground(bg);
+        LinearLayout.LayoutParams lp = shareRow
+                ? new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                : new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+        chip.setLayoutParams(lp);
+        chip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                apkSource = volume.id;
+                persist();
+                renderApps();
+            }
+        });
+        return chip;
     }
 
     private View sectionHeader(String text) {

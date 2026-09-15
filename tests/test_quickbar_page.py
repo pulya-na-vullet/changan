@@ -32,6 +32,7 @@ def test_quickbar_landing_page_and_photos() -> None:
         "hide",
         "reorder",
         "usb",
+        "memory",
         "search",
         "collapsed",
         "peek",
@@ -43,10 +44,12 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "height: 340px" in capture
     assert "i-window" in capture
     assert 'id="windowTool"' in capture
-    assert "подписать белым списком ГУ" in capture
+    assert "подписать белым списком ГУ" in capture or "подписать белым списком" in capture
+    assert "Память ГУ" in capture
     assert "нужна подпись ГУ" in capture
     assert 'id="i-sign"' in capture
     assert "#i-sign" in capture
+    assert "srcbtn" in capture
     photos = ROOT / "quickbar" / "photos"
     for name in (
         "01-panel.jpg",
