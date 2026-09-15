@@ -18,7 +18,7 @@
     body {
       background: #05080f;
       color: var(--text);
-      font-family: Roboto, "Noto Sans", Arial, sans-serif;
+      font-family: "Noto Sans", "DejaVu Sans", Roboto, Arial, sans-serif;
     }
     .page {
       max-width: 1920px;
@@ -103,19 +103,19 @@
     .eq { height: 100%; overflow: hidden; padding: 4px; }
     .presets { display: flex; gap: 8px; overflow: hidden; }
     .chip {
-      height: 72px; padding: 0 12px; display: flex; align-items: center;
-      background: var(--tab); color: var(--text); font-size: 26px; font-weight: 700; white-space: nowrap;
+      height: 56px; padding: 0 12px; display: flex; align-items: center;
+      background: var(--tab); color: var(--text); font-size: 24px; font-weight: 700; white-space: nowrap;
     }
     .chip.on { background: var(--accent); color: var(--bg); }
-    .eq label { display: block; font-size: 26px; margin-top: 4px; }
+    .eq label { display: block; font-size: 22px; margin-top: 2px; }
     .bar {
-      height: 10px; background: #0b1220; border-radius: 6px; margin: 3px 0 2px; position: relative;
+      height: 8px; background: #0b1220; border-radius: 6px; margin: 2px 0 1px; position: relative;
     }
     .bar > i {
       display: block; height: 100%; background: var(--accent); border-radius: 6px;
     }
     .curve {
-      height: 48px; margin-top: 6px; background: #121A2B;
+      height: 40px; margin-top: 4px; background: #121A2B;
       background-image: linear-gradient(transparent 11px, #33445A73 12px),
         linear-gradient(90deg, transparent, transparent);
       border: 1px solid #223049;
@@ -137,42 +137,42 @@
       padding: 20px; background: var(--bg);
     }
     .cover {
-      width: 90px; height: 90px; margin: 0 auto; background: var(--card);
-      display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 36px;
+      width: 120px; height: 120px; margin: 0 auto; background: var(--card);
+      display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 52px;
     }
-    .track { text-align: center; font-size: 24px; font-weight: 700; margin-top: 8px; }
-    .folder { text-align: center; color: var(--muted); font-size: 14px; margin-top: 4px; }
-    .viz-full { height: 180px; margin-top: 12px; background: #0B1220; display: flex; align-items: flex-end; gap: 6px; padding: 8px; }
+    .track { text-align: center; font-size: 40px; font-weight: 700; margin-top: 10px; }
+    .folder { text-align: center; color: var(--muted); font-size: 26px; margin-top: 6px; }
+    .viz-full { height: 180px; margin-top: 16px; background: #0B1220; display: flex; align-items: flex-end; gap: 6px; padding: 8px; }
     .viz-full b { flex: 1; background: var(--accent); border-radius: 6px 6px 0 0; }
-    .seek { height: 8px; background: var(--tab); border-radius: 4px; margin-top: 12px; }
+    .seek { height: 10px; background: var(--tab); border-radius: 4px; margin-top: 12px; }
     .seek i { display: block; width: 38%; height: 100%; background: var(--accent); border-radius: 4px; }
-    .time { text-align: center; color: var(--muted); font-size: 14px; margin-top: 6px; }
+    .time { text-align: center; color: var(--muted); font-size: 26px; margin-top: 6px; }
     .transport { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 12px; }
-    .transport .ib { height: 64px; width: 72px; font-size: 18px; background: var(--card); }
-    .transport .prev, .transport .next { width: 88px; height: 72px; font-size: 22px; }
-    .transport .play { width: 120px; height: 72px; font-size: 26px; background: var(--accent); color: var(--bg); }
+    .transport .ib { height: 112px; width: 128px; font-size: 36px; background: var(--card); }
+    .transport .prev, .transport .next { width: 140px; height: 120px; font-size: 44px; }
+    .transport .play { width: 180px; height: 120px; font-size: 52px; background: var(--accent); color: var(--bg); }
     .video {
       position: absolute; inset: 0;
       background: radial-gradient(ellipse at 40% 40%, #24344a, #000);
     }
     .video .sub {
-      position: absolute; left: 0; right: 0; bottom: 132px;
-      text-align: center; font-size: 22px; text-shadow: 1px 1px 4px #000; padding: 12px;
+      position: absolute; left: 0; right: 0; bottom: 220px;
+      text-align: center; font-size: 44px; text-shadow: 1px 1px 4px #000; padding: 12px;
     }
     .vctrl {
       position: absolute; left: 0; right: 0; bottom: 0;
       background: #CC0B1220; padding: 16px;
     }
-    .vctrl .name { font-size: 20px; }
+    .vctrl .name { font-size: 40px; }
     .vbtns { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 8px; }
-    .vbtns .ib { width: 80px; height: 64px; background: #2a3548; }
-    .vbtns .play { width: 100px; background: var(--accent); color: var(--bg); }
-    .vbtns .wide { width: 100px; font-size: 16px; }
+    .vbtns .ib { width: 140px; height: 112px; background: #2a3548; font-size: 40px; }
+    .vbtns .play { width: 160px; height: 112px; background: var(--accent); color: var(--bg); font-size: 44px; }
+    .vbtns .wide { width: 160px; height: 112px; font-size: 32px; }
     .badge {
       position: absolute; left: 12px; top: 12px; z-index: 30;
       background: #0008; color: var(--muted); font-size: 12px; padding: 4px 8px;
     }
-    body.shot { background: var(--panel); }
+    html.shot, body.shot { width: 1920px; height: 720px; overflow: hidden; background: var(--panel); }
     body.shot .page { padding: 0; max-width: none; }
     body.shot h1, body.shot .hint, body.shot .nav, body.shot .badge { display: none !important; }
     body.shot .hu { box-shadow: none; }
@@ -313,6 +313,8 @@
               <label>Бас</label><div class="bar"><i style="width:55%"></i></div>
               <label>Средние</label><div class="bar"><i style="width:40%"></i></div>
               <label>Высокие</label><div class="bar"><i style="width:48%"></i></div>
+              <label>Громкость</label><div class="bar"><i style="width:80%"></i></div>
+              <label>Баланс L / R</label><div class="bar"><i style="width:50%"></i></div>
               <div class="curve">
                 <svg viewBox="0 0 100 40" preserveAspectRatio="none">
                   <path d="M0 28 C12 18, 22 22, 35 26 S55 8, 70 14 S90 10, 100 16 L100 40 L0 40 Z" fill="rgba(61,220,151,.2)"/>
@@ -413,8 +415,8 @@
               <div class="ib">⏮</div>
               <div class="ib play">❚❚</div>
               <div class="ib">⏭</div>
-              <div class="ib wide">Звук 1/2</div>
-              <div class="ib wide">SRT вкл</div>
+              <div class="ib wide">Звук</div>
+              <div class="ib wide">Субтитры</div>
             </div>
           </div>
         </div>
@@ -441,6 +443,7 @@
     };
     var params = new URLSearchParams(location.search);
     if (params.get("shot") === "1") {
+      document.documentElement.classList.add("shot");
       document.body.classList.add("shot");
     }
     if (params.get("guides") === "1") {

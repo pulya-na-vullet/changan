@@ -120,7 +120,8 @@ Hub ставит новый id и отключает leftover. Оно смотр
 Сборка: `python scripts/build_player.py` → `apps/Player.apk`.
 
 Макет экранов без ГУ: откройте в браузере ноутбука `docs/player-layout.html`
-(1920×720, поля 20%/30%). PNG тех же экранов лежат в `docs/player-layout/`.
+(1920×720, поля 8%/10% и 160dp справа под QuickBar). PNG тех же экранов лежат в `docs/player-layout/`.
+Обновить снимки: `python scripts/render_layouts.py` (нужен Google Chrome).
 
 ## AI Chat (DeepSeek / YandexGPT)
 
@@ -138,7 +139,8 @@ Hub ставит новый id и отключает leftover. Оно смотр
 - история диалогов — JSON в filesDir.
 
 Сборка: `python scripts/build_aichat.py` → `apps/AiChat.apk`.
-Макет: `docs/aichat-layout.html`.
+Макет: `docs/aichat-layout.html`. PNG вкладок — `docs/aichat-layout/`.
+Состояния QuickBar: `quickbar/capture.html`, PNG — `docs/quickbar-layout/`.
 
 ## Демо для клиентов (скриншот и видео)
 
