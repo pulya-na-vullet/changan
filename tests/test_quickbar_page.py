@@ -24,6 +24,10 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "380 dp" not in html
     assert "×3" not in html
     assert "Скрытые" in html
+    assert 'id="install"' in html
+    assert "Память ГУ" in html
+    assert "ключ подписывает" in html.lower()
+    assert "USB или память ГУ" in html
     capture = (ROOT / "quickbar" / "capture.html").read_text(encoding="utf-8")
     for state in (
         "list",
