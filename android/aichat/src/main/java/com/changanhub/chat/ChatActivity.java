@@ -96,6 +96,10 @@ public class ChatActivity extends Activity {
         setContentView(R.layout.activity_chat);
         stage = findViewById(R.id.stage);
         applyCenterPadding();
+        TextView heading = findViewById(R.id.title);
+        if (heading != null) {
+            heading.setText(appVersionLabel());
+        }
         tabChat = findViewById(R.id.tab_chat);
         tabSettings = findViewById(R.id.tab_settings);
         tabHistory = findViewById(R.id.tab_history);
@@ -882,6 +886,17 @@ public class ChatActivity extends Activity {
         }
         TtsService.stop(this);
         super.onDestroy();
+    }
+
+    private String appVersionLabel() {
+        try {
+            String ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            if (ver != null && ver.length() > 0) {
+                return getString(R.string.app_name) + " " + ver;
+            }
+        } catch (Exception ignored) {
+        }
+        return getString(R.string.app_name);
     }
 
     private class Adapter extends BaseAdapter {

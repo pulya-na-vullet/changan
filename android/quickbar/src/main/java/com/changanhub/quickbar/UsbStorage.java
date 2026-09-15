@@ -5,7 +5,9 @@ import android.os.Environment;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -43,8 +45,9 @@ public final class UsbStorage {
         List<File> found = new ArrayList<>();
         addStorageVolumes(context, found, true);
         addAppVolumeRoots(context, found, true);
-        addIfDir(found, new File("/mnt/media_rw"));
-        addIfDir(found, new File("/mnt/usb_storage"));
+        addFromProcMounts(found);
+        addWithChildren(found, new File("/mnt/media_rw"));
+        addWithChildren(found, new File("/mnt/usb_storage"));
         addIfDir(found, new File("/mnt/usbhost"));
         addIfDir(found, new File("/mnt/udisk"));
         addIfDir(found, new File("/storage/usb0"));
@@ -53,8 +56,10 @@ public final class UsbStorage {
         addIfDir(found, new File("/storage/usbdisk"));
         addIfDir(found, new File("/mnt/usb"));
         addIfDir(found, new File("/storage/usb"));
+        addIfDir(found, new File("/storage/sdcard1"));
+        addIfDir(found, new File("/mnt/external_sd"));
         File storage = new File("/storage");
-        File[] kids = storage.listFiles();
+        File[] kids = kids(storage);
         if (kids != null) {
             for (int i = 0; i < kids.length; i++) {
                 File child = kids[i];
@@ -201,34 +206,142 @@ public final class UsbStorage {
                 return;
             }
             List<StorageVolume> volumes = sm.getStorageVolumes();
-            Method getPath = StorageVolume.class.getMethod("getPath");
+            Method getPath = optionalMethod("getPath");
+            Method getPathFile = optionalMethod("getPathFile");
+            Method getDirectory = optionalMethod("getDirectory");
             for (int i = 0; i < volumes.size(); i++) {
-                StorageVolume volume = volumes.get(i);
-                boolean removable = volume.isRemovable();
-                boolean primaryFixed = volume.isPrimary() && !removable;
-                if (usbOnly && (primaryFixed || !removable)) {
+                File path = volumePath(volumes.get(i), getPath, getPathFile, getDirectory);
+                if (path == null) {
                     continue;
                 }
-                if (!usbOnly && removable) {
+                boolean memory = isMemoryPath(path.getAbsolutePath());
+                if (usbOnly && memory) {
                     continue;
                 }
-                try {
-                    Object path = getPath.invoke(volume);
-                    if (path instanceof String) {
-                        addIfDir(found, new File((String) path));
-                    }
-                } catch (Exception ignored) {
+                if (!usbOnly && !memory) {
+                    continue;
                 }
+                addIfDir(found, path);
             }
         } catch (Exception ignored) {
         }
     }
 
-    private static void walk(File dir, List<File> out, int depth) {
-        if (dir == null || depth > 5) {
+    private static Method optionalMethod(String name) {
+        try {
+            return StorageVolume.class.getMethod(name);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static File volumePath(
+            StorageVolume volume, Method getPath, Method getPathFile, Method getDirectory) {
+        if (getDirectory != null) {
+            try {
+                Object dir = getDirectory.invoke(volume);
+                if (dir instanceof File) {
+                    return (File) dir;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (getPathFile != null) {
+            try {
+                Object dir = getPathFile.invoke(volume);
+                if (dir instanceof File) {
+                    return (File) dir;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (getPath != null) {
+            try {
+                Object path = getPath.invoke(volume);
+                if (path instanceof String && ((String) path).length() > 0) {
+                    return new File((String) path);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static void addFromProcMounts(List<File> found) {
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new FileReader("/proc/mounts"));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                if (parts.length < 3) {
+                    continue;
+                }
+                String mount = parts[1];
+                String fs = parts[2];
+                if (isMemoryPath(mount) || mount.startsWith("/mnt/runtime")
+                        || mount.startsWith("/mnt/pass_through") || mount.contains("/Android/")) {
+                    continue;
+                }
+                boolean usbFs = "vfat".equals(fs) || "exfat".equals(fs) || "texfat".equals(fs)
+                        || "fuseblk".equals(fs) || "ntfs".equals(fs) || "sdcardfs".equals(fs)
+                        || "fuse".equals(fs) || "sdfat".equals(fs);
+                boolean usbPath = mount.contains("media_rw") || mount.contains("usb")
+                        || mount.contains("udisk") || mount.contains("otg")
+                        || mount.matches(".*/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}.*");
+                if (usbFs && usbPath) {
+                    addIfDir(found, new File(mount));
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private static void addWithChildren(List<File> found, File dir) {
+        addIfDir(found, dir);
+        File[] kids = kids(dir);
+        if (kids == null) {
             return;
         }
+        for (int i = 0; i < kids.length; i++) {
+            File child = kids[i];
+            if (child.isDirectory() && !child.getName().startsWith(".")) {
+                addIfDir(found, child);
+            }
+        }
+    }
+
+    private static File[] kids(File dir) {
+        if (dir == null) {
+            return null;
+        }
         File[] files = dir.listFiles();
+        if (files != null) {
+            return files;
+        }
+        String[] names = dir.list();
+        if (names == null) {
+            return null;
+        }
+        File[] out = new File[names.length];
+        for (int i = 0; i < names.length; i++) {
+            out[i] = new File(dir, names[i]);
+        }
+        return out;
+    }
+
+    private static void walk(File dir, List<File> out, int depth) {
+        if (dir == null || depth > 6) {
+            return;
+        }
+        File[] files = kids(dir);
         if (files == null) {
             return;
         }

@@ -88,6 +88,10 @@ public class BrowserActivity extends Activity {
         setContentView(R.layout.activity_browser);
         stage = findViewById(R.id.stage);
         applyCenterPadding();
+        TextView heading = findViewById(R.id.title);
+        if (heading != null) {
+            heading.setText(appVersionLabel());
+        }
         pathView = findViewById(R.id.path);
         empty = findViewById(R.id.empty);
         nowTitle = findViewById(R.id.now_title);
@@ -778,6 +782,17 @@ public class BrowserActivity extends Activity {
         } else {
             glFog.onPause();
         }
+    }
+
+    private String appVersionLabel() {
+        try {
+            String ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            if (ver != null && ver.length() > 0) {
+                return getString(R.string.app_name) + " " + ver;
+            }
+        } catch (Exception ignored) {
+        }
+        return getString(R.string.app_name);
     }
 
     private class Adapter extends BaseAdapter {

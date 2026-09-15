@@ -132,8 +132,10 @@ def test_disable_user_package_does_not_disable_player_or_chat() -> None:
 
     fake.shell = shell  # type: ignore[method-assign]
     for pkg in (
+        "com.changanhub.playload",
         "com.changanhub.playrise",
         "com.changanhub.lamoreplayer",
+        "com.changanhub.chatload",
         "com.changanhub.chatrise",
         "com.changanhub.aichat",
     ):
@@ -242,8 +244,8 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.14"' in mf
-    assert 'android:versionCode="18"' in mf
+    assert 'android:versionName="1.3.15"' in mf
+    assert 'android:versionCode="19"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf

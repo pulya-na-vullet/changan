@@ -10,8 +10,8 @@ from hub.paths import bundled_apps
 
 # New applicationId: a fresh GitHub ZIP mints a new RSA key, so pm install -r
 # of com.changanhub.aichat fails UPDATE_INCOMPATIBLE and Feiyu blocks uninstall.
-PACKAGE = "com.changanhub.chatrise"
-LEGACY_PACKAGES = ("com.changanhub.aichat",)
+PACKAGE = "com.changanhub.chatload"
+LEGACY_PACKAGES = ("com.changanhub.chatrise", "com.changanhub.aichat")
 JAVA_MAIN = "com.changanhub.chat.ChatActivity"
 
 GRANT_SHELL = (

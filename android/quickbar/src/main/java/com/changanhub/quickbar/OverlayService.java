@@ -983,7 +983,7 @@ public class OverlayService extends Service {
         panel.setPadding(dp(6), dp(8), dp(6), dp(8));
 
         titleView = new TextView(this);
-        titleView.setText(R.string.app_name);
+        titleView.setText(panelTitle());
         titleView.setTextColor(Color.parseColor("#3DDC97"));
         titleView.setTextSize(textSp(18));
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1135,7 +1135,7 @@ public class OverlayService extends Service {
         int chrome = collapsed ? View.GONE : View.VISIBLE;
         if (titleView != null) {
             titleView.setVisibility(chrome);
-            titleView.setText(reorderMode ? "Порядок списка" : getString(R.string.app_name));
+            titleView.setText(reorderMode ? "Порядок списка" : panelTitle());
         }
         if (tools != null) {
             tools.setVisibility(chrome);
@@ -1675,7 +1675,9 @@ public class OverlayService extends Service {
                 paths.append(roots.get(i).getAbsolutePath());
             }
             String where = selected.removable
-                    ? "APK не найдены.\nВставьте флешку в USB-разъём ГУ."
+                    ? "APK в корне флешки не видны.\n"
+                      + "Флешка должна быть в USB-разъёме ГУ, не в компьютере (не диск D:).\n"
+                      + "После вставки нажмите обновление."
                     : "APK не найдены.\nПоложите файл в Память ГУ (Download).";
             empty.setText(apks.isEmpty() ? where + "\n" + paths : "нет APK по поиску");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
@@ -2260,6 +2262,17 @@ public class OverlayService extends Service {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private String panelTitle() {
+        try {
+            String ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            if (ver != null && ver.length() > 0) {
+                return getString(R.string.app_name) + " " + ver;
+            }
+        } catch (Exception ignored) {
+        }
+        return getString(R.string.app_name);
     }
 
     static boolean isLegacyPackage(String pkg) {

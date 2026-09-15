@@ -5,7 +5,9 @@ import android.os.Environment;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,6 +39,7 @@ public final class UsbMedia {
     public static List<File> roots(Context context) {
         List<File> found = new ArrayList<>();
         addStorageVolumes(context, found);
+        addFromProcMounts(found);
         addWithChildren(found, new File("/mnt/media_rw"));
         addWithChildren(found, new File("/mnt/usb_storage"));
         addIfDir(found, new File("/mnt/usbhost"));
@@ -47,8 +50,10 @@ public final class UsbMedia {
         addIfDir(found, new File("/storage/usbdisk"));
         addIfDir(found, new File("/mnt/usb"));
         addIfDir(found, new File("/storage/usb"));
+        addIfDir(found, new File("/storage/sdcard1"));
+        addIfDir(found, new File("/mnt/external_sd"));
         File storage = new File("/storage");
-        File[] kids = storage.listFiles();
+        File[] kids = kids(storage);
         if (kids != null) {
             for (int i = 0; i < kids.length; i++) {
                 File child = kids[i];
@@ -82,7 +87,7 @@ public final class UsbMedia {
             }
         } catch (Exception ignored) {
         }
-        return uniqueExisting(found);
+        return dropParents(uniqueExisting(found));
     }
 
     public static List<File> memoryRoots() {
@@ -195,7 +200,7 @@ public final class UsbMedia {
         if (dir == null || !dir.isDirectory()) {
             return out;
         }
-        File[] files = dir.listFiles();
+        File[] files = kids(dir);
         if (files == null) {
             return out;
         }
@@ -291,7 +296,7 @@ public final class UsbMedia {
         if (dir == null || depth > 6) {
             return;
         }
-        File[] files = dir.listFiles();
+        File[] files = kids(dir);
         if (files == null) {
             return;
         }
@@ -320,30 +325,100 @@ public final class UsbMedia {
                 return;
             }
             List<StorageVolume> volumes = sm.getStorageVolumes();
-            Method getPath = StorageVolume.class.getMethod("getPath");
+            Method getPath = optionalMethod("getPath");
+            Method getPathFile = optionalMethod("getPathFile");
+            Method getDirectory = optionalMethod("getDirectory");
             for (int i = 0; i < volumes.size(); i++) {
-                StorageVolume volume = volumes.get(i);
-                if (volume.isPrimary() && !volume.isRemovable()) {
+                File path = volumePath(volumes.get(i), getPath, getPathFile, getDirectory);
+                if (path == null || isMemoryPath(path.getAbsolutePath())) {
                     continue;
                 }
-                try {
-                    Object path = getPath.invoke(volume);
-                    if (path instanceof String) {
-                        addIfDir(found, new File((String) path));
-                    }
-                } catch (Exception ignored) {
-                }
+                addIfDir(found, path);
             }
         } catch (Exception ignored) {
         }
     }
 
+    private static Method optionalMethod(String name) {
+        try {
+            return StorageVolume.class.getMethod(name);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static File volumePath(
+            StorageVolume volume, Method getPath, Method getPathFile, Method getDirectory) {
+        if (getDirectory != null) {
+            try {
+                Object dir = getDirectory.invoke(volume);
+                if (dir instanceof File) {
+                    return (File) dir;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (getPathFile != null) {
+            try {
+                Object dir = getPathFile.invoke(volume);
+                if (dir instanceof File) {
+                    return (File) dir;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (getPath != null) {
+            try {
+                Object path = getPath.invoke(volume);
+                if (path instanceof String && ((String) path).length() > 0) {
+                    return new File((String) path);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static void addFromProcMounts(List<File> found) {
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new FileReader("/proc/mounts"));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                if (parts.length < 3) {
+                    continue;
+                }
+                String mount = parts[1];
+                String fs = parts[2];
+                if (isMemoryPath(mount) || mount.startsWith("/mnt/runtime")
+                        || mount.startsWith("/mnt/pass_through") || mount.contains("/Android/")) {
+                    continue;
+                }
+                boolean usbFs = "vfat".equals(fs) || "exfat".equals(fs) || "texfat".equals(fs)
+                        || "fuseblk".equals(fs) || "ntfs".equals(fs) || "sdcardfs".equals(fs)
+                        || "fuse".equals(fs) || "sdfat".equals(fs);
+                boolean usbPath = mount.contains("media_rw") || mount.contains("usb")
+                        || mount.contains("udisk") || mount.contains("otg")
+                        || mount.matches(".*/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}.*");
+                if (usbFs && usbPath) {
+                    addIfDir(found, new File(mount));
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
     private static void addWithChildren(List<File> found, File dir) {
         addIfDir(found, dir);
-        if (dir == null || !dir.isDirectory()) {
-            return;
-        }
-        File[] kids = dir.listFiles();
+        File[] kids = kids(dir);
         if (kids == null) {
             return;
         }
@@ -353,6 +428,25 @@ public final class UsbMedia {
                 addIfDir(found, child);
             }
         }
+    }
+
+    private static File[] kids(File dir) {
+        if (dir == null) {
+            return null;
+        }
+        File[] files = dir.listFiles();
+        if (files != null) {
+            return files;
+        }
+        String[] names = dir.list();
+        if (names == null) {
+            return null;
+        }
+        File[] out = new File[names.length];
+        for (int i = 0; i < names.length; i++) {
+            out[i] = new File(dir, names[i]);
+        }
+        return out;
     }
 
     private static void addIfDir(List<File> found, File dir) {
@@ -394,6 +488,28 @@ public final class UsbMedia {
             File dir = input.get(i);
             if (seen.add(canon(dir))) {
                 out.add(dir);
+            }
+        }
+        return out;
+    }
+
+    private static List<File> dropParents(List<File> dirs) {
+        List<File> out = new ArrayList<>();
+        for (int i = 0; i < dirs.size(); i++) {
+            String a = canon(dirs.get(i));
+            boolean parent = false;
+            for (int j = 0; j < dirs.size(); j++) {
+                if (i == j) {
+                    continue;
+                }
+                String b = canon(dirs.get(j));
+                if (b.startsWith(a + "/")) {
+                    parent = true;
+                    break;
+                }
+            }
+            if (!parent) {
+                out.add(dirs.get(i));
             }
         }
         return out;

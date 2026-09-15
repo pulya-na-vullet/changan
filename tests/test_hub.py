@@ -47,7 +47,7 @@ def test_demo_capture_in_hub() -> None:
     from pathlib import Path
 
     src = Path("hub/gui.py").read_text(encoding="utf-8")
-    assert '("demo", "Демо")' in src
+    assert "_page_demo" in src
     assert "Сделать скриншот" in src
     assert "Запись 60 с" in src
     assert "from hub.capture import" in src
@@ -64,6 +64,7 @@ def test_nav_credit_matches_hub_title_style() -> None:
 
     src = Path("hub/gui.py").read_text(encoding="utf-8")
     assert 'text="CHANGAN HUB"' in src
+    assert "версия {VERSION}" in src
     assert 'text="разработано в ИТ-Мастерской"' in src
     assert 'fg=ACCENT' in src
     assert 'font=("Segoe UI", 16, "bold")' in src
