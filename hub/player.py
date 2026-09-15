@@ -10,8 +10,12 @@ from hub.paths import bundled_apps
 
 # New applicationId: Feiyu refuses pm install -r when the Hub folder minted a
 # new RSA key (UPDATE_INCOMPATIBLE) and refuses pm uninstall (auth dialog).
-PACKAGE = "com.changanhub.playload"
-LEGACY_PACKAGES = ("com.changanhub.playrise", "com.changanhub.lamoreplayer")
+PACKAGE = "com.changanhub.pl1_1_3"
+LEGACY_PACKAGES = (
+    "com.changanhub.playload",
+    "com.changanhub.playrise",
+    "com.changanhub.lamoreplayer",
+)
 JAVA_MAIN = "com.changanhub.player.BrowserActivity"
 
 GRANT_SHELL = (

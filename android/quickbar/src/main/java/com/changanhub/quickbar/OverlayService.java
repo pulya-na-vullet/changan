@@ -88,6 +88,7 @@ public class OverlayService extends Service {
             "com.changanhub.quickkeep",
             "com.changanhub.quickrise",
             "com.changanhub.quickstash",
+            "com.changanhub.quickload",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -2265,13 +2266,6 @@ public class OverlayService extends Service {
     }
 
     private String panelTitle() {
-        try {
-            String ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-            if (ver != null && ver.length() > 0) {
-                return getString(R.string.app_name) + " " + ver;
-            }
-        } catch (Exception ignored) {
-        }
         return getString(R.string.app_name);
     }
 

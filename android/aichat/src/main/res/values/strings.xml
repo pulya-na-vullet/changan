@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AI Chat</string>
+    <string name="app_name">AI Chat 1.0.5</string>
     <string name="tab_chat">Чат</string>
     <string name="tab_settings">Настройки</string>
     <string name="tab_history">История</string>

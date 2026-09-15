@@ -13,9 +13,13 @@ def test_catalog_has_quickbar() -> None:
 
     assert any(app.id == "quickbar" for app in CATALOG)
     assert all(app.package for app in CATALOG)
-    row = package_label("com.changanhub.quickload")
+    row = package_label("com.changanhub.qb1_3_15")
     assert "QuickBar" in row
-    assert package_from_row(row) == "com.changanhub.quickload"
+    assert "1.3.15" in row
+    assert package_from_row(row) == "com.changanhub.qb1_3_15"
+    leftover_load = package_label("com.changanhub.quickload")
+    assert "старая" in leftover_load.lower()
+    assert package_from_row(leftover_load) == "com.changanhub.quickload"
     leftover_stash = package_label("com.changanhub.quickstash")
     assert "старая" in leftover_stash.lower()
     assert package_from_row(leftover_stash) == "com.changanhub.quickstash"

@@ -209,12 +209,12 @@ def test_matching_signature_replaces_without_uninstall(tmp_path: Path) -> None:
 def test_apk_package_name_quickbar_is_new_id(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.quickload"
-    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.quickload"
-    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.quickload"
-    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.quickload"
-    assert apk_package_name(tmp_path / "quickrise.apk") == "com.changanhub.quickload"
-    assert apk_package_name(tmp_path / "quickload.apk") == "com.changanhub.quickload"
+    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.qb1_3_15"
+    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.qb1_3_15"
+    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.qb1_3_15"
+    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.qb1_3_15"
+    assert apk_package_name(tmp_path / "quickrise.apk") == "com.changanhub.qb1_3_15"
+    assert apk_package_name(tmp_path / "quickload.apk") == "com.changanhub.qb1_3_15"
 
 
 def test_install_skips_uninstall_on_overlay_signature_mismatch(tmp_path: Path) -> None:
@@ -366,8 +366,8 @@ def test_install_does_not_disable_working_quickstash_on_self_mismatch(tmp_path: 
     assert any("не отключаю" in line.lower() for line in report.log)
 
 
-def test_install_quickload_is_first_install_while_quickstash_present(tmp_path: Path) -> None:
-    """New overlay id must not hit keep-existing on the leftover quickstash panel."""
+def test_install_qb1_3_15_is_first_install_while_quickload_present(tmp_path: Path) -> None:
+    """New overlay id must not hit keep-existing on the leftover quickload panel."""
     apk = tmp_path / "QuickBar.apk"
     with zipfile.ZipFile(apk, "w") as zf:
         zf.writestr("AndroidManifest.xml", b"mf")
@@ -379,19 +379,19 @@ def test_install_quickload_is_first_install_while_quickstash_present(tmp_path: P
         fake.shells.append(command)
         if command.startswith("pm install"):
             return CommandResult(True, "Success", "", 0, [])
-        if command.startswith("pm path com.changanhub.quickstash"):
+        if command.startswith("pm path com.changanhub.quickload"):
             return CommandResult(
                 True,
-                "package:/data/app/com.changanhub.quickstash-T8rRUL7m/base.apk",
+                "package:/data/app/com.changanhub.quickload-T8rRUL7m/base.apk",
                 "",
                 0,
                 [],
             )
-        if command.startswith("pm path com.changanhub.quickload"):
+        if command.startswith("pm path com.changanhub.qb1_3_15"):
             if any(item.startswith("pm install") for item in fake.shells):
                 return CommandResult(
                     True,
-                    "package:/data/app/com.changanhub.quickload-new/base.apk",
+                    "package:/data/app/com.changanhub.qb1_3_15-new/base.apk",
                     "",
                     0,
                     [],
@@ -401,7 +401,7 @@ def test_install_quickload_is_first_install_while_quickstash_present(tmp_path: P
 
     fake.shell = shell  # type: ignore[method-assign]
     with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
-        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.quickload")
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.qb1_3_15")
     assert report.ok
     assert report.method != "keep-existing"
     assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)

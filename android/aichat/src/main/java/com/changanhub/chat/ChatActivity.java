@@ -889,13 +889,6 @@ public class ChatActivity extends Activity {
     }
 
     private String appVersionLabel() {
-        try {
-            String ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-            if (ver != null && ver.length() > 0) {
-                return getString(R.string.app_name) + " " + ver;
-            }
-        } catch (Exception ignored) {
-        }
         return getString(R.string.app_name);
     }
 

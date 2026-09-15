@@ -410,8 +410,8 @@ class HubApp:
         ).pack(anchor="w")
         body = (
             "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
-            "Старые quickbar/quickkeep/quickrise/quickstash не удаляются и новых кнопок в них нет. "
-            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickload. "
+            "Старые quickbar/quickkeep/quickrise/quickstash/quickload не удаляются и новых кнопок в них нет. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.qb1_3_15. "
             "APK с флешки в колонке: сверху USB или Память ГУ. Серый ключ подписывает v1+v2 тем же серийником Feiyu, что и Hub; "
             "зелёная кнопка ставит (если подписи ещё нет — сначала подписывает). "
             "Плеер — отдельный раздел."
@@ -448,8 +448,8 @@ class HubApp:
                 "Заставки: спектр, волна, частицы, круг, OpenGL-туман под ритм. "
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
-                "Пакет: com.changanhub.playrise. Старый lamoreplayer Feiyu не удаляет — "
-                "Hub ставит новый id, как QuickBar → quickload. Без Google Play и без Compose. "
+                "Пакет: com.changanhub.pl1_1_3. Старые playload / playrise / lamoreplayer Feiyu не удаляет — "
+                "Hub ставит новый id, как QuickBar → qb1_3_15. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -480,7 +480,7 @@ class HubApp:
                 "Микрофона на Feiyu нет: голосовой помощник машины — iFlytek, "
                 "это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
                 "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
-                "Пакет: com.changanhub.chatrise (старый aichat Feiyu не удаляет). "
+                "Пакет: com.changanhub.ch1_0_5 (старые chatload / chatrise / aichat Feiyu не удаляет). "
                 "Макет: docs\\aichat-layout.html."
             ),
             style="Muted.TLabel",
@@ -538,8 +538,8 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Рабочая панель: QuickBar 1.3.15 · com.changanhub.quickload. "
-                "Плеер: 1.1.3 · com.changanhub.playload. Чат: 1.0.5 · com.changanhub.chatload. "
+                "Рабочая панель: QuickBar 1.3.15 · com.changanhub.qb1_3_15. "
+                "Плеер: 1.1.3 · com.changanhub.pl1_1_3. Чат: 1.0.5 · com.changanhub.ch1_0_5. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
                 "«Запустить выбранное» на них поднимает колонку справа. "
