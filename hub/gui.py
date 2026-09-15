@@ -386,7 +386,7 @@ class HubApp:
         )
         self.player_install_btn = card(
             "Lamore Player — музыка и видео",
-            f"в ZIP: 1.1.5 · {PLAYER_PACKAGE}",
+            f"в ZIP: 1.1.6 · {PLAYER_PACKAGE}",
             self.player_hu_ver,
             self.deploy_player,
             self.resume_player,
@@ -498,7 +498,7 @@ class HubApp:
                 "Заставки: спектр, волна, частицы, круг, OpenGL-туман под ритм. "
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
-                "Пакет: com.changanhub.pl1_1_5. Старые pl1_1_4 / pl1_1_3 / playload / playrise / lamoreplayer Feiyu не удаляет — "
+                "Пакет: com.changanhub.pl1_1_6. Старые pl1_1_5 / pl1_1_4 / playload / playrise / lamoreplayer Feiyu не удаляет — "
                 "Hub ставит новый id, как QuickBar → qb1_3_16. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
@@ -589,7 +589,7 @@ class HubApp:
             page,
             text=(
                 "Рабочая панель: QuickBar 1.3.16 · com.changanhub.qb1_3_16. "
-                "Плеер: 1.1.5 · com.changanhub.pl1_1_5. Чат: 1.0.5 · com.changanhub.ch1_0_5. "
+                "Плеер: 1.1.6 · com.changanhub.pl1_1_6. Чат: 1.0.5 · com.changanhub.ch1_0_5. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
                 "«Запустить выбранное» на них поднимает колонку справа. "

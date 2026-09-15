@@ -14,7 +14,9 @@ import android.media.audiofx.Equalizer;
 import android.media.audiofx.LoudnessEnhancer;
 import android.media.audiofx.Virtualizer;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 
 import java.io.File;
@@ -54,6 +56,8 @@ public class PlayerService extends Service implements
 
     private static MediaPlayer player;
     private static MediaSource source;
+    private static boolean ready;
+    private static boolean cacheAttempt;
     private static Equalizer equalizer;
     private static BassBoost bass;
     private static Virtualizer virtualizer;
@@ -70,26 +74,36 @@ public class PlayerService extends Service implements
     private static final Random random = new Random();
     private PowerManager.WakeLock wakeLock;
     private AudioManager audioManager;
+    private Handler mainHandler;
 
     public static boolean isPlaying() {
+        if (!ready || player == null) {
+            return false;
+        }
         try {
-            return player != null && player.isPlaying();
+            return player.isPlaying();
         } catch (Exception e) {
             return false;
         }
     }
 
     public static int position() {
+        if (!ready || player == null) {
+            return 0;
+        }
         try {
-            return player != null ? player.getCurrentPosition() : 0;
+            return player.getCurrentPosition();
         } catch (Exception e) {
             return 0;
         }
     }
 
     public static int duration() {
+        if (!ready || player == null) {
+            return 0;
+        }
         try {
-            return player != null ? player.getDuration() : 0;
+            return player.getDuration();
         } catch (Exception e) {
             return 0;
         }
@@ -177,6 +191,7 @@ public class PlayerService extends Service implements
     public void onCreate() {
         super.onCreate();
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        mainHandler = new Handler(Looper.getMainLooper());
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm != null) {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lamoreplayer:play");
@@ -234,6 +249,7 @@ public class PlayerService extends Service implements
 
     private void openCurrent() {
         error = "";
+        cacheAttempt = false;
         if (index < 0 || index >= queue.size()) {
             return;
         }
@@ -246,34 +262,96 @@ public class PlayerService extends Service implements
                 title = tags.artist + " — " + tags.title;
             }
         }
+        File src = new File(path);
+        if (MediaSource.looksEmpty(src)) {
+            startCacheOpen(src);
+            return;
+        }
+        startUsbOpen(src);
+    }
+
+    private void startUsbOpen(File src) {
+        ready = false;
         releasePlayer(false);
         try {
-            source = MediaSource.open(new File(path), new MediaSource.Setup() {
-                @Override
-                public void apply(MediaPlayer mp) {
-                    mp.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-                    MediaSource.applyAudio(mp, false);
-                    mp.setOnPreparedListener(PlayerService.this);
-                    mp.setOnCompletionListener(PlayerService.this);
-                    mp.setOnErrorListener(PlayerService.this);
-                }
-            });
+            source = MediaSource.open(src, bindAudio());
             player = source.player;
             requestFocus();
             player.prepareAsync();
         } catch (Exception e) {
-            error = "не открылось: " + title + " · " + (source != null ? source.path : path);
-            player = null;
-            if (source != null) {
-                source.close();
-                source = null;
+            startCacheOpen(src);
+        }
+    }
+
+    private void startCacheOpen(final File src) {
+        if (cacheAttempt) {
+            error = "не открылось: " + title;
+            ready = false;
+            broadcast();
+            return;
+        }
+        cacheAttempt = true;
+        ready = false;
+        releasePlayer(false);
+        error = "копирую с флешки…";
+        broadcast();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final File cached = MediaSource.copyToCache(PlayerService.this, src);
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            openCached(cached);
+                        }
+                    });
+                } catch (final Exception e) {
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            error = "не скопировалось: " + title + " · "
+                                    + (e.getMessage() == null ? src.getAbsolutePath() : e.getMessage());
+                            broadcast();
+                        }
+                    });
+                }
             }
+        }, "player-copy").start();
+    }
+
+    private void openCached(File cached) {
+        ready = false;
+        releasePlayer(false);
+        error = "";
+        try {
+            source = MediaSource.open(cached, bindAudio());
+            player = source.player;
+            requestFocus();
+            player.prepareAsync();
+        } catch (Exception e) {
+            error = "не открылось после копии: " + title;
             broadcast();
         }
     }
 
+    private MediaSource.Setup bindAudio() {
+        return new MediaSource.Setup() {
+            @Override
+            public void apply(MediaPlayer mp) {
+                mp.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                MediaSource.applyAudio(mp, false);
+                mp.setOnPreparedListener(PlayerService.this);
+                mp.setOnCompletionListener(PlayerService.this);
+                mp.setOnErrorListener(PlayerService.this);
+            }
+        };
+    }
+
     @Override
     public void onPrepared(MediaPlayer mp) {
+        ready = true;
+        error = "";
         requestFocus();
         audioSession = mp.getAudioSessionId();
         attachFx(audioSession);
@@ -306,14 +384,18 @@ public class PlayerService extends Service implements
 
     @Override
     public boolean onError(MediaPlayer mp, int what, int extra) {
+        ready = false;
+        if (!cacheAttempt && index >= 0 && index < queue.size()) {
+            startCacheOpen(new File(queue.get(index)));
+            return true;
+        }
         error = "ГУ не проиграла: " + title + " · " + MediaSource.explainError(what, extra);
-        pauseOnly();
         broadcast();
         return true;
     }
 
     private void pauseOnly() {
-        if (player == null) {
+        if (!ready || player == null) {
             return;
         }
         try {
@@ -329,7 +411,7 @@ public class PlayerService extends Service implements
     }
 
     private void toggle() {
-        if (player == null) {
+        if (!ready || player == null) {
             return;
         }
         try {
@@ -379,6 +461,9 @@ public class PlayerService extends Service implements
     }
 
     private void seek(int ms) {
+        if (!ready) {
+            return;
+        }
         try {
             if (player != null) {
                 player.seekTo(ms);
@@ -597,7 +682,9 @@ public class PlayerService extends Service implements
                     player.pause();
                 }
             } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-                player.start();
+                if (ready) {
+                    player.start();
+                }
             }
         } catch (Exception ignored) {
         }
@@ -674,6 +761,7 @@ public class PlayerService extends Service implements
     }
 
     private void releasePlayer(boolean fx) {
+        ready = false;
         if (player != null) {
             try {
                 player.reset();

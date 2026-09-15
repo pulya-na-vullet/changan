@@ -50,6 +50,7 @@ public class VideoActivity extends Activity implements
     private int audioIndex;
     private boolean seeking;
     private boolean prepared;
+    private boolean cacheAttempt;
     private boolean resumeAfterPause;
     private boolean subsOn = true;
     private SrtSubtitles cues = new SrtSubtitles();
@@ -57,7 +58,7 @@ public class VideoActivity extends Activity implements
     private final Runnable hide = new Runnable() {
         @Override
         public void run() {
-            if (player != null && player.isPlaying()) {
+            if (player != null && prepared && player.isPlaying()) {
                 controls.setVisibility(View.GONE);
             }
         }
@@ -242,30 +243,82 @@ public class VideoActivity extends Activity implements
         audioIndex = 0;
         release();
         prepared = false;
+        cacheAttempt = false;
         controls.setVisibility(View.VISIBLE);
+        if (MediaSource.looksEmpty(file)) {
+            startCacheOpen(file, holder);
+            return;
+        }
+        startUsbOpen(file, holder);
+    }
+
+    private MediaSource.Setup bindVideo() {
+        return new MediaSource.Setup() {
+            @Override
+            public void apply(MediaPlayer mp) {
+                MediaSource.applyAudio(mp, true);
+                mp.setOnPreparedListener(VideoActivity.this);
+                mp.setOnCompletionListener(VideoActivity.this);
+                mp.setOnErrorListener(VideoActivity.this);
+                mp.setScreenOnWhilePlaying(true);
+            }
+        };
+    }
+
+    private void startUsbOpen(File file, SurfaceHolder holder) {
         try {
-            source = MediaSource.open(file, new MediaSource.Setup() {
-                @Override
-                public void apply(MediaPlayer mp) {
-                    MediaSource.applyAudio(mp, true);
-                    mp.setOnPreparedListener(VideoActivity.this);
-                    mp.setOnCompletionListener(VideoActivity.this);
-                    mp.setOnErrorListener(VideoActivity.this);
-                    mp.setDisplay(holder);
-                    mp.setScreenOnWhilePlaying(true);
-                }
-            });
+            source = MediaSource.open(file, bindVideo());
             player = source.player;
-            track.setText(file.getName() + "\n" + source.path);
+            track.setText(file.getName());
             player.prepareAsync();
         } catch (Exception e) {
-            player = null;
-            if (source != null) {
-                source.close();
-                source = null;
+            startCacheOpen(file, holder);
+        }
+    }
+
+    private void startCacheOpen(final File src, final SurfaceHolder holder) {
+        if (cacheAttempt) {
+            track.setText("ГУ не открыла это видео: " + src.getName());
+            return;
+        }
+        cacheAttempt = true;
+        release();
+        track.setText("копирую с флешки…\n" + src.getName());
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final File cached = MediaSource.copyToCache(VideoActivity.this, src);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            openCached(cached, holder);
+                        }
+                    });
+                } catch (final Exception e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            track.setText("ГУ не открыла это видео: " + src.getName()
+                                    + "\n" + (e.getMessage() == null ? src.getAbsolutePath() : e.getMessage()));
+                        }
+                    });
+                }
             }
-            track.setText("ГУ не открыла это видео: " + file.getName()
-                    + "\n" + (e.getMessage() == null ? path : e.getMessage()));
+        }, "video-copy").start();
+    }
+
+    private void openCached(File cached, SurfaceHolder holder) {
+        if (holder == null || !holder.getSurface().isValid()) {
+            return;
+        }
+        try {
+            source = MediaSource.open(cached, bindVideo());
+            player = source.player;
+            track.setText(cached.getName());
+            player.prepareAsync();
+        } catch (Exception e) {
+            track.setText("ГУ не открыла это видео: " + cached.getName());
         }
     }
 
@@ -294,11 +347,13 @@ public class VideoActivity extends Activity implements
     public boolean onError(MediaPlayer mp, int what, int extra) {
         prepared = false;
         controls.setVisibility(View.VISIBLE);
+        if (!cacheAttempt && !queue.isEmpty() && surface.getHolder().getSurface().isValid()) {
+            startCacheOpen(new File(queue.get(index)), surface.getHolder());
+            return true;
+        }
         String name = queue.isEmpty() ? "" : new File(queue.get(index)).getName();
-        String via = source != null ? source.path : "";
         track.setText("ГУ не открыла это видео: " + name
-                + " · " + MediaSource.explainError(what, extra)
-                + (via.length() == 0 ? "" : "\n" + via));
+                + " · " + MediaSource.explainError(what, extra));
         return true;
     }
 
