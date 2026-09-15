@@ -57,14 +57,20 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert f"pm disable-user --user 0 com.changanhub.quicklane" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickkeep" in joined
     assert f"pm disable-user --user 0 com.changanhub.quickrise" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quickstash" in joined
+    assert f"pm disable-user --user 0 com.changanhub.quickload" in joined
+    assert f"pm disable-user --user 0 com.changanhub.qb1_3_15" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
     assert f"pm disable {LEGACY_PACKAGE}" not in joined
-    assert PACKAGE == "com.changanhub.quickstash"
+    assert PACKAGE == "com.changanhub.qb1_3_16"
     assert "com.changanhub.quickdock" in LEGACY_PACKAGES
     assert "com.changanhub.quicklane" in LEGACY_PACKAGES
     assert "com.changanhub.quickkeep" in LEGACY_PACKAGES
     assert "com.changanhub.quickrise" in LEGACY_PACKAGES
+    assert "com.changanhub.quickstash" in LEGACY_PACKAGES
+    assert "com.changanhub.quickload" in LEGACY_PACKAGES
+    assert "com.changanhub.qb1_3_15" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -130,8 +136,17 @@ def test_disable_user_package_does_not_disable_player_or_chat() -> None:
 
     fake.shell = shell  # type: ignore[method-assign]
     for pkg in (
+        "com.changanhub.pl1_1_7",
+        "com.changanhub.pl1_1_6",
+        "com.changanhub.pl1_1_5",
+        "com.changanhub.pl1_1_4",
+        "com.changanhub.pl1_1_3",
+        "com.changanhub.playload",
         "com.changanhub.playrise",
         "com.changanhub.lamoreplayer",
+        "com.changanhub.ch1_0_6",
+        "com.changanhub.ch1_0_5",
+        "com.changanhub.chatload",
         "com.changanhub.chatrise",
         "com.changanhub.aichat",
     ):
@@ -240,14 +255,15 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.11"' in mf
+    assert 'android:versionName="1.3.16"' in mf
+    assert 'android:versionCode="20"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.quickstash"' in mf
+    assert 'package="com.changanhub.qb1_3_16"' in mf
     assert "android:persistent" not in mf
     assert "KILL_BACKGROUND_PROCESSES" in mf
     assert "REQUEST_INSTALL_PACKAGES" in mf
@@ -283,6 +299,9 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "com.changanhub.quicklane" in overlay
     assert "com.changanhub.quickkeep" in overlay
     assert "com.changanhub.quickrise" in overlay
+    assert "com.changanhub.quickstash" in overlay
+    assert "com.changanhub.quickload" in overlay
+    assert "com.changanhub.qb1_3_15" in overlay
     assert "getInstalledApplications" in overlay
     assert "launchIntentFallback" in overlay
     assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
@@ -380,6 +399,29 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "uninstallUserApp" not in src
     assert "PackageActions.uninstall" not in src
     assert "PackageActions.install" in src
+    assert "R.drawable.ic_sign" in src
+    assert "signFromUsb" in src
+    assert "HuSigner.ensureSigned" in src
+    assert "HuSigner.alreadyWhitelisted" in src
+    assert "HuSigner.sign" in src
+    assert "qb-sign" in src
+    assert "qb-install" in src
+    assert "sourcePicker" in src
+    assert "sourceChip" in src
+    assert "KEY_APK_SOURCE" in src
+    assert "Память ГУ" in src
+    assert "UsbStorage.usbRoots" in src
+    assert "UsbStorage.memoryRoots" in src
+    assert "UsbStorage.volumes" in src
+    assert "подписать белым списком" in src
+    assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/HuSigner.java").is_file()
+    signer = Path(
+        "android/quickbar/src/main/java/com/changanhub/quickbar/sign/FeiyuSigner.java"
+    ).read_text(encoding="utf-8")
+    assert "CHANGAN_SERIAL" in signer
+    assert "ddb66eefd98476f3" in signer
+    assert "APK Sig Block 42" in signer
+    assert "0x7109871A" in signer
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java")).is_file()
     job = Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java").read_text(
         encoding="utf-8"
@@ -409,13 +451,14 @@ def test_quickbar_icons_exist() -> None:
         "ic_collapse.xml",
         "ic_refresh.xml",
         "ic_install.xml",
+        "ic_sign.xml",
         "ic_window.xml",
     ):
         assert (res / name).is_file(), name
     assert not (res / "logo_itm.xml").exists()
     assert not (res / "ic_grid.xml").exists()
     app_name = Path("android/quickbar/src/main/res/values/strings.xml").read_text(encoding="utf-8")
-    assert ">QuickBar<" in app_name
+    assert ">QuickBar 1.3.16<" in app_name
     assert "IT-m" not in app_name
     joined = "\n".join(PERSIST_SHELL)
     assert "REQUEST_INSTALL_PACKAGES" in joined
@@ -570,8 +613,10 @@ def test_launch_overlay_target_uses_working_package() -> None:
     from hub.overlay import PACKAGE, launch_overlay_target
 
     assert launch_overlay_target(PACKAGE) == PACKAGE
+    assert launch_overlay_target("com.changanhub.quickbar") == PACKAGE
     assert launch_overlay_target("com.changanhub.quickkeep") == PACKAGE
     assert launch_overlay_target("com.changanhub.quicklane") == PACKAGE
+    assert launch_overlay_target("com.changanhub.quickstash") == PACKAGE
     assert launch_overlay_target("mobi.zona") is None
 
 

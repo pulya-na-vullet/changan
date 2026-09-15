@@ -5,7 +5,10 @@ import android.os.Environment;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileReader;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,6 +40,7 @@ public final class UsbMedia {
     public static List<File> roots(Context context) {
         List<File> found = new ArrayList<>();
         addStorageVolumes(context, found);
+        addFromProcMounts(found);
         addWithChildren(found, new File("/mnt/media_rw"));
         addWithChildren(found, new File("/mnt/usb_storage"));
         addIfDir(found, new File("/mnt/usbhost"));
@@ -47,8 +51,10 @@ public final class UsbMedia {
         addIfDir(found, new File("/storage/usbdisk"));
         addIfDir(found, new File("/mnt/usb"));
         addIfDir(found, new File("/storage/usb"));
+        addIfDir(found, new File("/storage/sdcard1"));
+        addIfDir(found, new File("/mnt/external_sd"));
         File storage = new File("/storage");
-        File[] kids = storage.listFiles();
+        File[] kids = kids(storage);
         if (kids != null) {
             for (int i = 0; i < kids.length; i++) {
                 File child = kids[i];
@@ -82,7 +88,7 @@ public final class UsbMedia {
             }
         } catch (Exception ignored) {
         }
-        return uniqueExisting(found);
+        return collapseSameName(dropParents(uniqueExisting(found)));
     }
 
     public static List<File> memoryRoots() {
@@ -192,10 +198,11 @@ public final class UsbMedia {
 
     public static List<Entry> list(File dir, boolean wantAudio, boolean wantVideo) {
         List<Entry> out = new ArrayList<>();
-        if (dir == null || !dir.isDirectory()) {
+        File readable = bestReadable(dir);
+        if (readable == null) {
             return out;
         }
-        File[] files = dir.listFiles();
+        File[] files = kids(readable);
         if (files == null) {
             return out;
         }
@@ -206,14 +213,14 @@ public final class UsbMedia {
                     || "System Volume Information".equalsIgnoreCase(name)) {
                 continue;
             }
-            if (file.isDirectory()) {
+            if (looksLikeDirectory(file)) {
                 Entry e = new Entry();
                 e.file = file;
                 e.directory = true;
                 e.label = name;
                 e.meta = "папка";
                 out.add(e);
-            } else if (MediaTypes.isMedia(name) && file.length() > 0) {
+            } else if (MediaTypes.isMedia(name)) {
                 boolean audio = MediaTypes.isAudio(name);
                 boolean video = MediaTypes.isVideo(name);
                 if ((audio && !wantAudio) || (video && !wantVideo)) {
@@ -291,24 +298,30 @@ public final class UsbMedia {
         if (dir == null || depth > 6) {
             return;
         }
-        File[] files = dir.listFiles();
+        File readable = depth == 0 ? bestReadable(dir) : dir;
+        if (readable == null) {
+            return;
+        }
+        File[] files = kids(readable);
         if (files == null) {
             return;
         }
         for (int i = 0; i < files.length; i++) {
             File file = files[i];
-            if (file.isDirectory()) {
-                String name = file.getName();
-                if (name.startsWith(".") || "Android".equals(name) || "LOST.DIR".equals(name)) {
+            String name = file.getName();
+            if (name.startsWith(".")) {
+                continue;
+            }
+            if (looksLikeDirectory(file)) {
+                if ("Android".equals(name) || "LOST.DIR".equals(name)
+                        || "System Volume Information".equalsIgnoreCase(name)) {
                     continue;
                 }
                 walk(file, out, depth + 1, video);
-            } else if (file.length() > 0) {
-                if (video && MediaTypes.isVideo(file.getName())) {
-                    out.add(file);
-                } else if (!video && MediaTypes.isAudio(file.getName())) {
-                    out.add(file);
-                }
+            } else if (video && MediaTypes.isVideo(name)) {
+                out.add(file);
+            } else if (!video && MediaTypes.isAudio(name)) {
+                out.add(file);
             }
         }
     }
@@ -320,30 +333,100 @@ public final class UsbMedia {
                 return;
             }
             List<StorageVolume> volumes = sm.getStorageVolumes();
-            Method getPath = StorageVolume.class.getMethod("getPath");
+            Method getPath = optionalMethod("getPath");
+            Method getPathFile = optionalMethod("getPathFile");
+            Method getDirectory = optionalMethod("getDirectory");
             for (int i = 0; i < volumes.size(); i++) {
-                StorageVolume volume = volumes.get(i);
-                if (volume.isPrimary() && !volume.isRemovable()) {
+                File path = volumePath(volumes.get(i), getPath, getPathFile, getDirectory);
+                if (path == null || isMemoryPath(path.getAbsolutePath())) {
                     continue;
                 }
-                try {
-                    Object path = getPath.invoke(volume);
-                    if (path instanceof String) {
-                        addIfDir(found, new File((String) path));
-                    }
-                } catch (Exception ignored) {
-                }
+                addIfDir(found, path);
             }
         } catch (Exception ignored) {
         }
     }
 
+    private static Method optionalMethod(String name) {
+        try {
+            return StorageVolume.class.getMethod(name);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static File volumePath(
+            StorageVolume volume, Method getPath, Method getPathFile, Method getDirectory) {
+        if (getDirectory != null) {
+            try {
+                Object dir = getDirectory.invoke(volume);
+                if (dir instanceof File) {
+                    return (File) dir;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (getPathFile != null) {
+            try {
+                Object dir = getPathFile.invoke(volume);
+                if (dir instanceof File) {
+                    return (File) dir;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (getPath != null) {
+            try {
+                Object path = getPath.invoke(volume);
+                if (path instanceof String && ((String) path).length() > 0) {
+                    return new File((String) path);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static void addFromProcMounts(List<File> found) {
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new FileReader("/proc/mounts"));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                if (parts.length < 3) {
+                    continue;
+                }
+                String mount = parts[1];
+                String fs = parts[2];
+                if (isMemoryPath(mount) || mount.startsWith("/mnt/runtime")
+                        || mount.startsWith("/mnt/pass_through") || mount.contains("/Android/")) {
+                    continue;
+                }
+                boolean usbFs = "vfat".equals(fs) || "exfat".equals(fs) || "texfat".equals(fs)
+                        || "fuseblk".equals(fs) || "ntfs".equals(fs) || "sdcardfs".equals(fs)
+                        || "fuse".equals(fs) || "sdfat".equals(fs);
+                boolean usbPath = mount.contains("media_rw") || mount.contains("usb")
+                        || mount.contains("udisk") || mount.contains("otg")
+                        || mount.matches(".*/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}.*");
+                if (usbFs && usbPath) {
+                    addIfDir(found, new File(mount));
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
     private static void addWithChildren(List<File> found, File dir) {
         addIfDir(found, dir);
-        if (dir == null || !dir.isDirectory()) {
-            return;
-        }
-        File[] kids = dir.listFiles();
+        File[] kids = kids(dir);
         if (kids == null) {
             return;
         }
@@ -353,6 +436,289 @@ public final class UsbMedia {
                 addIfDir(found, child);
             }
         }
+    }
+
+    private static File[] kids(File dir) {
+        if (dir == null) {
+            return null;
+        }
+        String[] names = dir.list();
+        if (names == null) {
+            return dir.listFiles();
+        }
+        File[] out = new File[names.length];
+        for (int i = 0; i < names.length; i++) {
+            out[i] = new File(dir, names[i]);
+        }
+        return out;
+    }
+
+    static boolean looksLikeDirectory(File file) {
+        if (file == null) {
+            return false;
+        }
+        if (file.isDirectory()) {
+            return true;
+        }
+        if (file.isFile()) {
+            return false;
+        }
+        return file.list() != null;
+    }
+
+    static File bestReadable(File dir) {
+        if (dir == null) {
+            return null;
+        }
+        String name = dir.getName();
+        File[] candidates = {
+                dir,
+                new File("/mnt/media_rw", name),
+                new File("/storage", name),
+                new File("/mnt/usb_storage", name),
+                new File("/mnt/usbhost", name),
+                new File("/mnt/udisk", name),
+                new File("/storage/usb0", name),
+        };
+        File emptyOk = null;
+        File anyDir = looksLikeDirectory(dir) ? dir : null;
+        for (int i = 0; i < candidates.length; i++) {
+            File c = candidates[i];
+            if (c == null || !looksLikeDirectory(c)) {
+                continue;
+            }
+            if (anyDir == null) {
+                anyDir = c;
+            }
+            String[] names = c.list();
+            if (names == null) {
+                continue;
+            }
+            if (names.length > 0) {
+                return c;
+            }
+            if (emptyOk == null) {
+                emptyOk = c;
+            }
+        }
+        return emptyOk != null ? emptyOk : anyDir;
+    }
+
+    private static File pickRicher(File a, File b) {
+        int na = listCount(a);
+        int nb = listCount(b);
+        if (nb > na) {
+            return b;
+        }
+        if (na > nb) {
+            return a;
+        }
+        String pb = b.getAbsolutePath();
+        if (pb.contains("/media_rw/") || pb.contains("/usb_storage/")) {
+            return b;
+        }
+        return a;
+    }
+
+    private static int listCount(File dir) {
+        if (dir == null) {
+            return -1;
+        }
+        String[] names = dir.list();
+        return names == null ? -1 : names.length;
+    }
+
+    private static List<File> collapseSameName(List<File> dirs) {
+        java.util.LinkedHashMap<String, File> byName = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < dirs.size(); i++) {
+            File best = bestReadable(dirs.get(i));
+            if (best == null) {
+                continue;
+            }
+            String name = best.getName();
+            File prev = byName.get(name);
+            byName.put(name, prev == null ? best : pickRicher(prev, best));
+        }
+        return new ArrayList<>(byName.values());
+    }
+
+    public static File playableFile(File file) {
+        if (file == null) {
+            return null;
+        }
+        File[] cands = rankedPathCandidates(file);
+        File readable = null;
+        File withBytes = null;
+        for (int i = 0; i < cands.length; i++) {
+            File cand = cands[i];
+            if (cand == null || looksLikeDirectory(cand)) {
+                continue;
+            }
+            if (readable == null) {
+                readable = cand;
+            }
+            long size = 0;
+            try {
+                size = cand.length();
+            } catch (Exception ignored) {
+            }
+            boolean opens = canOpen(cand);
+            if (size <= 0 && !opens) {
+                continue;
+            }
+            if (withBytes == null) {
+                withBytes = cand;
+            }
+            String path = cand.getAbsolutePath();
+            if (path.contains("/media_rw/") || path.contains("/usb_storage/")) {
+                return cand;
+            }
+        }
+        return withBytes != null ? withBytes : (readable != null ? readable : file);
+    }
+
+    static File[] pathCandidates(File file) {
+        java.util.LinkedHashSet<String> seen = new LinkedHashSet<>();
+        java.util.ArrayList<File> out = new ArrayList<>();
+        addCandidate(out, seen, file);
+        if (file == null) {
+            return out.toArray(new File[0]);
+        }
+        try {
+            addCandidate(out, seen, file.getCanonicalFile());
+        } catch (Exception ignored) {
+        }
+        File parent = file.getParentFile();
+        if (parent != null) {
+            File bestParent = bestReadable(parent);
+            if (bestParent != null) {
+                addCandidate(out, seen, new File(bestParent, file.getName()));
+            }
+        }
+        String path = file.getAbsolutePath();
+        String uuid = volumeName(path);
+        if (uuid != null) {
+            String needle = "/" + uuid;
+            int idx = path.indexOf(needle);
+            if (idx >= 0) {
+                String rest = path.substring(idx + needle.length());
+                addCandidate(out, seen, new File("/mnt/media_rw/" + uuid + rest));
+                addCandidate(out, seen, new File("/storage/" + uuid + rest));
+                addCandidate(out, seen, new File("/mnt/usb_storage/" + uuid + rest));
+                addCandidate(out, seen, new File("/mnt/usbhost/" + uuid + rest));
+            }
+        }
+        return out.toArray(new File[0]);
+    }
+
+    /**
+     * Kernel USB nodes first. Feiyu FUSE {@code /storage/UUID} lists names but
+     * often yields a zero-filled stub that MediaPlayer reports as -2147483648.
+     */
+    static File[] rankedPathCandidates(File file) {
+        File[] raw = pathCandidates(file);
+        java.util.Arrays.sort(raw, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                return Integer.compare(fuseRank(a), fuseRank(b));
+            }
+        });
+        return raw;
+    }
+
+    static int fuseRank(File file) {
+        if (file == null) {
+            return 99;
+        }
+        String path = file.getAbsolutePath();
+        if (path.contains("/mnt/media_rw/")) {
+            return 0;
+        }
+        if (path.contains("/mnt/usb_storage/")) {
+            return 1;
+        }
+        if (path.contains("/mnt/usbhost/")) {
+            return 2;
+        }
+        if (path.contains("/mnt/udisk") || path.contains("/mnt/usb")) {
+            return 3;
+        }
+        if (path.contains("/storage/usb")) {
+            return 4;
+        }
+        if (volumeName(path) != null && path.contains("/storage/")) {
+            return 9;
+        }
+        return 5;
+    }
+
+    private static void addCandidate(java.util.List<File> out, Set<String> seen, File file) {
+        if (file == null) {
+            return;
+        }
+        String key = file.getAbsolutePath();
+        if (key.length() == 0 || !seen.add(key)) {
+            return;
+        }
+        out.add(file);
+    }
+
+    static String volumeName(String path) {
+        if (path == null) {
+            return null;
+        }
+        String[] parts = path.split("/");
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (part.length() == 9 && part.charAt(4) == '-' && part.matches("[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}")) {
+                return part;
+            }
+        }
+        return null;
+    }
+
+    static boolean canOpen(File file) {
+        if (file == null) {
+            return false;
+        }
+        FileInputStream in = null;
+        try {
+            in = new FileInputStream(file);
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    public static String describe(File dir) {
+        File best = bestReadable(dir);
+        if (best == null) {
+            return "том не найден";
+        }
+        String[] names = best.list();
+        if (names == null) {
+            return best.getAbsolutePath() + " — нет доступа к файлам";
+        }
+        if (names.length == 0) {
+            return best.getAbsolutePath() + " — папка пустая";
+        }
+        StringBuilder sb = new StringBuilder(best.getAbsolutePath());
+        sb.append(" — ").append(names.length).append(" имён, например: ");
+        int n = Math.min(4, names.length);
+        for (int i = 0; i < n; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(names[i]);
+        }
+        return sb.toString();
     }
 
     private static void addIfDir(List<File> found, File dir) {
@@ -394,6 +760,28 @@ public final class UsbMedia {
             File dir = input.get(i);
             if (seen.add(canon(dir))) {
                 out.add(dir);
+            }
+        }
+        return out;
+    }
+
+    private static List<File> dropParents(List<File> dirs) {
+        List<File> out = new ArrayList<>();
+        for (int i = 0; i < dirs.size(); i++) {
+            String a = canon(dirs.get(i));
+            boolean parent = false;
+            for (int j = 0; j < dirs.size(); j++) {
+                if (i == j) {
+                    continue;
+                }
+                String b = canon(dirs.get(j));
+                if (b.startsWith(a + "/")) {
+                    parent = true;
+                    break;
+                }
+            }
+            if (!parent) {
+                out.add(dirs.get(i));
             }
         }
         return out;

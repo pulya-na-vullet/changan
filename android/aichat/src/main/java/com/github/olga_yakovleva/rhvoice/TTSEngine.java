@@ -11,6 +11,8 @@ import java.util.List;
 public final class TTSEngine {
     private long data;
 
+    private static boolean loaded;
+
     private static native void onClassInit();
 
     private native void onInit(String data_path, String config_path, String[] resource_paths, String pkgPath, Logger logger) throws RHVoiceException;
@@ -27,9 +29,25 @@ public final class TTSEngine {
 
     private native String doGetPackageDirFromServer();
 
-    static {
-        System.loadLibrary("RHVoice_jni");
+    public static synchronized void ensureLoaded(android.content.Context context) {
+        if (loaded) {
+            return;
+        }
+        try {
+            System.loadLibrary("RHVoice_jni");
+        } catch (UnsatisfiedLinkError e) {
+            try {
+                java.io.File so = com.changanhub.chat.NativeLib.extract(context, "RHVoice_jni");
+                System.load(so.getAbsolutePath());
+            } catch (Throwable t) {
+                UnsatisfiedLinkError fail = new UnsatisfiedLinkError(
+                        "RHVoice_jni: " + e.getMessage() + " / " + t.getMessage());
+                fail.initCause(t);
+                throw fail;
+            }
+        }
         onClassInit();
+        loaded = true;
     }
 
     public TTSEngine(String data_path, String config_path, String[] resource_paths, String pkgPath, Logger logger) throws RHVoiceException {

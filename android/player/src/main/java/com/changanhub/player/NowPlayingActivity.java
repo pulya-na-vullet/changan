@@ -64,6 +64,12 @@ public class NowPlayingActivity extends Activity {
         viz = findViewById(R.id.viz);
         glFog = findViewById(R.id.gl_fog);
         vizModes = findViewById(R.id.viz_modes);
+        findViewById(R.id.btn_back).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
         findViewById(R.id.btn_prev).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -210,7 +216,7 @@ public class NowPlayingActivity extends Activity {
             seek.setMax(dur > 0 ? dur : 1);
             seek.setProgress(pos);
         }
-        time.setText(fmt(pos) + "  /  " + fmt(dur));
+        time.setText(fmt(pos) + "  /  " + (dur > 0 ? fmt(dur) : "—"));
     }
 
     private void buildVizModes() {

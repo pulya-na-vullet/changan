@@ -7,8 +7,8 @@ from hub.aichat import PACKAGE, aichat_apk
 def test_aichat_sources() -> None:
     root = Path(__file__).resolve().parents[1]
     mf = (root / "android/aichat/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-    assert 'package="com.changanhub.chatrise"' in mf
-    assert 'android:versionName="1.0.4"' in mf
+    assert 'package="com.changanhub.ch1_0_6"' in mf
+    assert 'android:versionName="1.0.6"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "INTERNET" in mf
@@ -41,16 +41,22 @@ def test_aichat_sources() -> None:
     )
     assert "TTSEngine" in tts
     assert "AudioTrack" in tts
-    assert "Elena" in tts
-    assert "ACTION_PREPARE" in tts
-    assert "TextToSpeech" not in tts
+    assert "MediaPlayer" in tts
+    assert "writeWav" in tts
+    assert "ensureLoaded" in (
+        root / "android/aichat/src/main/java/com/github/olga_yakovleva/rhvoice/TTSEngine.java"
+    ).read_text(encoding="utf-8")
+    assert "NativeLib" in (
+        root / "android/aichat/src/main/java/com/changanhub/chat/NativeLib.java"
+    ).read_text(encoding="utf-8")
+    assert "озвучиваю" in ui
     store = (root / "android/aichat/src/main/java/com/changanhub/chat/ChatStore.java").read_text(
         encoding="utf-8"
     )
     assert "export-chat.json" in store
     build = (root / "scripts/build_aichat.py").read_text(encoding="utf-8")
-    assert '"1.0.4"' in build
-    assert PACKAGE == "com.changanhub.chatrise"
+    assert '"1.0.6"' in build
+    assert PACKAGE == "com.changanhub.ch1_0_6"
     assert "SpeechRecognizer.isRecognitionAvailable" in ui
     assert "setVisibility(View.GONE)" in ui
     assert "iFlytek" in ui
@@ -82,11 +88,12 @@ def test_aichat_sources() -> None:
     assert (root / "scripts/vendor_rhvoice.py").is_file()
     assert "extractNativeLibs" in mf
     assert "TtsService.prepare" in ui
+    assert "appVersionLabel" in ui
     models = root / "android/aichat/src/main/assets/rhvoice/voices/elena/16000"
     assert (models / "mgc.pdf").is_file() and (models / "mgc.pdf").stat().st_size > 100_000
     assert (models / "voice.data").is_file() and (models / "voice.data").stat().st_size > 1_000_000
     mock = (root / "docs/aichat-layout.html").read_text(encoding="utf-8")
-    assert "AI Chat 1.0.4" in mock
+    assert "AI Chat 1.0.6" in mock
     assert "RHVoice" in mock
     assert "Переведи" in mock
     assert "Объясни" in mock
@@ -105,12 +112,18 @@ def test_hub_installs_aichat() -> None:
 
     src = Path("hub/gui.py").read_text(encoding="utf-8")
     assert "deploy_aichat" in src
-    assert '"aichat", "Чат ИИ"' in src
+    assert '"ours", "Наши приложения"' in src
     assert any(app.id == "aichat" for app in CATALOG)
-    row = package_label("com.changanhub.chatrise")
+    row = package_label("com.changanhub.ch1_0_6")
     assert "AI Chat" in row
     leftover = package_label("com.changanhub.aichat")
     assert "старый" in leftover.lower()
+    leftover_rise = package_label("com.changanhub.chatrise")
+    assert "старый" in leftover_rise.lower()
+    leftover_load = package_label("com.changanhub.chatload")
+    assert "старый" in leftover_load.lower()
+    leftover_tts = package_label("com.changanhub.ch1_0_5")
+    assert "старый" in leftover_tts.lower()
     assert "install_aichat" in Path("hub/aichat.py").read_text(encoding="utf-8")
     assert "RHVoice" in src
     assert "Ответы озвучивает системный TTS" not in src
@@ -131,7 +144,7 @@ def test_bundled_aichat_apk() -> None:
     with ZipFile(apk) as zf:
         names = set(zf.namelist())
         mf = zf.read("AndroidManifest.xml")
-        assert "com.changanhub.chatrise".encode("utf-16-le") in mf
+        assert "com.changanhub.ch1_0_6".encode("utf-16-le") in mf
         certs = pkcs7.load_der_pkcs7_certificates(zf.read("META-INF/CERT.RSA"))
         assert certs[0].serial_number == CHANGAN_SERIAL
         assert "lib/arm64-v8a/libRHVoice_jni.so" in names
@@ -146,5 +159,5 @@ def test_bundled_aichat_apk() -> None:
 def test_apk_package_name_aichat(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "AiChat.apk") == "com.changanhub.chatrise"
-    assert apk_package_name(tmp_path / "aichat-changan.apk") == "com.changanhub.chatrise"
+    assert apk_package_name(tmp_path / "AiChat.apk") == "com.changanhub.ch1_0_6"
+    assert apk_package_name(tmp_path / "aichat-changan.apk") == "com.changanhub.ch1_0_6"

@@ -22,6 +22,9 @@ from hub.bundle import (
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.qb1_3_16",
+    "com.changanhub.qb1_3_15",
+    "com.changanhub.quickload",
     "com.changanhub.quickstash",
     "com.changanhub.quickrise",
     "com.changanhub.quickkeep",
@@ -32,8 +35,17 @@ OVERLAY_PACKAGES = (
 # Sideloads Feiyu will not delete. A new Hub ZIP mints a new RSA key, so
 # pm install -r hits UPDATE_INCOMPATIBLE. Do not uninstall or disable these.
 KEEP_EXISTING_PACKAGES = OVERLAY_PACKAGES + (
+    "com.changanhub.pl1_1_7",
+    "com.changanhub.pl1_1_6",
+    "com.changanhub.pl1_1_5",
+    "com.changanhub.pl1_1_4",
+    "com.changanhub.pl1_1_3",
+    "com.changanhub.playload",
     "com.changanhub.playrise",
     "com.changanhub.lamoreplayer",
+    "com.changanhub.ch1_0_6",
+    "com.changanhub.ch1_0_5",
+    "com.changanhub.chatload",
     "com.changanhub.chatrise",
     "com.changanhub.aichat",
 )
@@ -302,7 +314,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
-                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickstash.",
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.qb1_3_16.",
                 72,
             )
             if conflict:
@@ -311,7 +323,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение — pm uninstall не вызываю. Плеер и чат не отключаю. "
-                "Новые пакеты: com.changanhub.playrise и com.changanhub.chatrise.",
+                "Новые пакеты: com.changanhub.pl1_1_7 и com.changanhub.ch1_0_6.",
                 72,
             )
         else:
@@ -346,7 +358,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quickstash не появится.",
+            "в списке com.changanhub.qb1_3_16 не появится.",
             100,
         )
         return report
@@ -424,7 +436,16 @@ def _finish_ok(
 def _keep_kind(package: str) -> str:
     if package in OVERLAY_PACKAGES:
         return "overlay"
-    if package in ("com.changanhub.playrise", "com.changanhub.lamoreplayer"):
+    if package in (
+        "com.changanhub.pl1_1_7",
+        "com.changanhub.pl1_1_6",
+        "com.changanhub.pl1_1_5",
+        "com.changanhub.pl1_1_4",
+        "com.changanhub.pl1_1_3",
+        "com.changanhub.playload",
+        "com.changanhub.playrise",
+        "com.changanhub.lamoreplayer",
+    ):
         return "player"
     return "chat"
 
@@ -443,12 +464,12 @@ def _finish_keep_overlay(
     if kind == "player":
         msg = (
             "Плеер с этой подписью уже стоит. Не отключаю. "
-            "Lamore Player 1.1.2 — пакет com.changanhub.playrise, раздел «Плеер»."
+            "Lamore Player 1.1.7 — пакет com.changanhub.pl1_1_7, раздел «Наши приложения»."
         )
     elif kind == "chat":
         msg = (
             "Чат с этой подписью уже стоит. Не отключаю. "
-            "AI Chat — пакет com.changanhub.chatrise, раздел «Чат ИИ»."
+            "AI Chat — пакет com.changanhub.ch1_0_6, раздел «Наши приложения»."
         )
     else:
         msg = (
@@ -485,13 +506,13 @@ def _keep_working_overlay(
     elif kind == "player":
         step(
             f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
-            "Рабочий плеер не отключаю. Новый пакет — com.changanhub.playrise.",
+            "Рабочий плеер не отключаю. Новый пакет — com.changanhub.pl1_1_7.",
             72,
         )
     else:
         step(
             f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
-            "Рабочий чат не отключаю. Новый пакет — com.changanhub.chatrise.",
+            "Рабочий чат не отключаю. Новый пакет — com.changanhub.ch1_0_6.",
             72,
         )
     if _confirm_installed(adb, package, step, attempts=2):
@@ -1772,12 +1793,12 @@ def apk_package_name(apk: Path) -> str | None:
         return bundle_package_name(apk)
 
     stem = apk.name.lower()
-    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash")):
-        return "com.changanhub.quickstash"
-    if any(token in stem for token in ("player", "lamoreplayer", "playrise")):
-        return "com.changanhub.playrise"
-    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise")):
-        return "com.changanhub.chatrise"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload", "qb1_3_15", "qb1_3_16")):
+        return "com.changanhub.qb1_3_16"
+    if any(token in stem for token in ("player", "lamoreplayer", "playrise", "playload", "pl1_1_3", "pl1_1_4", "pl1_1_5", "pl1_1_6", "pl1_1_7")):
+        return "com.changanhub.pl1_1_7"
+    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise", "chatload", "ch1_0_5", "ch1_0_6")):
+        return "com.changanhub.ch1_0_6"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")

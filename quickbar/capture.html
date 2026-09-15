@@ -44,6 +44,10 @@
     .search::placeholder { color: #9aa7b8; }
     .list { flex: 1; overflow: hidden; }
     .hint { color: #9aa7b8; font-size: 22px; padding: 0 4px 8px; }
+    .src { display: flex; gap: 6px; padding: 2px 2px 8px; }
+    .srcbtn { flex: 1; text-align: center; font: 700 22px/1.2 "Noto Sans", sans-serif;
+      padding: 14px 6px; border-radius: 12px; background: #31405c; color: #fff; }
+    .srcbtn.on { background: #3ddc97; color: #0b1220; }
     .sec { color: #3ddc97; font-size: 26px; font-weight: 700; padding: 14px 4px 6px; }
     .row { display: flex; align-items: center; padding: 24px 4px; min-height: 168px; box-sizing: border-box; border-radius: 12px; }
     .row.fav { background: #3328e07a; }
@@ -107,6 +111,7 @@
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4,5h16v3H4z"/><path d="M4,10.5h16v3H4z"/><path d="M4,16h16v3H4z"/></symbol>
   <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4,4h16v4H4zM4,10h10v4H4zM4,16h16v4H4z"/></symbol>
   <symbol id="i-install" viewBox="0 0 24 24"><path d="M11,2h2v10h4l-5,6 -5,-6h4zM4,18h16v2H4z"/></symbol>
+  <symbol id="i-sign" viewBox="0 0 24 24"><path d="M12,1a5,5 0 0 1 5,5v3h1.5A1.5,1.5 0 0 1 20,10.5v10A1.5,1.5 0 0 1 18.5,22h-13A1.5,1.5 0 0 1 4,20.5v-10A1.5,1.5 0 0 1 5.5,9H7V6A5,5 0 0 1 12,1zM12,3a3,3 0 0 0-3,3v3h6V6A3,3 0 0 0 12,3zM12,13a1.5,1.5 0 0 0-1,2.7V18h2v-2.3A1.5,1.5 0 0 0 12,13z"/></symbol>
 </svg>
 <div class="hu">
   <div class="route"></div>
@@ -188,12 +193,20 @@
     list.insertAdjacentHTML("beforeend", '<div class="sec">▾  Скрытые  ·  2</div>');
     list.insertAdjacentHTML("beforeend", row({ name: "Yandex Music", mark: "скрыто в панели", color: "#7c3aed", letter: "M" }, "hid", '<div class="act">' + eye() + "</div>"));
     list.insertAdjacentHTML("beforeend", row({ name: "VLC", mark: "скрыто в панели", color: "#334155", letter: "V" }, "hid", '<div class="act">' + eye() + "</div>"));
-  } else if (state === "usb") {
+  } else if (state === "usb" || state === "memory") {
     document.getElementById("usbTool").innerHTML = '<svg><use href="#i-apps"/></svg>';
     document.getElementById("search").placeholder = "apk";
-    list.insertAdjacentHTML("beforeend", '<div class="hint">APK с флешки в USB ГУ. Тап по строке или зелёной кнопке — установка.</div>');
-    list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">ru.yandex.yandexnavi-30.7.3.apk</div><div class="mark">/mnt/media_rw/ABCD · 345 МБ</div></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
-    list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">ru.kinopoisk-7.103.0.apk</div><div class="mark">/mnt/media_rw/ABCD · 71 МБ</div></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
+    var mem = state === "memory";
+    list.insertAdjacentHTML("beforeend", '<div class="src"><div class="srcbtn' + (mem ? "" : " on") + '">USB</div><div class="srcbtn' + (mem ? " on" : "") + '">Память ГУ</div></div>');
+    list.insertAdjacentHTML("beforeend", mem
+      ? '<div class="hint">Память самого ГУ, не флешка. Ключ — подписать белым списком. Зелёная кнопка — установка.</div>'
+      : '<div class="hint">Флешка в USB-разъёме ГУ. Ключ — подписать белым списком (как Hub). Зелёная кнопка — установка.</div>');
+    if (mem) {
+      list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">org.telegram.messenger.apk</div><div class="mark">/storage/emulated/0/Download · 48 МБ · нужна подпись ГУ</div></div><div class="btn up"><svg><use href="#i-sign"/></svg></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
+    } else {
+      list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">ru.yandex.yandexnavi-30.7.3.apk</div><div class="mark">/mnt/media_rw/ABCD · 345 МБ · нужна подпись ГУ</div></div><div class="btn up"><svg><use href="#i-sign"/></svg></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
+      list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">ru.kinopoisk-7.103.0.apk</div><div class="mark">/mnt/media_rw/ABCD · 71 МБ · нужна подпись ГУ</div></div><div class="btn up"><svg><use href="#i-sign"/></svg></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
+    }
   } else if (state === "search") {
     document.getElementById("search").value = "яндекс";
     list.insertAdjacentHTML("beforeend", row(apps[0], "fav", '<div class="act">' + eye() + "</div>"));
