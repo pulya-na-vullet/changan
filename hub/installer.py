@@ -43,6 +43,7 @@ KEEP_EXISTING_PACKAGES = OVERLAY_PACKAGES + (
     "com.changanhub.playload",
     "com.changanhub.playrise",
     "com.changanhub.lamoreplayer",
+    "com.changanhub.ch1_0_6",
     "com.changanhub.ch1_0_5",
     "com.changanhub.chatload",
     "com.changanhub.chatrise",
@@ -322,7 +323,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение — pm uninstall не вызываю. Плеер и чат не отключаю. "
-                "Новые пакеты: com.changanhub.pl1_1_7 и com.changanhub.ch1_0_5.",
+                "Новые пакеты: com.changanhub.pl1_1_7 и com.changanhub.ch1_0_6.",
                 72,
             )
         else:
@@ -468,7 +469,7 @@ def _finish_keep_overlay(
     elif kind == "chat":
         msg = (
             "Чат с этой подписью уже стоит. Не отключаю. "
-            "AI Chat — пакет com.changanhub.ch1_0_5, раздел «Наши приложения»."
+            "AI Chat — пакет com.changanhub.ch1_0_6, раздел «Наши приложения»."
         )
     else:
         msg = (
@@ -511,7 +512,7 @@ def _keep_working_overlay(
     else:
         step(
             f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
-            "Рабочий чат не отключаю. Новый пакет — com.changanhub.ch1_0_5.",
+            "Рабочий чат не отключаю. Новый пакет — com.changanhub.ch1_0_6.",
             72,
         )
     if _confirm_installed(adb, package, step, attempts=2):
@@ -1796,8 +1797,8 @@ def apk_package_name(apk: Path) -> str | None:
         return "com.changanhub.qb1_3_16"
     if any(token in stem for token in ("player", "lamoreplayer", "playrise", "playload", "pl1_1_3", "pl1_1_4", "pl1_1_5", "pl1_1_6", "pl1_1_7")):
         return "com.changanhub.pl1_1_7"
-    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise", "chatload", "ch1_0_5")):
-        return "com.changanhub.ch1_0_5"
+    if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise", "chatload", "ch1_0_5", "ch1_0_6")):
+        return "com.changanhub.ch1_0_6"
     raw = b""
     try:
         raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")

@@ -393,7 +393,7 @@ class HubApp:
         )
         self.chat_install_btn = card(
             "AI Chat — DeepSeek / YandexGPT",
-            f"в ZIP: 1.0.5 · {AICHAT_PACKAGE}",
+            f"в ZIP: 1.0.6 · {AICHAT_PACKAGE}",
             self.chat_hu_ver,
             self.deploy_aichat,
             self.resume_aichat,
@@ -530,7 +530,7 @@ class HubApp:
                 "Микрофона на Feiyu нет: голосовой помощник машины — iFlytek, "
                 "это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
                 "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
-                "Пакет: com.changanhub.ch1_0_5 (старые chatload / chatrise / aichat Feiyu не удаляет). "
+                "Пакет: com.changanhub.ch1_0_6 (старые ch1_0_5 / chatload / chatrise / aichat Feiyu не удаляет). "
                 "Макет: docs\\aichat-layout.html."
             ),
             style="Muted.TLabel",
@@ -589,7 +589,7 @@ class HubApp:
             page,
             text=(
                 "Рабочая панель: QuickBar 1.3.16 · com.changanhub.qb1_3_16. "
-                "Плеер: 1.1.7 · com.changanhub.pl1_1_7. Чат: 1.0.5 · com.changanhub.ch1_0_5. "
+                "Плеер: 1.1.7 · com.changanhub.pl1_1_7. Чат: 1.0.6 · com.changanhub.ch1_0_6. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
                 "«Запустить выбранное» на них поднимает колонку справа. "

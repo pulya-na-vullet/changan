@@ -42,12 +42,12 @@ CATALOG: list[CatalogApp] = [
     ),
     CatalogApp(
         id="aichat",
-        name="AI Chat 1.0.5",
+        name="AI Chat 1.0.6",
         summary="Чат с DeepSeek и YandexGPT, автоозвучка ответов.",
-        package="com.changanhub.ch1_0_5",
+        package="com.changanhub.ch1_0_6",
         kind="chat",
         source="bundled",
-        notes="Ставится из «Наши приложения». Пакет com.changanhub.ch1_0_5. Шрифты ×2. Интернет на ГУ. Ключи в Настройках. Озвучка — RHVoice (Елена) внутри APK, не системный TTS. На Feiyu нет Google STT — пишите текстом (Яндекс-клавиатура). Русский UI из приложения, не из языка системы. Старые chatload / chatrise / aichat Feiyu не удаляет.",
+        notes="Ставится из «Наши приложения». Пакет com.changanhub.ch1_0_6. Озвучка: RHVoice пишет WAV и играет MediaPlayer (на Feiyu AudioTrack.stop() глотал короткую фразу). JNI грузится из APK, если ГУ не распаковала .so. Микрофона нет — пишите текстом.",
     ),
     CatalogApp(
         id="files",
@@ -154,6 +154,7 @@ _EXTRA_LABELS = {
     "com.changanhub.pl1_1_3": "Lamore Player (старый, флешка видна без файлов)",
     "com.changanhub.playrise": "Lamore Player (старый, без корня флешки)",
     "com.changanhub.lamoreplayer": "Lamore Player (старый пакет)",
+    "com.changanhub.ch1_0_5": "AI Chat (старый, озвучка молчала)",
     "com.changanhub.chatload": "AI Chat (старый пакет)",
     "com.changanhub.chatrise": "AI Chat (старый пакет)",
     "com.changanhub.aichat": "AI Chat (старый пакет)",

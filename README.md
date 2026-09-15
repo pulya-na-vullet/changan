@@ -124,8 +124,8 @@ python -m hub record --seconds 30
 
 ## AI Chat (DeepSeek / YandexGPT)
 
-Приложение `com.changanhub.ch1_0_5` ставится из Hub, раздел **Наши приложения**.
-Старые `chatload` / `chatrise` / `aichat` Feiyu не удаляет — Hub ставит новый id.
+Приложение `com.changanhub.ch1_0_6` ставится из Hub, раздел **Наши приложения**.
+Старые `ch1_0_5` / `chatload` / `chatrise` / `aichat` Feiyu не удаляет — Hub ставит новый id.
 Интернет нужен **на ГУ** (SIM или Wi‑Fi), не на ноутбуке.
 
 - центр экрана: поля 20% по ширине и 30% по высоте;

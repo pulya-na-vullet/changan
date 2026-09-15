@@ -144,6 +144,7 @@ def test_disable_user_package_does_not_disable_player_or_chat() -> None:
         "com.changanhub.playload",
         "com.changanhub.playrise",
         "com.changanhub.lamoreplayer",
+        "com.changanhub.ch1_0_6",
         "com.changanhub.ch1_0_5",
         "com.changanhub.chatload",
         "com.changanhub.chatrise",
