@@ -22,6 +22,7 @@ from hub.bundle import (
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.quickload",
     "com.changanhub.quickstash",
     "com.changanhub.quickrise",
     "com.changanhub.quickkeep",
@@ -302,7 +303,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
-                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickstash.",
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.quickload.",
                 72,
             )
             if conflict:
@@ -346,7 +347,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.quickstash не появится.",
+            "в списке com.changanhub.quickload не появится.",
             100,
         )
         return report
@@ -1772,8 +1773,8 @@ def apk_package_name(apk: Path) -> str | None:
         return bundle_package_name(apk)
 
     stem = apk.name.lower()
-    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash")):
-        return "com.changanhub.quickstash"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload")):
+        return "com.changanhub.quickload"
     if any(token in stem for token in ("player", "lamoreplayer", "playrise")):
         return "com.changanhub.playrise"
     if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise")):

@@ -11,13 +11,14 @@ from hub.paths import bundled_apps
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.quickstash"
+PACKAGE = "com.changanhub.quickload"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
     "com.changanhub.quicklane",
     "com.changanhub.quickkeep",
     "com.changanhub.quickrise",
+    "com.changanhub.quickstash",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
@@ -342,9 +343,9 @@ def install_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         "и сторонние приложения в ней, не в «установленных» Iflytek."
     )
     lines.append(
-        "Старые com.changanhub.quickbar / quickdock / quicklane / quickkeep Feiyu не даёт "
-        "удалить (auth, not allow delete) — Hub их отключает и ставит новую "
-        f"{PACKAGE}. Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
-        "Плеер ставится отдельно из раздела «Плеер»."
+        "Старые com.changanhub.quickbar / quickdock / quicklane / quickkeep / "
+        "quickrise / quickstash Feiyu не даёт удалить (auth, not allow delete) — "
+        f"Hub их отключает и ставит новую {PACKAGE}. Скрытие и сортировка — в "
+        "зелёной колонке справа, не в ярлыке плагина. Плеер ставится отдельно из раздела «Плеер»."
     )
     return lines

@@ -302,8 +302,8 @@ class HubApp:
             "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
             "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
             "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
-            "Панель QuickBar — пакет com.changanhub.quickstash; старые "
-            "quickbar/quickkeep/quickrise Hub только отключает, не удаляет. "
+            "Панель QuickBar — пакет com.changanhub.quickload; старые "
+            "quickbar/quickkeep/quickrise/quickstash Hub только отключает, не удаляет. "
             "Если новая папка Hub не обновляет колонку (другая подпись) — "
             "«Установить и запустить» ставит новый id, не ломая старый. "
             "Свежий Chrome (SDK 29) на Feiyu Android 9 не встанет — Браузер Лайт уже на ГУ. "
@@ -356,8 +356,8 @@ class HubApp:
         ).pack(anchor="w")
         body = (
             "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
-            "Старые quickbar/quickkeep/quickrise не удаляются и новых кнопок в них нет. "
-            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickstash. "
+            "Старые quickbar/quickkeep/quickrise/quickstash не удаляются и новых кнопок в них нет. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickload. "
             "APK с флешки в колонке: сверху USB или Память ГУ. Серый ключ подписывает v1+v2 тем же серийником Feiyu, что и Hub; "
             "зелёная кнопка ставит (если подписи ещё нет — сначала подписывает). "
             "Плеер — отдельный раздел."
@@ -395,7 +395,7 @@ class HubApp:
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
                 "Пакет: com.changanhub.playrise. Старый lamoreplayer Feiyu не удаляет — "
-                "Hub ставит новый id, как QuickBar → quickstash. Без Google Play и без Compose. "
+                "Hub ставит новый id, как QuickBar → quickload. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -484,7 +484,7 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Рабочая панель: QuickBar · com.changanhub.quickstash. "
+                "Рабочая панель: QuickBar · com.changanhub.quickload. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
                 "«Запустить выбранное» на них поднимает колонку справа. "
