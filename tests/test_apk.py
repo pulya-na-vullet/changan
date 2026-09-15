@@ -20,5 +20,12 @@ def test_bundled_quickbar_apk() -> None:
         assert "META-INF/CERT.RSA" in names
         mf = zf.read("AndroidManifest.xml")
         assert "com.changanhub.quickstash".encode("utf-16-le") in mf
+        assert "1.3.12".encode("utf-16-le") in mf
+        assert "res/drawable/ic_sign.xml" in names
+        dex = zf.read("classes.dex")
+        assert b"HuSigner" in dex
+        assert b"FeiyuSigner" in dex
+        assert b"signFromUsb" in dex
+        assert b"ddb66eefd98476f3" in dex
         certs = pkcs7.load_der_pkcs7_certificates(zf.read("META-INF/CERT.RSA"))
         assert certs[0].serial_number == CHANGAN_SERIAL
