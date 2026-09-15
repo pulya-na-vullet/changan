@@ -53,6 +53,7 @@ public class PlayerService extends Service implements
     public static final String EXTRA_VALUE = "value";
 
     private static MediaPlayer player;
+    private static MediaSource source;
     private static Equalizer equalizer;
     private static BassBoost bass;
     private static Virtualizer virtualizer;
@@ -246,18 +247,28 @@ public class PlayerService extends Service implements
             }
         }
         releasePlayer(false);
-        player = new MediaPlayer();
-        player.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-        player.setAudioStreamType(AudioManager.STREAM_MUSIC);
-        player.setOnPreparedListener(this);
-        player.setOnCompletionListener(this);
-        player.setOnErrorListener(this);
         try {
-            player.setDataSource(path);
+            source = MediaSource.open(new File(path), new MediaSource.Setup() {
+                @Override
+                public void apply(MediaPlayer mp) {
+                    mp.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                    MediaSource.applyAudio(mp, false);
+                    mp.setOnPreparedListener(PlayerService.this);
+                    mp.setOnCompletionListener(PlayerService.this);
+                    mp.setOnErrorListener(PlayerService.this);
+                }
+            });
+            player = source.player;
+            requestFocus();
             player.prepareAsync();
         } catch (Exception e) {
-            error = "не открылось: " + title;
-            skip(1);
+            error = "не открылось: " + title + " · " + (source != null ? source.path : path);
+            player = null;
+            if (source != null) {
+                source.close();
+                source = null;
+            }
+            broadcast();
         }
     }
 
@@ -295,8 +306,9 @@ public class PlayerService extends Service implements
 
     @Override
     public boolean onError(MediaPlayer mp, int what, int extra) {
-        error = "ГУ не проиграла этот файл (кодек): " + title;
-        skip(1);
+        error = "ГУ не проиграла: " + title + " · " + MediaSource.explainError(what, extra);
+        pauseOnly();
+        broadcast();
         return true;
     }
 
@@ -669,6 +681,10 @@ public class PlayerService extends Service implements
             } catch (Exception ignored) {
             }
             player = null;
+        }
+        if (source != null) {
+            source.close();
+            source = null;
         }
         if (fx) {
             releaseFx();

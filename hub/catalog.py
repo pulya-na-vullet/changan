@@ -33,12 +33,12 @@ CATALOG: list[CatalogApp] = [
     ),
     CatalogApp(
         id="player",
-        name="Lamore Player 1.1.4",
+        name="Lamore Player 1.1.5",
         summary="Музыка и видео с флешки ГУ: вкладки, EQ, визуализации, субтитры.",
-        package="com.changanhub.pl1_1_4",
+        package="com.changanhub.pl1_1_5",
         kind="media",
         source="bundled",
-        notes="Ставится из «Наши приложения». Пакет com.changanhub.pl1_1_4 (старые pl1_1_3 / playload / playrise / lamoreplayer Feiyu не удаляет). Шрифты ×2. Читает USB ГУ включая корень флешки (не флешку ноутбука), предпочитает /mnt/media_rw если FUSE /storage пустой. Вкладки музыка/видео/эквалайзер/визуализация. Форматы Feiyu: MP3/AAC/FLAC/WAV/OGG/OPUS, MP4/MKV/WebM/MOV/TS и др.",
+        notes="Ставится из «Наши приложения». Пакет com.changanhub.pl1_1_5 (старые pl1_1_4 / pl1_1_3 / playload / playrise / lamoreplayer Feiyu не удаляет). Шрифты ×2. Читает USB ГУ включая корень флешки (не флешку ноутбука), открывает файл через /mnt/media_rw и FileDescriptor если FUSE /storage не играет. Вкладки музыка/видео/эквалайзер/визуализация. Форматы Feiyu: MP3/AAC/FLAC/WAV/OGG/OPUS, MP4/MKV/WebM/MOV/TS и др.",
     ),
     CatalogApp(
         id="aichat",
@@ -148,6 +148,7 @@ _EXTRA_LABELS = {
     "com.changanhub.quickload": "QuickBar (старая, без версии в имени пакета)",
     "com.changanhub.qb1_3_15": "QuickBar (старая, флешка видна без файлов)",
     "com.changanhub.playload": "Lamore Player (старый пакет)",
+    "com.changanhub.pl1_1_4": "Lamore Player (старый, флешка видна без звука)",
     "com.changanhub.pl1_1_3": "Lamore Player (старый, флешка видна без файлов)",
     "com.changanhub.playrise": "Lamore Player (старый, без корня флешки)",
     "com.changanhub.lamoreplayer": "Lamore Player (старый пакет)",

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=1920" />
-  <title>Lamore Player 1.1.4 — вёрстка</title>
+  <title>Lamore Player 1.1.5 — вёрстка</title>
   <style>
     :root {
       --bg: #0B1220;
@@ -159,6 +159,15 @@
       position: absolute; left: 0; right: 0; bottom: 132px;
       text-align: center; font-size: 22px; text-shadow: 1px 1px 4px #000; padding: 12px;
     }
+    .vtop {
+      position: absolute; left: 0; right: 0; top: 0;
+      background: #CC0B1220; padding: 12px;
+    }
+    .vtop .back {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 280px; height: 72px; padding: 0 24px;
+      background: var(--accent); color: var(--bg); font-size: 28px; font-weight: 700;
+    }
     .vctrl {
       position: absolute; left: 0; right: 0; bottom: 0;
       background: #CC0B1220; padding: 16px;
@@ -184,7 +193,7 @@
 </head>
 <body>
   <div class="page">
-    <h1>Lamore Player 1.1.4 — вёрстка под ГУ 1920×720</h1>
+    <h1>Lamore Player 1.1.5 — вёрстка под ГУ 1920×720</h1>
     <p class="hint">
       Это не эмулятор Android, а макет по XML: тёмная тема, вкладки как у AI Chat (40sp / 88dp),
       поля 8%/10% и 160dp справа под QuickBar. Файловый менеджер флешки + Обновить.
@@ -405,6 +414,7 @@
 
       <div class="screen" id="s-film">
         <div class="video">
+          <div class="vtop"><div class="back">← К списку</div></div>
           <div class="sub">Он за рулём. Город молчит.</div>
           <div class="vctrl">
             <div class="name">Драйв (2011).mkv</div>

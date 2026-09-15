@@ -210,7 +210,7 @@ public class NowPlayingActivity extends Activity {
             seek.setMax(dur > 0 ? dur : 1);
             seek.setProgress(pos);
         }
-        time.setText(fmt(pos) + "  /  " + fmt(dur));
+        time.setText(fmt(pos) + "  /  " + (dur > 0 ? fmt(dur) : "—"));
     }
 
     private void buildVizModes() {

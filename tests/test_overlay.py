@@ -136,6 +136,7 @@ def test_disable_user_package_does_not_disable_player_or_chat() -> None:
 
     fake.shell = shell  # type: ignore[method-assign]
     for pkg in (
+        "com.changanhub.pl1_1_5",
         "com.changanhub.pl1_1_4",
         "com.changanhub.pl1_1_3",
         "com.changanhub.playload",

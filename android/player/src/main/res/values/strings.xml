@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Lamore Player 1.1.4</string>
+    <string name="app_name">Lamore Player 1.1.5</string>
     <string name="usb">Флешки и память ГУ</string>
     <string name="volumes">Флешки</string>
     <string name="scan">Обновить</string>

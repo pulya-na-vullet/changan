@@ -103,7 +103,7 @@ python -m hub record --seconds 30
 
 ## Плеер с флешки ГУ (Lamore Player)
 
-Приложение `com.changanhub.pl1_1_4` ставится из Hub, раздел **Наши приложения**.
+Приложение `com.changanhub.pl1_1_5` ставится из Hub, раздел **Наши приложения**.
 Старые `playload` / `playrise` / `lamoreplayer` Feiyu не удаляет: Hub ставит новый id и отключает leftover.
 Оно смотрит USB **в головном устройстве** (включая корень флешки), не диск D: ноутбука.
 

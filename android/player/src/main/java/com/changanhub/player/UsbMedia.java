@@ -7,6 +7,7 @@ import android.os.storage.StorageVolume;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileReader;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -539,6 +540,120 @@ public final class UsbMedia {
             byName.put(name, prev == null ? best : pickRicher(prev, best));
         }
         return new ArrayList<>(byName.values());
+    }
+
+    public static File playableFile(File file) {
+        if (file == null) {
+            return null;
+        }
+        File[] cands = pathCandidates(file);
+        File readable = null;
+        File withBytes = null;
+        for (int i = 0; i < cands.length; i++) {
+            File cand = cands[i];
+            if (cand == null || looksLikeDirectory(cand)) {
+                continue;
+            }
+            if (readable == null) {
+                readable = cand;
+            }
+            long size = 0;
+            try {
+                size = cand.length();
+            } catch (Exception ignored) {
+            }
+            boolean opens = canOpen(cand);
+            if (size <= 0 && !opens) {
+                continue;
+            }
+            if (withBytes == null) {
+                withBytes = cand;
+            }
+            String path = cand.getAbsolutePath();
+            if (path.contains("/media_rw/") || path.contains("/usb_storage/")) {
+                return cand;
+            }
+        }
+        return withBytes != null ? withBytes : (readable != null ? readable : file);
+    }
+
+    static File[] pathCandidates(File file) {
+        java.util.LinkedHashSet<String> seen = new LinkedHashSet<>();
+        java.util.ArrayList<File> out = new ArrayList<>();
+        addCandidate(out, seen, file);
+        if (file == null) {
+            return out.toArray(new File[0]);
+        }
+        try {
+            addCandidate(out, seen, file.getCanonicalFile());
+        } catch (Exception ignored) {
+        }
+        File parent = file.getParentFile();
+        if (parent != null) {
+            File bestParent = bestReadable(parent);
+            if (bestParent != null) {
+                addCandidate(out, seen, new File(bestParent, file.getName()));
+            }
+        }
+        String path = file.getAbsolutePath();
+        String uuid = volumeName(path);
+        if (uuid != null) {
+            String needle = "/" + uuid;
+            int idx = path.indexOf(needle);
+            if (idx >= 0) {
+                String rest = path.substring(idx + needle.length());
+                addCandidate(out, seen, new File("/mnt/media_rw/" + uuid + rest));
+                addCandidate(out, seen, new File("/storage/" + uuid + rest));
+                addCandidate(out, seen, new File("/mnt/usb_storage/" + uuid + rest));
+                addCandidate(out, seen, new File("/mnt/usbhost/" + uuid + rest));
+            }
+        }
+        return out.toArray(new File[0]);
+    }
+
+    private static void addCandidate(java.util.List<File> out, Set<String> seen, File file) {
+        if (file == null) {
+            return;
+        }
+        String key = file.getAbsolutePath();
+        if (key.length() == 0 || !seen.add(key)) {
+            return;
+        }
+        out.add(file);
+    }
+
+    private static String volumeName(String path) {
+        if (path == null) {
+            return null;
+        }
+        String[] parts = path.split("/");
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (part.length() == 9 && part.charAt(4) == '-' && part.matches("[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}")) {
+                return part;
+            }
+        }
+        return null;
+    }
+
+    static boolean canOpen(File file) {
+        if (file == null) {
+            return false;
+        }
+        FileInputStream in = null;
+        try {
+            in = new FileInputStream(file);
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     public static String describe(File dir) {

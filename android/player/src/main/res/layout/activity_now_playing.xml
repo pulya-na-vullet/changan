@@ -64,8 +64,12 @@
         <SeekBar
             android:id="@+id/seek"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" />
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:maxHeight="48dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
 
         <TextView
             android:id="@+id/time"

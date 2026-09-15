@@ -3,7 +3,6 @@ package com.changanhub.player;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
@@ -36,6 +35,7 @@ public class VideoActivity extends Activity implements
 
     private SurfaceView surface;
     private LinearLayout controls;
+    private LinearLayout topbar;
     private TextView track;
     private TextView subtitle;
     private SeekBar seek;
@@ -43,6 +43,7 @@ public class VideoActivity extends Activity implements
     private Button audioBtn;
     private Button subsBtn;
     private MediaPlayer player;
+    private MediaSource source;
     private ArrayList<String> queue = new ArrayList<>();
     private final List<Integer> audioTracks = new ArrayList<>();
     private int index;
@@ -90,12 +91,19 @@ public class VideoActivity extends Activity implements
         setContentView(R.layout.activity_video);
         surface = findViewById(R.id.surface);
         controls = findViewById(R.id.controls);
+        topbar = findViewById(R.id.topbar);
         track = findViewById(R.id.track);
         subtitle = findViewById(R.id.subtitle);
         seek = findViewById(R.id.seek);
         play = findViewById(R.id.btn_play);
         audioBtn = findViewById(R.id.btn_audio);
         subsBtn = findViewById(R.id.btn_subs);
+        findViewById(R.id.btn_back).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
         ArrayList<String> q = getIntent().getStringArrayListExtra(PlayerService.EXTRA_QUEUE);
         if (q != null) {
             queue.addAll(q);
@@ -217,7 +225,7 @@ public class VideoActivity extends Activity implements
         release();
     }
 
-    private void open(SurfaceHolder holder) {
+    private void open(final SurfaceHolder holder) {
         if (queue.isEmpty()) {
             finish();
             return;
@@ -234,17 +242,30 @@ public class VideoActivity extends Activity implements
         audioIndex = 0;
         release();
         prepared = false;
-        player = new MediaPlayer();
-        player.setAudioStreamType(AudioManager.STREAM_MUSIC);
-        player.setOnPreparedListener(this);
-        player.setOnCompletionListener(this);
-        player.setOnErrorListener(this);
+        controls.setVisibility(View.VISIBLE);
         try {
-            player.setDisplay(holder);
-            player.setDataSource(path);
+            source = MediaSource.open(file, new MediaSource.Setup() {
+                @Override
+                public void apply(MediaPlayer mp) {
+                    MediaSource.applyAudio(mp, true);
+                    mp.setOnPreparedListener(VideoActivity.this);
+                    mp.setOnCompletionListener(VideoActivity.this);
+                    mp.setOnErrorListener(VideoActivity.this);
+                    mp.setDisplay(holder);
+                    mp.setScreenOnWhilePlaying(true);
+                }
+            });
+            player = source.player;
+            track.setText(file.getName() + "\n" + source.path);
             player.prepareAsync();
         } catch (Exception e) {
-            skip(1);
+            player = null;
+            if (source != null) {
+                source.close();
+                source = null;
+            }
+            track.setText("ГУ не открыла это видео: " + file.getName()
+                    + "\n" + (e.getMessage() == null ? path : e.getMessage()));
         }
     }
 
@@ -253,12 +274,15 @@ public class VideoActivity extends Activity implements
         prepared = true;
         collectAudio();
         try {
+            mp.setDisplay(surface.getHolder());
             mp.start();
             play.setText("❚❚");
         } catch (Exception ignored) {
         }
         labelAudio();
         labelSubs();
+        handler.removeCallbacks(hide);
+        handler.postDelayed(hide, 3500);
     }
 
     @Override
@@ -268,7 +292,13 @@ public class VideoActivity extends Activity implements
 
     @Override
     public boolean onError(MediaPlayer mp, int what, int extra) {
-        track.setText("ГУ не открыла это видео: " + new File(queue.get(index)).getName());
+        prepared = false;
+        controls.setVisibility(View.VISIBLE);
+        String name = queue.isEmpty() ? "" : new File(queue.get(index)).getName();
+        String via = source != null ? source.path : "";
+        track.setText("ГУ не открыла это видео: " + name
+                + " · " + MediaSource.explainError(what, extra)
+                + (via.length() == 0 ? "" : "\n" + via));
         return true;
     }
 
@@ -359,6 +389,10 @@ public class VideoActivity extends Activity implements
             } catch (Exception ignored) {
             }
             player = null;
+        }
+        if (source != null) {
+            source.close();
+            source = null;
         }
         prepared = false;
     }
