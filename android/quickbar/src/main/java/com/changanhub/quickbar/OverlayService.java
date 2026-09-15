@@ -1619,7 +1619,7 @@ public class OverlayService extends Service {
 
     private void renderUsb() {
         TextView hint = new TextView(this);
-        hint.setText("APK с флешки в USB ГУ. Тап по строке или зелёной кнопке — установка.");
+        hint.setText("APK с флешки в USB ГУ. Ключ — подписать белым списком ГУ (как Hub, v1+v2). Зелёная кнопка — подписать при необходимости и поставить.");
         hint.setTextColor(Color.parseColor("#9AA7B8"));
         hint.setTextSize(textSp(11));
         hint.setPadding(dp(4), 0, dp(4), dp(8));
@@ -1713,6 +1713,13 @@ public class OverlayService extends Service {
         text.addView(name);
         text.addView(meta);
         row.addView(text, textLp);
+        View signBtn = actionIcon(R.drawable.ic_sign, Color.parseColor("#31405C"), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                signFromUsb(apk);
+            }
+        });
+        row.addView(signBtn);
         View installBtn = actionIcon(R.drawable.ic_install, Color.parseColor("#3DDC97"), new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1739,18 +1746,75 @@ public class OverlayService extends Service {
         }
     }
 
-    private void installFromUsb(File apk) {
-        showUsbStatus("ставлю " + apk.getName() + "…");
-        try {
-            File local = PackageActions.copyToCache(this, apk);
-            PackageActions.install(this, local);
-            showUsbStatus("отправлено в установщик: " + apk.getName());
-        } catch (Exception e) {
-            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            showUsbStatus("ошибка: " + msg);
-            usbMode = true;
-            setCollapsed(false);
-        }
+    private void signFromUsb(final File apk) {
+        showUsbStatus("подпись " + apk.getName() + "…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File local = PackageActions.copyToCache(OverlayService.this, apk);
+                    if (HuSigner.alreadyWhitelisted(OverlayService.this, local)) {
+                        final String serial = HuSigner.serialHex(OverlayService.this);
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                showUsbStatus("уже в белом списке " + serial + " — можно ставить");
+                            }
+                        });
+                        return;
+                    }
+                    final File signed = HuSigner.sign(OverlayService.this, local);
+                    final String serial = HuSigner.serialHex(OverlayService.this);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showUsbStatus("подписано " + serial + ": " + signed.getName());
+                        }
+                    });
+                } catch (Exception e) {
+                    final String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showUsbStatus("подпись не вышла: " + msg);
+                            usbMode = true;
+                            setCollapsed(false);
+                        }
+                    });
+                }
+            }
+        }, "qb-sign").start();
+    }
+
+    private void installFromUsb(final File apk) {
+        showUsbStatus("подпись и установка " + apk.getName() + "…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File local = PackageActions.copyToCache(OverlayService.this, apk);
+                    File signed = HuSigner.ensureSigned(OverlayService.this, local);
+                    PackageActions.install(OverlayService.this, signed);
+                    final String name = signed.getName();
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showUsbStatus("отправлено в установщик: " + name);
+                        }
+                    });
+                } catch (Exception e) {
+                    final String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showUsbStatus("ошибка: " + msg);
+                            usbMode = true;
+                            setCollapsed(false);
+                        }
+                    });
+                }
+            }
+        }, "qb-install").start();
     }
 
     private View row(final AppItem item, boolean favorite, final boolean hidden) {

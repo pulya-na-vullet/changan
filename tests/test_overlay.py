@@ -240,7 +240,8 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.11"' in mf
+    assert 'android:versionName="1.3.12"' in mf
+    assert 'android:versionCode="16"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
@@ -380,6 +381,22 @@ def test_quickbar_groups_and_usb_install() -> None:
     assert "uninstallUserApp" not in src
     assert "PackageActions.uninstall" not in src
     assert "PackageActions.install" in src
+    assert "R.drawable.ic_sign" in src
+    assert "signFromUsb" in src
+    assert "HuSigner.ensureSigned" in src
+    assert "HuSigner.alreadyWhitelisted" in src
+    assert "HuSigner.sign" in src
+    assert "qb-sign" in src
+    assert "qb-install" in src
+    assert "подписать белым списком ГУ" in src
+    assert Path("android/quickbar/src/main/java/com/changanhub/quickbar/HuSigner.java").is_file()
+    signer = Path(
+        "android/quickbar/src/main/java/com/changanhub/quickbar/sign/FeiyuSigner.java"
+    ).read_text(encoding="utf-8")
+    assert "CHANGAN_SERIAL" in signer
+    assert "ddb66eefd98476f3" in signer
+    assert "APK Sig Block 42" in signer
+    assert "0x7109871A" in signer
     assert (Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java")).is_file()
     job = Path("android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveJob.java").read_text(
         encoding="utf-8"
@@ -409,6 +426,7 @@ def test_quickbar_icons_exist() -> None:
         "ic_collapse.xml",
         "ic_refresh.xml",
         "ic_install.xml",
+        "ic_sign.xml",
         "ic_window.xml",
     ):
         assert (res / name).is_file(), name
