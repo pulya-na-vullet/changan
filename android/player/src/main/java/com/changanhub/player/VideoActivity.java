@@ -245,7 +245,7 @@ public class VideoActivity extends Activity implements
         prepared = false;
         cacheAttempt = false;
         controls.setVisibility(View.VISIBLE);
-        if (MediaSource.looksEmpty(file)) {
+        if (MediaSource.isUsbFile(file) || MediaSource.looksEmpty(file)) {
             startCacheOpen(file, holder);
             return;
         }
@@ -267,7 +267,7 @@ public class VideoActivity extends Activity implements
 
     private void startUsbOpen(File file, SurfaceHolder holder) {
         try {
-            source = MediaSource.open(file, bindVideo());
+            source = MediaSource.openLocal(file, bindVideo());
             player = source.player;
             track.setText(file.getName());
             player.prepareAsync();
@@ -288,7 +288,7 @@ public class VideoActivity extends Activity implements
             @Override
             public void run() {
                 try {
-                    final File cached = MediaSource.copyToCache(VideoActivity.this, src);
+                    final File cached = MediaSource.materialize(VideoActivity.this, src);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -313,7 +313,7 @@ public class VideoActivity extends Activity implements
             return;
         }
         try {
-            source = MediaSource.open(cached, bindVideo());
+            source = MediaSource.openLocal(cached, bindVideo());
             player = source.player;
             track.setText(cached.getName());
             player.prepareAsync();
@@ -353,7 +353,7 @@ public class VideoActivity extends Activity implements
         }
         String name = queue.isEmpty() ? "" : new File(queue.get(index)).getName();
         track.setText("ГУ не открыла это видео: " + name
-                + " · " + MediaSource.explainError(what, extra));
+                + " · " + MediaSource.explainError(what, extra, name));
         return true;
     }
 

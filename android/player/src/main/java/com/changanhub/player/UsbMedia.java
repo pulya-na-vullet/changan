@@ -546,7 +546,7 @@ public final class UsbMedia {
         if (file == null) {
             return null;
         }
-        File[] cands = pathCandidates(file);
+        File[] cands = rankedPathCandidates(file);
         File readable = null;
         File withBytes = null;
         for (int i = 0; i < cands.length; i++) {
@@ -611,6 +611,47 @@ public final class UsbMedia {
         return out.toArray(new File[0]);
     }
 
+    /**
+     * Kernel USB nodes first. Feiyu FUSE {@code /storage/UUID} lists names but
+     * often yields a zero-filled stub that MediaPlayer reports as -2147483648.
+     */
+    static File[] rankedPathCandidates(File file) {
+        File[] raw = pathCandidates(file);
+        java.util.Arrays.sort(raw, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                return Integer.compare(fuseRank(a), fuseRank(b));
+            }
+        });
+        return raw;
+    }
+
+    static int fuseRank(File file) {
+        if (file == null) {
+            return 99;
+        }
+        String path = file.getAbsolutePath();
+        if (path.contains("/mnt/media_rw/")) {
+            return 0;
+        }
+        if (path.contains("/mnt/usb_storage/")) {
+            return 1;
+        }
+        if (path.contains("/mnt/usbhost/")) {
+            return 2;
+        }
+        if (path.contains("/mnt/udisk") || path.contains("/mnt/usb")) {
+            return 3;
+        }
+        if (path.contains("/storage/usb")) {
+            return 4;
+        }
+        if (volumeName(path) != null && path.contains("/storage/")) {
+            return 9;
+        }
+        return 5;
+    }
+
     private static void addCandidate(java.util.List<File> out, Set<String> seen, File file) {
         if (file == null) {
             return;
@@ -622,7 +663,7 @@ public final class UsbMedia {
         out.add(file);
     }
 
-    private static String volumeName(String path) {
+    static String volumeName(String path) {
         if (path == null) {
             return null;
         }

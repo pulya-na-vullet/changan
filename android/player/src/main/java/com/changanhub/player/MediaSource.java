@@ -1,21 +1,26 @@
 package com.changanhub.player;
 
+import android.content.ContentUris;
 import android.content.Context;
+import android.database.Cursor;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.ParcelFileDescriptor;
+import android.provider.MediaStore;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Locale;
 
 /**
- * Feiyu FUSE {@code /storage/UUID} lists names that MediaPlayer cannot decode.
- * Open a sized FileDescriptor, then copy into app cache if the stick still
- * yields a zero-length stub.
+ * Feiyu FUSE {@code /storage/UUID} lists names. Java can often open the stub,
+ * but MediaPlayer then fails with extra=-2147483648. Prefer {@code /mnt/media_rw},
+ * skip zero-filled headers, copy real bytes into app cache, then play locally.
  */
 public final class MediaSource {
     public static final long MAX_COPY = 512L * 1024L * 1024L;
@@ -36,18 +41,44 @@ public final class MediaSource {
         this.path = path;
     }
 
+    public static boolean isUsbFile(File file) {
+        if (file == null) {
+            return false;
+        }
+        String path = file.getAbsolutePath();
+        if (path.contains("/cache/")) {
+            return false;
+        }
+        if (UsbMedia.volumeName(path) != null) {
+            return true;
+        }
+        return path.contains("/media_rw/")
+                || path.contains("/usb_storage/")
+                || path.contains("/usbhost/")
+                || path.contains("/storage/usb")
+                || path.contains("/mnt/usb")
+                || path.contains("/mnt/udisk")
+                || path.contains("/storage/udisk");
+    }
+
     public static MediaSource open(File file, Setup setup) throws IOException {
+        return open(null, file, setup);
+    }
+
+    public static MediaSource open(Context context, File file, Setup setup) throws IOException {
+        if (file != null && !isUsbFile(file)) {
+            return openLocal(file, setup);
+        }
         File playable = UsbMedia.playableFile(file);
         IOException last = new IOException("файл не открылся: " + (file == null ? "" : file.getAbsolutePath()));
-        File[] cands = UsbMedia.pathCandidates(playable);
+        File[] cands = UsbMedia.rankedPathCandidates(playable);
         for (int i = 0; i < cands.length; i++) {
             File cand = cands[i];
-            if (cand == null) {
+            if (cand == null || UsbMedia.looksLikeDirectory(cand) || !hasMediaHeader(cand)) {
                 continue;
             }
-            MediaSource viaSized = tryOpen(cand, setup, 2);
-            if (viaSized != null) {
-                return viaSized;
+            if (UsbMedia.fuseRank(cand) >= 9) {
+                continue;
             }
             MediaSource viaFd = tryOpen(cand, setup, 1);
             if (viaFd != null) {
@@ -59,11 +90,53 @@ public final class MediaSource {
             }
             last = new IOException("не читается: " + cand.getAbsolutePath());
         }
+        if (context != null) {
+            Uri uri = findStoreUri(context, file != null ? file : playable);
+            if (uri != null) {
+                MediaSource viaUri = tryUri(context, uri, setup);
+                if (viaUri != null) {
+                    return viaUri;
+                }
+            }
+        }
         throw last;
     }
 
+    public static MediaSource openLocal(File file, Setup setup) throws IOException {
+        MediaSource viaPath = tryOpen(file, setup, 0);
+        if (viaPath != null) {
+            return viaPath;
+        }
+        MediaSource viaFd = tryOpen(file, setup, 1);
+        if (viaFd != null) {
+            return viaFd;
+        }
+        throw new IOException("кэш не открылся: " + (file == null ? "" : file.getAbsolutePath()));
+    }
+
+    public static File materialize(Context context, File src) throws IOException {
+        if (src == null) {
+            throw new IOException("нет файла");
+        }
+        if (!isUsbFile(src)) {
+            return src;
+        }
+        try {
+            return copyToCache(context, src);
+        } catch (IOException first) {
+            Uri uri = findStoreUri(context, src);
+            if (uri != null) {
+                try {
+                    return copyUriToCache(context, uri, src.getName());
+                } catch (IOException ignored) {
+                }
+            }
+            throw first;
+        }
+    }
+
     public static boolean looksEmpty(File file) {
-        File[] cands = UsbMedia.pathCandidates(UsbMedia.playableFile(file));
+        File[] cands = UsbMedia.rankedPathCandidates(UsbMedia.playableFile(file));
         boolean any = false;
         for (int i = 0; i < cands.length; i++) {
             File cand = cands[i];
@@ -71,12 +144,7 @@ public final class MediaSource {
                 continue;
             }
             any = true;
-            long size = 0;
-            try {
-                size = cand.length();
-            } catch (Exception ignored) {
-            }
-            if (size > 0) {
+            if (hasMediaHeader(cand)) {
                 return false;
             }
         }
@@ -85,43 +153,17 @@ public final class MediaSource {
 
     public static File copyToCache(Context context, File src) throws IOException {
         File playable = UsbMedia.playableFile(src);
-        FileInputStream in = openStream(playable);
+        InputStream in = openReadableStream(playable);
         if (in == null) {
             throw new IOException("флешка не отдаёт байты: " + (src == null ? "" : src.getAbsolutePath()));
         }
-        String name = playable != null ? playable.getName() : "media.bin";
-        int dot = name.lastIndexOf('.');
-        String ext = dot >= 0 ? name.substring(dot).toLowerCase(Locale.US) : ".bin";
-        File dest = new File(context.getCacheDir(), "play" + ext);
-        FileOutputStream out = null;
         try {
-            out = new FileOutputStream(dest);
-            byte[] buf = new byte[256 * 1024];
-            long total = 0;
-            int n;
-            while ((n = in.read(buf)) > 0) {
-                out.write(buf, 0, n);
-                total += n;
-                if (total > MAX_COPY) {
-                    throw new IOException("файл больше 512 МБ, копирование остановлено");
-                }
-            }
-            out.flush();
-            if (total <= 0) {
-                dest.delete();
-                throw new IOException("пустой файл на флешке");
-            }
-            return dest;
+            return writeCache(context, in, playable != null ? playable.getName() : "media.bin",
+                    playable != null ? playable.getAbsolutePath() : "usb");
         } finally {
             try {
                 in.close();
             } catch (Exception ignored) {
-            }
-            if (out != null) {
-                try {
-                    out.close();
-                } catch (Exception ignored) {
-                }
             }
         }
     }
@@ -152,17 +194,27 @@ public final class MediaSource {
     }
 
     public static String explainError(int what, int extra) {
+        return explainError(what, extra, "");
+    }
+
+    public static String explainError(int what, int extra, String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.US);
+        boolean audio = ends(lower, ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".mp2");
+        boolean video = ends(lower, ".mp4", ".mkv", ".webm", ".mov", ".ts", ".m2ts", ".avi", ".3gp");
         if (what == -38 || extra == -38) {
-            return "файл с флешки не читается";
+            return audio ? "флешка не отдала музыку" : "файл с флешки не читается";
         }
-        if (extra == Integer.MIN_VALUE || extra == -2147483648) {
-            return "нет доступа или кодек ГУ (часто HEVC)";
-        }
-        if (extra == MediaPlayer.MEDIA_ERROR_IO) {
+        if (extra == Integer.MIN_VALUE || extra == -2147483648 || extra == MediaPlayer.MEDIA_ERROR_IO) {
+            if (audio) {
+                return "флешка не отдала музыку (FUSE). Нужен /mnt/media_rw";
+            }
+            if (video) {
+                return "нет доступа или кодек ГУ (часто HEVC, нужен H.264)";
+            }
             return "нет доступа к файлу на флешке";
         }
         if (extra == MediaPlayer.MEDIA_ERROR_UNSUPPORTED) {
-            return "кодек ГУ не умеет этот файл";
+            return video ? "кодек ГУ не умеет этот файл (часто HEVC)" : "кодек ГУ не умеет этот файл";
         }
         if (extra == MediaPlayer.MEDIA_ERROR_MALFORMED) {
             return "битый файл";
@@ -176,23 +228,230 @@ public final class MediaSource {
         return "ошибка " + what + "/" + extra;
     }
 
-    private static FileInputStream openStream(File file) {
-        File[] cands = UsbMedia.pathCandidates(file);
+    static boolean looksLikeMedia(byte[] head, int n) {
+        if (head == null || n < 8) {
+            return false;
+        }
+        int nz = 0;
+        for (int i = 0; i < n; i++) {
+            if (head[i] != 0) {
+                nz++;
+            }
+        }
+        if (nz < 8) {
+            return false;
+        }
+        if (head[0] == 'I' && head[1] == 'D' && head[2] == '3') {
+            return true;
+        }
+        if ((head[0] & 0xFF) == 0xFF && (head[1] & 0xE0) == 0xE0) {
+            return true;
+        }
+        if (head[0] == 'f' && head[1] == 'L' && head[2] == 'a' && head[3] == 'C') {
+            return true;
+        }
+        if (head[0] == 'O' && head[1] == 'g' && head[2] == 'g' && head[3] == 'S') {
+            return true;
+        }
+        if (head[0] == 'R' && head[1] == 'I' && head[2] == 'F' && head[3] == 'F') {
+            return true;
+        }
+        if (n >= 8 && head[4] == 'f' && head[5] == 't' && head[6] == 'y' && head[7] == 'p') {
+            return true;
+        }
+        if ((head[0] & 0xFF) == 0x1A && (head[1] & 0xFF) == 0x45
+                && (head[2] & 0xFF) == 0xDF && (head[3] & 0xFF) == 0xA3) {
+            return true;
+        }
+        if (head[0] == 0x47) {
+            return true;
+        }
+        return nz > n / 4;
+    }
+
+    private static boolean hasMediaHeader(File file) {
+        FileInputStream in = null;
+        try {
+            in = new FileInputStream(file);
+            byte[] head = new byte[64];
+            int n = in.read(head);
+            return looksLikeMedia(head, n);
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private static InputStream openReadableStream(File file) {
+        File[] cands = UsbMedia.rankedPathCandidates(file);
         for (int i = 0; i < cands.length; i++) {
             File cand = cands[i];
             if (cand == null || UsbMedia.looksLikeDirectory(cand)) {
                 continue;
             }
+            FileInputStream in = null;
             try {
-                return new FileInputStream(cand);
+                in = new FileInputStream(cand);
+                byte[] head = new byte[64];
+                int n = in.read(head);
+                in.close();
+                in = null;
+                if (looksLikeMedia(head, n)) {
+                    return new FileInputStream(cand);
+                }
             } catch (Exception ignored) {
+                if (in != null) {
+                    try {
+                        in.close();
+                    } catch (Exception ignoredClose) {
+                    }
+                }
             }
         }
         return null;
     }
 
+    private static File copyUriToCache(Context context, Uri uri, String name) throws IOException {
+        InputStream in = context.getContentResolver().openInputStream(uri);
+        if (in == null) {
+            throw new IOException("MediaStore не открыл " + uri);
+        }
+        try {
+            return writeCache(context, in, name, uri.toString());
+        } finally {
+            try {
+                in.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static File writeCache(Context context, InputStream in, String name, String key) throws IOException {
+        int dot = name.lastIndexOf('.');
+        String ext = dot >= 0 ? name.substring(dot).toLowerCase(Locale.US) : ".bin";
+        File dest = new File(context.getCacheDir(), "p" + Integer.toHexString(key.hashCode()) + ext);
+        FileOutputStream out = null;
+        try {
+            out = new FileOutputStream(dest);
+            byte[] buf = new byte[256 * 1024];
+            long total = 0;
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                total += n;
+                if (total > MAX_COPY) {
+                    throw new IOException("файл больше 512 МБ, копирование остановлено");
+                }
+            }
+            out.flush();
+            if (total <= 0) {
+                dest.delete();
+                throw new IOException("пустой файл на флешке");
+            }
+            if (!hasMediaHeader(dest)) {
+                dest.delete();
+                throw new IOException("скопировалась пустышка FUSE, не медиа");
+            }
+            return dest;
+        } finally {
+            if (out != null) {
+                try {
+                    out.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private static Uri findStoreUri(Context context, File file) {
+        if (context == null || file == null) {
+            return null;
+        }
+        String name = file.getName();
+        File[] cands = UsbMedia.rankedPathCandidates(file);
+        Uri[] tables = new Uri[] {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Files.getContentUri("external")
+        };
+        for (int t = 0; t < tables.length; t++) {
+            Uri found = queryStore(context, tables[t], MediaStore.MediaColumns.DISPLAY_NAME, name);
+            if (found != null) {
+                return found;
+            }
+            for (int i = 0; i < cands.length; i++) {
+                if (cands[i] == null) {
+                    continue;
+                }
+                found = queryStore(context, tables[t], MediaStore.MediaColumns.DATA, cands[i].getAbsolutePath());
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Uri queryStore(Context context, Uri table, String column, String value) {
+        Cursor cursor = null;
+        try {
+            cursor = context.getContentResolver().query(
+                    table,
+                    new String[] { MediaStore.MediaColumns._ID },
+                    column + "=?",
+                    new String[] { value },
+                    null);
+            if (cursor != null && cursor.moveToFirst()) {
+                long id = cursor.getLong(0);
+                return ContentUris.withAppendedId(table, id);
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private static MediaSource tryUri(Context context, Uri uri, Setup setup) {
+        MediaPlayer player = new MediaPlayer();
+        try {
+            if (setup != null) {
+                setup.apply(player);
+            }
+            player.setDataSource(context, uri);
+            return new MediaSource(player, null, null, uri.toString());
+        } catch (Exception e) {
+            try {
+                player.reset();
+                player.release();
+            } catch (Exception ignored) {
+            }
+            return null;
+        }
+    }
+
+    private static boolean ends(String name, String... ext) {
+        for (int i = 0; i < ext.length; i++) {
+            if (name.endsWith(ext[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
-     * mode 2: ParcelFileDescriptor + offset/length, 1: raw FD, 0: path string.
+     * mode 1: raw FD, 0: path string.
      */
     private static MediaSource tryOpen(File file, Setup setup, int mode) {
         MediaPlayer player = new MediaPlayer();
@@ -202,14 +461,7 @@ public final class MediaSource {
             if (setup != null) {
                 setup.apply(player);
             }
-            if (mode == 2) {
-                pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
-                long size = pfd.getStatSize();
-                if (size <= 0) {
-                    throw new IOException("size 0");
-                }
-                player.setDataSource(pfd.getFileDescriptor(), 0, size);
-            } else if (mode == 1) {
+            if (mode == 1) {
                 stream = new FileInputStream(file);
                 player.setDataSource(stream.getFD());
             } else {

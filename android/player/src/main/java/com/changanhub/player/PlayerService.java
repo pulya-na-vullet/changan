@@ -263,7 +263,7 @@ public class PlayerService extends Service implements
             }
         }
         File src = new File(path);
-        if (MediaSource.looksEmpty(src)) {
+        if (MediaSource.isUsbFile(src) || MediaSource.looksEmpty(src)) {
             startCacheOpen(src);
             return;
         }
@@ -274,7 +274,7 @@ public class PlayerService extends Service implements
         ready = false;
         releasePlayer(false);
         try {
-            source = MediaSource.open(src, bindAudio());
+            source = MediaSource.openLocal(src, bindAudio());
             player = source.player;
             requestFocus();
             player.prepareAsync();
@@ -299,7 +299,7 @@ public class PlayerService extends Service implements
             @Override
             public void run() {
                 try {
-                    final File cached = MediaSource.copyToCache(PlayerService.this, src);
+                    final File cached = MediaSource.materialize(PlayerService.this, src);
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -325,7 +325,7 @@ public class PlayerService extends Service implements
         releasePlayer(false);
         error = "";
         try {
-            source = MediaSource.open(cached, bindAudio());
+            source = MediaSource.openLocal(cached, bindAudio());
             player = source.player;
             requestFocus();
             player.prepareAsync();
@@ -389,7 +389,11 @@ public class PlayerService extends Service implements
             startCacheOpen(new File(queue.get(index)));
             return true;
         }
-        error = "ГУ не проиграла: " + title + " · " + MediaSource.explainError(what, extra);
+        String name = title;
+        if (index >= 0 && index < queue.size()) {
+            name = new File(queue.get(index)).getName();
+        }
+        error = "ГУ не проиграла: " + title + " · " + MediaSource.explainError(what, extra, name);
         broadcast();
         return true;
     }
