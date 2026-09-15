@@ -14,7 +14,7 @@
 | Проблема | Как Hub это закрывает |
 |---|---|
 | Нет developer-сертификата Changan | Локальный ключ с серийником `0xddb66eefd98476f3`. Именно его проверяет `CertificateManager` Feiyu/Wutong, заводской ключ не нужен |
-| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: `pm uninstall --user 0` до 45 с. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.qb1_3_15` |
+| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: `pm uninstall --user 0` до 45 с. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.qb1_3_16` |
 | Приложения не видны в лаунчере | Сбрасывается кэш `com.iflytek.autofly.launcher` |
 | Нужен быстрый доступ поверх всего | QuickBar — правый док на 13.2″ вертикальном экране |
 | USB-A в USB-A Windows не видит машину | Пошаговый мастер + перезапуск adb server + подсказки по драйверу |
@@ -72,7 +72,7 @@ python -m hub record --seconds 30
 
 ## Правая панель (QuickBar)
 
-Приложение `com.changanhub.qb1_3_15` держит поверх всех Activity узкую колонку
+Приложение `com.changanhub.qb1_3_16` держит поверх всех Activity узкую колонку
 справа:
 
 - тап — запуск;
@@ -103,7 +103,7 @@ python -m hub record --seconds 30
 
 ## Плеер с флешки ГУ (Lamore Player)
 
-Приложение `com.changanhub.pl1_1_3` ставится из Hub, раздел **Наши приложения**.
+Приложение `com.changanhub.pl1_1_4` ставится из Hub, раздел **Наши приложения**.
 Старые `playload` / `playrise` / `lamoreplayer` Feiyu не удаляет: Hub ставит новый id и отключает leftover.
 Оно смотрит USB **в головном устройстве** (включая корень флешки), не диск D: ноутбука.
 
@@ -177,11 +177,11 @@ Java — из Android Studio `jbr`, даже если `java` нет в PATH. И�
 **提示** `xx is auth app, not allow delete!` — Feiyu **не удаляет** такой пакет
 (`pm uninstall` на обычных APK ждёт до 45 с; на auth-пакетах Feiyu показывает
 提示 `not allow delete` и пакет остаётся). Панель QuickBar поэтому
-ставится новым id `com.changanhub.qb1_3_15`; старые `quickbar` / `quickdock` /
-`quicklane` / `quickkeep` / `quickrise` / `quickstash` / `quickload` остаются на ГУ, Hub их отключает (`pm disable-user` +
+ставится новым id `com.changanhub.qb1_3_16`; старые `quickbar` / `quickdock` /
+`quicklane` / `quickkeep` / `quickrise` / `quickstash` / `quickload` / `qb1_3_15` остаются на ГУ, Hub их отключает (`pm disable-user` +
 снимает overlay). Ярлыки старых плагинов **не содержат** скрытие и сортировку —
 это колонка справа у новой панели. Кнопка «Удалить с ГУ» тоже только отключает
-панель — после этого «Установить и запустить» ставит `qb1_3_15`. Сброс ГУ до
+панель — после этого «Установить и запустить» ставит `qb1_3_16`. Сброс ГУ до
 заводских — единственный полный uninstall.
 
 **Нельзя:** ставить это на чужую машину, отключать Vecentek целиком, шить

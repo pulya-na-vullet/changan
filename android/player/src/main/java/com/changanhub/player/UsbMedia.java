@@ -87,7 +87,7 @@ public final class UsbMedia {
             }
         } catch (Exception ignored) {
         }
-        return dropParents(uniqueExisting(found));
+        return collapseSameName(dropParents(uniqueExisting(found)));
     }
 
     public static List<File> memoryRoots() {
@@ -197,10 +197,11 @@ public final class UsbMedia {
 
     public static List<Entry> list(File dir, boolean wantAudio, boolean wantVideo) {
         List<Entry> out = new ArrayList<>();
-        if (dir == null || !dir.isDirectory()) {
+        File readable = bestReadable(dir);
+        if (readable == null) {
             return out;
         }
-        File[] files = kids(dir);
+        File[] files = kids(readable);
         if (files == null) {
             return out;
         }
@@ -211,14 +212,14 @@ public final class UsbMedia {
                     || "System Volume Information".equalsIgnoreCase(name)) {
                 continue;
             }
-            if (file.isDirectory()) {
+            if (looksLikeDirectory(file)) {
                 Entry e = new Entry();
                 e.file = file;
                 e.directory = true;
                 e.label = name;
                 e.meta = "папка";
                 out.add(e);
-            } else if (MediaTypes.isMedia(name) && file.length() > 0) {
+            } else if (MediaTypes.isMedia(name)) {
                 boolean audio = MediaTypes.isAudio(name);
                 boolean video = MediaTypes.isVideo(name);
                 if ((audio && !wantAudio) || (video && !wantVideo)) {
@@ -296,24 +297,30 @@ public final class UsbMedia {
         if (dir == null || depth > 6) {
             return;
         }
-        File[] files = kids(dir);
+        File readable = depth == 0 ? bestReadable(dir) : dir;
+        if (readable == null) {
+            return;
+        }
+        File[] files = kids(readable);
         if (files == null) {
             return;
         }
         for (int i = 0; i < files.length; i++) {
             File file = files[i];
-            if (file.isDirectory()) {
-                String name = file.getName();
-                if (name.startsWith(".") || "Android".equals(name) || "LOST.DIR".equals(name)) {
+            String name = file.getName();
+            if (name.startsWith(".")) {
+                continue;
+            }
+            if (looksLikeDirectory(file)) {
+                if ("Android".equals(name) || "LOST.DIR".equals(name)
+                        || "System Volume Information".equalsIgnoreCase(name)) {
                     continue;
                 }
                 walk(file, out, depth + 1, video);
-            } else if (file.length() > 0) {
-                if (video && MediaTypes.isVideo(file.getName())) {
-                    out.add(file);
-                } else if (!video && MediaTypes.isAudio(file.getName())) {
-                    out.add(file);
-                }
+            } else if (video && MediaTypes.isVideo(name)) {
+                out.add(file);
+            } else if (!video && MediaTypes.isAudio(name)) {
+                out.add(file);
             }
         }
     }
@@ -434,19 +441,128 @@ public final class UsbMedia {
         if (dir == null) {
             return null;
         }
-        File[] files = dir.listFiles();
-        if (files != null) {
-            return files;
-        }
         String[] names = dir.list();
         if (names == null) {
-            return null;
+            return dir.listFiles();
         }
         File[] out = new File[names.length];
         for (int i = 0; i < names.length; i++) {
             out[i] = new File(dir, names[i]);
         }
         return out;
+    }
+
+    static boolean looksLikeDirectory(File file) {
+        if (file == null) {
+            return false;
+        }
+        if (file.isDirectory()) {
+            return true;
+        }
+        if (file.isFile()) {
+            return false;
+        }
+        return file.list() != null;
+    }
+
+    static File bestReadable(File dir) {
+        if (dir == null) {
+            return null;
+        }
+        String name = dir.getName();
+        File[] candidates = {
+                dir,
+                new File("/mnt/media_rw", name),
+                new File("/storage", name),
+                new File("/mnt/usb_storage", name),
+                new File("/mnt/usbhost", name),
+                new File("/mnt/udisk", name),
+                new File("/storage/usb0", name),
+        };
+        File emptyOk = null;
+        File anyDir = looksLikeDirectory(dir) ? dir : null;
+        for (int i = 0; i < candidates.length; i++) {
+            File c = candidates[i];
+            if (c == null || !looksLikeDirectory(c)) {
+                continue;
+            }
+            if (anyDir == null) {
+                anyDir = c;
+            }
+            String[] names = c.list();
+            if (names == null) {
+                continue;
+            }
+            if (names.length > 0) {
+                return c;
+            }
+            if (emptyOk == null) {
+                emptyOk = c;
+            }
+        }
+        return emptyOk != null ? emptyOk : anyDir;
+    }
+
+    private static File pickRicher(File a, File b) {
+        int na = listCount(a);
+        int nb = listCount(b);
+        if (nb > na) {
+            return b;
+        }
+        if (na > nb) {
+            return a;
+        }
+        String pb = b.getAbsolutePath();
+        if (pb.contains("/media_rw/") || pb.contains("/usb_storage/")) {
+            return b;
+        }
+        return a;
+    }
+
+    private static int listCount(File dir) {
+        if (dir == null) {
+            return -1;
+        }
+        String[] names = dir.list();
+        return names == null ? -1 : names.length;
+    }
+
+    private static List<File> collapseSameName(List<File> dirs) {
+        java.util.LinkedHashMap<String, File> byName = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < dirs.size(); i++) {
+            File best = bestReadable(dirs.get(i));
+            if (best == null) {
+                continue;
+            }
+            String name = best.getName();
+            File prev = byName.get(name);
+            byName.put(name, prev == null ? best : pickRicher(prev, best));
+        }
+        return new ArrayList<>(byName.values());
+    }
+
+    public static String describe(File dir) {
+        File best = bestReadable(dir);
+        if (best == null) {
+            return "том не найден";
+        }
+        String[] names = best.list();
+        if (names == null) {
+            return best.getAbsolutePath() + " — нет доступа к файлам";
+        }
+        if (names.length == 0) {
+            return best.getAbsolutePath() + " — папка пустая";
+        }
+        StringBuilder sb = new StringBuilder(best.getAbsolutePath());
+        sb.append(" — ").append(names.length).append(" имён, например: ");
+        int n = Math.min(4, names.length);
+        for (int i = 0; i < n; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(names[i]);
+        }
+        return sb.toString();
     }
 
     private static void addIfDir(List<File> found, File dir) {

@@ -12,9 +12,9 @@ def test_player_sources_and_formats() -> None:
     for ext in ("mp3", "flac", "wav", "ogg", "m4a", "opus", "wma", "mp4", "mkv", "webm", "avi", "mov", "ts", "m2ts"):
         assert f'"{ext}"' in src
     mf = (root / "android/player/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-    assert 'package="com.changanhub.pl1_1_3"' in mf
+    assert 'package="com.changanhub.pl1_1_4"' in mf
     assert "APP_MUSIC" not in mf
-    assert 'android:versionName="1.1.3"' in mf
+    assert 'android:versionName="1.1.4"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "RECORD_AUDIO" in mf
@@ -60,9 +60,9 @@ def test_player_sources_and_formats() -> None:
     )
     assert "GLSurfaceView" in fog
     build = (root / "scripts/build_player.py").read_text(encoding="utf-8")
-    assert '"1.1.3"' in build
+    assert '"1.1.4"' in build
     assert '"28"' in build
-    assert PACKAGE == "com.changanhub.pl1_1_3"
+    assert PACKAGE == "com.changanhub.pl1_1_4"
     assert "effectiveShape" in eq
     assert "applyEffectiveBands" in eq
     assert "private void applyTone" not in eq
@@ -80,6 +80,12 @@ def test_player_sources_and_formats() -> None:
     assert "/mnt/media_rw" in usb
     assert "addFromProcMounts" in usb
     assert "/proc/mounts" in usb
+    assert "bestReadable" in usb
+    assert "looksLikeDirectory" in usb
+    assert "collapseSameName" in usb
+    assert "&& file.length() > 0" not in usb
+    assert "UsbMedia.describe" in ui
+    assert "onRequestPermissionsResult" in ui
     assert "appVersionLabel" in ui
     assert "btn_volumes" in ui
     assert "refreshVolumes" in ui
@@ -91,7 +97,7 @@ def test_player_sources_and_formats() -> None:
     assert 'android:layout_height="88dp"' in xml
     assert 'android:id="@+id/btn_volumes"' in xml
     mock = (root / "docs/player-layout.html").read_text(encoding="utf-8")
-    assert "Lamore Player 1.1.3" in mock
+    assert "Lamore Player 1.1.4" in mock
     assert "Флешки" in mock
 
 
@@ -102,7 +108,7 @@ def test_hub_installs_player() -> None:
     assert "deploy_player" in src
     assert '"ours", "Наши приложения"' in src
     assert any(app.id == "player" for app in CATALOG)
-    row = package_label("com.changanhub.pl1_1_3")
+    row = package_label("com.changanhub.pl1_1_4")
     assert "Lamore Player" in row
     leftover = package_label("com.changanhub.lamoreplayer")
     assert "старый" in leftover.lower()
@@ -110,12 +116,15 @@ def test_hub_installs_player() -> None:
     assert "старый" in leftover_rise.lower()
     leftover_load = package_label("com.changanhub.playload")
     assert "старый" in leftover_load.lower()
+    leftover_fuse = package_label("com.changanhub.pl1_1_3")
+    assert "старый" in leftover_fuse.lower()
     assert "install_player" in Path("hub/player.py").read_text(encoding="utf-8")
     player_src = Path("hub/player.py").read_text(encoding="utf-8")
     assert "LEGACY_PACKAGES" in player_src
     assert "com.changanhub.lamoreplayer" in player_src
     assert "com.changanhub.playrise" in player_src
     assert "com.changanhub.playload" in player_src
+    assert "com.changanhub.pl1_1_3" in player_src
 
 
 def test_bundled_player_apk() -> None:
@@ -130,7 +139,7 @@ def test_bundled_player_apk() -> None:
     assert has_v2_block(data)
     with ZipFile(apk) as zf:
         mf = zf.read("AndroidManifest.xml")
-        assert "com.changanhub.pl1_1_3".encode("utf-16-le") in mf
+        assert "com.changanhub.pl1_1_4".encode("utf-16-le") in mf
         certs = pkcs7.load_der_pkcs7_certificates(zf.read("META-INF/CERT.RSA"))
         assert certs[0].serial_number == CHANGAN_SERIAL
 
@@ -138,5 +147,5 @@ def test_bundled_player_apk() -> None:
 def test_apk_package_name_player(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "Player.apk") == "com.changanhub.pl1_1_3"
-    assert apk_package_name(tmp_path / "LamorePlayer.apk") == "com.changanhub.pl1_1_3"
+    assert apk_package_name(tmp_path / "Player.apk") == "com.changanhub.pl1_1_4"
+    assert apk_package_name(tmp_path / "LamorePlayer.apk") == "com.changanhub.pl1_1_4"

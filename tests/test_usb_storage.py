@@ -18,6 +18,12 @@ def test_quickbar_splits_usb_and_hu_memory() -> None:
     assert "addFromProcMounts" in src
     assert "/proc/mounts" in src
     assert "getPathFile" in src
+    assert "bestReadable" in src
+    assert "looksLikeDirectory" in src
+    assert "looksLikeApk" in src
+    assert "collapseSameName" in src
+    assert "&& file.length() > 0" not in src
+    assert "describe" in src
     overlay = Path(
         "android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java"
     ).read_text(encoding="utf-8")
@@ -26,4 +32,4 @@ def test_quickbar_splits_usb_and_hu_memory() -> None:
     assert "USB-разъём" in overlay or "USB-разъеме" in overlay or "USB-разъёме" in overlay
     assert "Память самого ГУ" in overlay
     assert "panelTitle" in overlay
-    assert "не в компьютере" in overlay
+    assert "UsbStorage.describe" in overlay

@@ -89,6 +89,7 @@ public class OverlayService extends Service {
             "com.changanhub.quickrise",
             "com.changanhub.quickstash",
             "com.changanhub.quickload",
+            "com.changanhub.qb1_3_15",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -1675,11 +1676,16 @@ public class OverlayService extends Service {
                 }
                 paths.append(roots.get(i).getAbsolutePath());
             }
-            String where = selected.removable
-                    ? "APK в корне флешки не видны.\n"
-                      + "Флешка должна быть в USB-разъёме ГУ, не в компьютере (не диск D:).\n"
-                      + "После вставки нажмите обновление."
-                    : "APK не найдены.\nПоложите файл в Память ГУ (Download).";
+            String where;
+            if (!selected.removable) {
+                where = "APK не найдены.\nПоложите файл в Память ГУ (Download).";
+            } else {
+                File probe = selected.root;
+                where = "APK в корне флешки не видны.\n"
+                        + "Флешка должна быть в USB-разъёме ГУ, не в компьютере (не диск D:).\n"
+                        + UsbStorage.describe(probe)
+                        + "\nПосле вставки нажмите обновление.";
+            }
             empty.setText(apks.isEmpty() ? where + "\n" + paths : "нет APK по поиску");
             empty.setTextColor(Color.parseColor("#9AA7B8"));
             empty.setTextSize(textSp(14));

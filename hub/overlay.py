@@ -11,7 +11,7 @@ from hub.paths import bundled_apps
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.qb1_3_15"
+PACKAGE = "com.changanhub.qb1_3_16"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
@@ -20,6 +20,7 @@ LEGACY_PACKAGES = (
     "com.changanhub.quickrise",
     "com.changanhub.quickstash",
     "com.changanhub.quickload",
+    "com.changanhub.qb1_3_15",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
@@ -48,6 +49,8 @@ PERSIST_SHELL = (
     f"appops set {PACKAGE} GET_USAGE_STATS allow",
     f"pm grant {PACKAGE} android.permission.READ_EXTERNAL_STORAGE",
     f"pm grant {PACKAGE} android.permission.WRITE_EXTERNAL_STORAGE",
+    f"appops set {PACKAGE} READ_EXTERNAL_STORAGE allow",
+    f"appops set {PACKAGE} WRITE_EXTERNAL_STORAGE allow",
     "settings put secure install_non_market_apps 1",
 )
 

@@ -267,6 +267,12 @@ public class BrowserActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        refreshVolumes();
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         handleViewIntent(intent);
@@ -561,9 +567,9 @@ public class BrowserActivity extends Activity {
             if (cwd == null && !flatScan) {
                 empty.setText(R.string.empty);
             } else if (tab == 1) {
-                empty.setText("В этой папке нет видео.");
+                empty.setText("В этой папке нет видео.\n" + UsbMedia.describe(cwd));
             } else {
-                empty.setText("В этой папке нет музыки.");
+                empty.setText("В этой папке нет музыки.\n" + UsbMedia.describe(cwd));
             }
         }
         adapter.notifyDataSetChanged();
