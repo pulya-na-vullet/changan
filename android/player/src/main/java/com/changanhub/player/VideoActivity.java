@@ -211,6 +211,15 @@ public class VideoActivity extends Activity implements
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        UsbBridge.saveResult(this, requestCode, resultCode, data);
+        if (requestCode == UsbBridge.REQUEST && resultCode == RESULT_OK && surface != null) {
+            open(surface.getHolder());
+        }
+    }
+
+    @Override
     public void surfaceCreated(SurfaceHolder holder) {
         open(holder);
         handler.post(tick);
@@ -301,6 +310,7 @@ public class VideoActivity extends Activity implements
                         public void run() {
                             track.setText("ГУ не открыла это видео: " + src.getName()
                                     + "\n" + (e.getMessage() == null ? src.getAbsolutePath() : e.getMessage()));
+                            UsbBridge.requestAccess(VideoActivity.this, src);
                         }
                     });
                 }

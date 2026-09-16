@@ -35,6 +35,7 @@ OVERLAY_PACKAGES = (
 # Sideloads Feiyu will not delete. A new Hub ZIP mints a new RSA key, so
 # pm install -r hits UPDATE_INCOMPATIBLE. Do not uninstall or disable these.
 KEEP_EXISTING_PACKAGES = OVERLAY_PACKAGES + (
+    "com.changanhub.pl1_1_9",
     "com.changanhub.pl1_1_8",
     "com.changanhub.pl1_1_7",
     "com.changanhub.pl1_1_6",
@@ -324,7 +325,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение — pm uninstall не вызываю. Плеер и чат не отключаю. "
-                "Новые пакеты: com.changanhub.pl1_1_8 и com.changanhub.ch1_0_6.",
+                "Новые пакеты: com.changanhub.pl1_1_9 и com.changanhub.ch1_0_6.",
                 72,
             )
         else:
@@ -438,6 +439,7 @@ def _keep_kind(package: str) -> str:
     if package in OVERLAY_PACKAGES:
         return "overlay"
     if package in (
+        "com.changanhub.pl1_1_9",
         "com.changanhub.pl1_1_8",
         "com.changanhub.pl1_1_7",
         "com.changanhub.pl1_1_6",
@@ -466,7 +468,7 @@ def _finish_keep_overlay(
     if kind == "player":
         msg = (
             "Плеер с этой подписью уже стоит. Не отключаю. "
-            "Lamore Player 1.1.8 — пакет com.changanhub.pl1_1_8, раздел «Наши приложения»."
+            "Lamore Player 1.1.9 — пакет com.changanhub.pl1_1_9, раздел «Наши приложения»."
         )
     elif kind == "chat":
         msg = (
@@ -508,7 +510,7 @@ def _keep_working_overlay(
     elif kind == "player":
         step(
             f"Не обновляю {package}: подпись этого Hub не совпадает с уже стоящей. "
-            "Рабочий плеер не отключаю. Новый пакет — com.changanhub.pl1_1_8.",
+            "Рабочий плеер не отключаю. Новый пакет — com.changanhub.pl1_1_9.",
             72,
         )
     else:
@@ -1797,8 +1799,8 @@ def apk_package_name(apk: Path) -> str | None:
     stem = apk.name.lower()
     if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload", "qb1_3_15", "qb1_3_16")):
         return "com.changanhub.qb1_3_16"
-    if any(token in stem for token in ("player", "lamoreplayer", "playrise", "playload", "pl1_1_3", "pl1_1_4", "pl1_1_5", "pl1_1_6", "pl1_1_7", "pl1_1_8")):
-        return "com.changanhub.pl1_1_8"
+    if any(token in stem for token in ("player", "lamoreplayer", "playrise", "playload", "pl1_1_3", "pl1_1_4", "pl1_1_5", "pl1_1_6", "pl1_1_7", "pl1_1_8", "pl1_1_9")):
+        return "com.changanhub.pl1_1_9"
     if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise", "chatload", "ch1_0_5", "ch1_0_6")):
         return "com.changanhub.ch1_0_6"
     raw = b""

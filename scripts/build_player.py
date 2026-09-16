@@ -104,9 +104,9 @@ def main() -> None:
             "--custom-package",
             "com.changanhub.player",
             "--version-code",
-            "11",
+            "12",
             "--version-name",
-            "1.1.8",
+            "1.1.9",
             "--auto-add-overlay",
             str(res_zip),
         ]

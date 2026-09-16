@@ -313,6 +313,10 @@ public class PlayerService extends Service implements
                             error = "не скопировалось: " + title + " · "
                                     + (e.getMessage() == null ? src.getAbsolutePath() : e.getMessage());
                             broadcast();
+                            Intent need = new Intent(UsbBridge.ACTION_NEED_ACCESS);
+                            need.setPackage(getPackageName());
+                            need.putExtra(EXTRA_PATH, src.getAbsolutePath());
+                            sendBroadcast(need);
                         }
                     });
                 }

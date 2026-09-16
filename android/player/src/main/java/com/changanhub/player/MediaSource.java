@@ -124,18 +124,7 @@ public final class MediaSource {
         if (!isUsbFile(src)) {
             return src;
         }
-        try {
-            return copyToCache(context, src);
-        } catch (IOException first) {
-            Uri uri = findStoreUri(context, src);
-            if (uri != null) {
-                try {
-                    return copyUriToCache(context, uri, src.getName());
-                } catch (IOException ignored) {
-                }
-            }
-            throw first;
-        }
+        return copyToCache(context, src);
     }
 
     public static boolean looksEmpty(File file) {
@@ -156,17 +145,25 @@ public final class MediaSource {
 
     public static File copyToCache(Context context, File src) throws IOException {
         File playable = UsbMedia.playableFile(src);
-        InputStream in = openReadableStream(playable != null ? playable : src);
+        InputStream in = context != null ? UsbBridge.open(context, src) : null;
+        if (in == null && context != null) {
+            in = UsbBridge.scanAndOpen(context, src);
+        }
+        if (in == null) {
+            in = openReadableStream(playable != null ? playable : src);
+        }
         if (in == null) {
             File named = UsbMedia.findNamed(src);
             if (named != null) {
                 in = openReadableStream(named);
             }
         }
+        if (in == null && context != null && playable != null && playable != src) {
+            in = UsbBridge.open(context, playable);
+        }
         if (in == null) {
-            throw new IOException("флешка не отдаёт байты: "
-                    + (src == null ? "" : src.getAbsolutePath())
-                    + triedHint(src, playable));
+            throw new IOException("флешка без байтов. Нажмите «Разрешить флешку» и Allow. "
+                    + (src == null ? "" : src.getAbsolutePath()));
         }
         try {
             return writeCache(context, in, playable != null ? playable.getName() : "media.bin",

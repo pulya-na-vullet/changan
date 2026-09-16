@@ -63,6 +63,7 @@ public class BrowserActivity extends Activity {
     private SeekBar eqBalance;
     private SeekBar eqVirt;
     private SeekBar eqLoud;
+    private Button btnUsbAccess;
     private File cwd;
     private int tab;
     private int sortMode;
@@ -90,6 +91,20 @@ public class BrowserActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             refreshVolumes();
+        }
+    };
+    private final BroadcastReceiver needUsb = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            File src = null;
+            String path = intent.getStringExtra(PlayerService.EXTRA_PATH);
+            if (path != null && path.length() > 0) {
+                src = new File(path);
+            } else if (cwd != null) {
+                src = cwd;
+            }
+            pathView.setText("нужен доступ к флешке — нажмите Allow");
+            UsbBridge.requestAccess(BrowserActivity.this, src);
         }
     };
 
@@ -177,6 +192,21 @@ public class BrowserActivity extends Activity {
             @Override
             public void onClick(View v) {
                 refreshVolumes();
+            }
+        });
+        btnUsbAccess = findViewById(R.id.btn_usb_access);
+        btnUsbAccess.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                File src = cwd;
+                if (src == null && !rows.isEmpty() && rows.get(0).file != null) {
+                    src = rows.get(0).file;
+                }
+                if (!UsbBridge.requestAccess(BrowserActivity.this, src)) {
+                    pathView.setText("ГУ не показала окно доступа. Закройте штатный плеер и нажмите ещё раз.");
+                } else {
+                    pathView.setText("в окне ГУ нажмите Allow / Разрешить");
+                }
             }
         });
         btnSort.setOnClickListener(new View.OnClickListener() {
@@ -304,6 +334,32 @@ public class BrowserActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        UsbBridge.saveResult(this, requestCode, resultCode, data);
+        labelUsbAccess();
+        if (requestCode == UsbBridge.REQUEST && resultCode == RESULT_OK) {
+            pathView.setText("доступ к флешке получен — откройте файл ещё раз");
+            refreshVolumes();
+        }
+    }
+
+    private void labelUsbAccess() {
+        if (btnUsbAccess == null) {
+            return;
+        }
+        File probe = cwd;
+        if (probe == null && !rows.isEmpty()) {
+            probe = rows.get(0).file;
+        }
+        if (UsbBridge.hasTree(this, probe)) {
+            btnUsbAccess.setText("флешка разрешена");
+        } else {
+            btnUsbAccess.setText(R.string.usb_access);
+        }
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         handleViewIntent(intent);
@@ -314,6 +370,8 @@ public class BrowserActivity extends Activity {
         super.onResume();
         registerReceiver(status, new IntentFilter(PlayerService.ACTION_STATUS));
         registerReceiver(volumes, volumeFilter());
+        registerReceiver(needUsb, new IntentFilter(UsbBridge.ACTION_NEED_ACCESS));
+        labelUsbAccess();
         handler.post(tick);
         refreshNow();
         if (tab == 3) {
@@ -331,6 +389,10 @@ public class BrowserActivity extends Activity {
         }
         try {
             unregisterReceiver(volumes);
+        } catch (Exception ignored) {
+        }
+        try {
+            unregisterReceiver(needUsb);
         } catch (Exception ignored) {
         }
         viz.release();

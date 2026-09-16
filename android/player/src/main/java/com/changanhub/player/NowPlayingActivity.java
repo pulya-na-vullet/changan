@@ -41,6 +41,14 @@ public class NowPlayingActivity extends Activity {
             refresh();
         }
     };
+    private final BroadcastReceiver needUsb = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String path = PlayerService.currentPath();
+            File src = path.length() == 0 ? null : new File(path);
+            UsbBridge.requestAccess(NowPlayingActivity.this, src);
+        }
+    };
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
@@ -127,6 +135,7 @@ public class NowPlayingActivity extends Activity {
     protected void onResume() {
         super.onResume();
         registerReceiver(status, new IntentFilter(PlayerService.ACTION_STATUS));
+        registerReceiver(needUsb, new IntentFilter(UsbBridge.ACTION_NEED_ACCESS));
         handler.post(tick);
         if (EqPrefs.vizMode(this) == VisualizerView.MODE_FOG) {
             glFog.onResume();
@@ -139,6 +148,10 @@ public class NowPlayingActivity extends Activity {
         handler.removeCallbacks(tick);
         try {
             unregisterReceiver(status);
+        } catch (Exception ignored) {
+        }
+        try {
+            unregisterReceiver(needUsb);
         } catch (Exception ignored) {
         }
         viz.release();
@@ -165,6 +178,18 @@ public class NowPlayingActivity extends Activity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        UsbBridge.saveResult(this, requestCode, resultCode, data);
+        if (requestCode == UsbBridge.REQUEST && resultCode == RESULT_OK) {
+            java.util.List<String> q = PlayerService.queue();
+            if (!q.isEmpty()) {
+                PlayerService.play(this, q, PlayerService.index());
+            }
+        }
     }
 
     private void refresh() {
