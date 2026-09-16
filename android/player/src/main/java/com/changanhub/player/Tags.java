@@ -3,6 +3,7 @@ package com.changanhub.player;
 import android.media.MediaMetadataRetriever;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.Locale;
 
 /** ID3 / container tags without androidx. */
@@ -25,7 +26,7 @@ public final class Tags {
         tags.title = file.getName();
         MediaMetadataRetriever mmr = new MediaMetadataRetriever();
         try {
-            mmr.setDataSource(file.getAbsolutePath());
+            attach(mmr, file);
             String title = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
             String artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
             String album = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
@@ -62,13 +63,26 @@ public final class Tags {
         }
         MediaMetadataRetriever mmr = new MediaMetadataRetriever();
         try {
-            mmr.setDataSource(file.getAbsolutePath());
+            attach(mmr, file);
             return mmr.getEmbeddedPicture();
         } catch (Exception e) {
             return null;
         } finally {
             try {
                 mmr.release();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static void attach(MediaMetadataRetriever mmr, File file) throws Exception {
+        File playable = UsbMedia.playableFile(file);
+        FileInputStream in = new FileInputStream(playable != null ? playable : file);
+        try {
+            mmr.setDataSource(in.getFD());
+        } finally {
+            try {
+                in.close();
             } catch (Exception ignored) {
             }
         }

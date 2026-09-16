@@ -1,7 +1,9 @@
 package com.changanhub.quickbar;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -10,6 +12,9 @@ import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity implements View.OnClickListener {
     private TextView status;
@@ -22,6 +27,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         Button start = findViewById(R.id.btn_start);
         start.setOnClickListener(this);
         refresh();
+        requestStorage();
         if (canDraw()) {
             startPanel();
             finish();
@@ -56,6 +62,30 @@ public class MainActivity extends Activity implements View.OnClickListener {
         status.setText(canDraw()
                 ? "Разрешение выдано. Панель можно держать всегда поверх приложений."
                 : getString(R.string.need_overlay));
+    }
+
+    private void requestStorage() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return;
+        }
+        List<String> missing = new ArrayList<>();
+        if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+        }
+        if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }
+        if (!missing.isEmpty()) {
+            requestPermissions(missing.toArray(new String[0]), 9);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        OverlayService.start(this);
     }
 
     private boolean canDraw() {

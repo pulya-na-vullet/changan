@@ -13,9 +13,20 @@ def test_catalog_has_quickbar() -> None:
 
     assert any(app.id == "quickbar" for app in CATALOG)
     assert all(app.package for app in CATALOG)
-    row = package_label("com.changanhub.quickstash")
+    row = package_label("com.changanhub.qb1_3_16")
     assert "QuickBar" in row
-    assert package_from_row(row) == "com.changanhub.quickstash"
+    assert "1.3.16" in row
+    assert package_from_row(row) == "com.changanhub.qb1_3_16"
+    leftover_load = package_label("com.changanhub.quickload")
+    assert "старая" in leftover_load.lower()
+    leftover_fuse = package_label("com.changanhub.qb1_3_15")
+    assert "старая" in leftover_fuse.lower()
+    leftover_load = package_label("com.changanhub.quickload")
+    assert "старая" in leftover_load.lower()
+    assert package_from_row(leftover_load) == "com.changanhub.quickload"
+    leftover_stash = package_label("com.changanhub.quickstash")
+    assert "старая" in leftover_stash.lower()
+    assert package_from_row(leftover_stash) == "com.changanhub.quickstash"
     leftover_rise = package_label("com.changanhub.quickrise")
     assert "старая" in leftover_rise.lower()
     assert package_from_row(leftover_rise) == "com.changanhub.quickrise"
@@ -44,7 +55,7 @@ def test_demo_capture_in_hub() -> None:
     from pathlib import Path
 
     src = Path("hub/gui.py").read_text(encoding="utf-8")
-    assert '("demo", "Демо")' in src
+    assert "_page_demo" in src
     assert "Сделать скриншот" in src
     assert "Запись 60 с" in src
     assert "from hub.capture import" in src
@@ -61,7 +72,16 @@ def test_nav_credit_matches_hub_title_style() -> None:
 
     src = Path("hub/gui.py").read_text(encoding="utf-8")
     assert 'text="CHANGAN HUB"' in src
+    assert "версия {VERSION}" in src
     assert 'text="разработано в ИТ-Мастерской"' in src
     assert 'fg=ACCENT' in src
     assert 'font=("Segoe UI", 16, "bold")' in src
     assert 'font=("Segoe UI", 9, "bold")' in src
+    assert "_scrollable_inner" in src
+    assert "_wire_mousewheel" in src
+    assert "def _card" in src
+    assert "MouseWheel" in src
+    assert "page._hub_canvas" in src
+    assert "Список прокручивается колёсиком" in src
+    assert "height=4" in src
+    assert "self.chat_install_btn" in src

@@ -2,9 +2,12 @@ package com.changanhub.chat;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -89,6 +92,12 @@ public class ChatActivity extends Activity {
     private SpeechRecognizer stt;
     private PowerManager.WakeLock wakeLock;
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm", Locale.US);
+    private final BroadcastReceiver ttsStatus = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            showTtsState();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,6 +105,10 @@ public class ChatActivity extends Activity {
         setContentView(R.layout.activity_chat);
         stage = findViewById(R.id.stage);
         applyCenterPadding();
+        TextView heading = findViewById(R.id.title);
+        if (heading != null) {
+            heading.setText(appVersionLabel());
+        }
         tabChat = findViewById(R.id.tab_chat);
         tabSettings = findViewById(R.id.tab_settings);
         tabHistory = findViewById(R.id.tab_history);
@@ -346,6 +359,7 @@ public class ChatActivity extends Activity {
                                 setBusy(false, Prefs.provider(ChatActivity.this));
                                 hold(false);
                                 if (Prefs.autoTts(ChatActivity.this) && full.trim().length() > 0) {
+                                    status.setText("озвучиваю…");
                                     TtsService.speak(ChatActivity.this, full);
                                 }
                             }
@@ -699,6 +713,11 @@ public class ChatActivity extends Activity {
             @Override
             public void onClick(View v) {
                 TtsService.speak(ChatActivity.this, "Привет. Это проверка озвучки в машине.");
+                toast(TtsService.isReady()
+                        ? "озвучиваю…"
+                        : (TtsService.warning().length() > 0
+                                ? TtsService.warning()
+                                : "голос ещё загружается, нажмите ещё раз"));
             }
         });
         voiceBox.addView(test);
@@ -708,15 +727,9 @@ public class ChatActivity extends Activity {
             @Override
             public void run() {
                 fillVoices(TtsService.voiceNames());
-                if (voiceWarn != null) {
-                    String warn = TtsService.warning();
-                    voiceWarn.setText(warn.length() > 0 ? warn : "RHVoice внутри приложения, голос Елена. Системный TTS Android не нужен.");
-                    if (warn.length() == 0) {
-                        voiceWarn.setTextColor(0xFF9AA7B8);
-                    }
-                }
+                showTtsState();
                 tries++;
-                if (tries < 12 && !TtsService.isReady() && TtsService.warning().length() == 0) {
+                if (tries < 16 && !TtsService.isReady() && TtsService.warning().length() == 0) {
                     voiceBox.postDelayed(this, 500);
                 }
             }
@@ -867,8 +880,48 @@ public class ChatActivity extends Activity {
         }
     }
 
+    private void showTtsState() {
+        String warn = TtsService.warning();
+        if (voiceWarn != null) {
+            if (warn.length() > 0) {
+                voiceWarn.setText(warn);
+                voiceWarn.setTextColor(0xFFFF6B6B);
+            } else if (TtsService.isSpeaking()) {
+                voiceWarn.setText("говорю…");
+                voiceWarn.setTextColor(0xFF3DDC97);
+            } else if (TtsService.isReady()) {
+                voiceWarn.setText("RHVoice готов. Голос Елена внутри APK, системный TTS не нужен.");
+                voiceWarn.setTextColor(0xFF9AA7B8);
+            } else {
+                voiceWarn.setText("загружаю голос…");
+                voiceWarn.setTextColor(0xFF9AA7B8);
+            }
+        }
+        if (warn.length() > 0 && status != null && !busy) {
+            status.setText(warn);
+        } else if (TtsService.isSpeaking() && status != null && !busy) {
+            status.setText("озвучиваю…");
+        }
+    }
+
     private void toast(String text) {
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        registerReceiver(ttsStatus, new IntentFilter(TtsService.ACTION_STATUS));
+        showTtsState();
+    }
+
+    @Override
+    protected void onPause() {
+        try {
+            unregisterReceiver(ttsStatus);
+        } catch (Exception ignored) {
+        }
+        super.onPause();
     }
 
     @Override
@@ -882,6 +935,10 @@ public class ChatActivity extends Activity {
         }
         TtsService.stop(this);
         super.onDestroy();
+    }
+
+    private String appVersionLabel() {
+        return getString(R.string.app_name);
     }
 
     private class Adapter extends BaseAdapter {

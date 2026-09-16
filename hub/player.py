@@ -10,8 +10,18 @@ from hub.paths import bundled_apps
 
 # New applicationId: Feiyu refuses pm install -r when the Hub folder minted a
 # new RSA key (UPDATE_INCOMPATIBLE) and refuses pm uninstall (auth dialog).
-PACKAGE = "com.changanhub.playrise"
-LEGACY_PACKAGES = ("com.changanhub.lamoreplayer",)
+PACKAGE = "com.changanhub.pl1_1_9"
+LEGACY_PACKAGES = (
+    "com.changanhub.pl1_1_8",
+    "com.changanhub.pl1_1_7",
+    "com.changanhub.pl1_1_6",
+    "com.changanhub.pl1_1_5",
+    "com.changanhub.pl1_1_4",
+    "com.changanhub.pl1_1_3",
+    "com.changanhub.playload",
+    "com.changanhub.playrise",
+    "com.changanhub.lamoreplayer",
+)
 JAVA_MAIN = "com.changanhub.player.BrowserActivity"
 
 GRANT_SHELL = (
@@ -103,6 +113,6 @@ def install_player(adb: Adb, progress: Progress | None = None) -> list[str]:
     lines.append(
         "Откройте флешку в плеере. Вкладки: музыка, видео, эквалайзер, визуализация. "
         "Видео — SRT рядом с файлом и выбор дорожки. "
-        "Старый com.changanhub.lamoreplayer Feiyu не удаляет — его отключаю, не снимаю."
+        "Старый com.changanhub.playrise / lamoreplayer Feiyu не удаляет — его отключаю, не снимаю."
     )
     return lines

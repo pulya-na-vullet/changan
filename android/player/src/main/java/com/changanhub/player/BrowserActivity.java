@@ -9,6 +9,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.media.audiofx.Equalizer;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.DisplayMetrics;
 import android.view.KeyEvent;
 import android.view.View;
@@ -48,6 +49,7 @@ public class BrowserActivity extends Activity {
     private Button btnShuffle;
     private Button btnRepeat;
     private Button btnPlay;
+    private SeekBar nowSeek;
     private LinearLayout namedPresets;
     private LinearLayout eqBands;
     private LinearLayout vizModes;
@@ -61,13 +63,23 @@ public class BrowserActivity extends Activity {
     private SeekBar eqBalance;
     private SeekBar eqVirt;
     private SeekBar eqLoud;
+    private Button btnUsbAccess;
     private File cwd;
     private int tab;
     private int sortMode;
     private int attachedSession = -1;
     private boolean scanning;
     private boolean flatScan;
+    private boolean seekingNow;
+    private final Handler handler = new Handler();
     private final List<UsbMedia.Entry> rows = new ArrayList<>();
+    private final Runnable tick = new Runnable() {
+        @Override
+        public void run() {
+            refreshNowProgress();
+            handler.postDelayed(this, 400);
+        }
+    };
     private final Adapter adapter = new Adapter();
     private final BroadcastReceiver status = new BroadcastReceiver() {
         @Override
@@ -81,6 +93,20 @@ public class BrowserActivity extends Activity {
             refreshVolumes();
         }
     };
+    private final BroadcastReceiver needUsb = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            File src = null;
+            String path = intent.getStringExtra(PlayerService.EXTRA_PATH);
+            if (path != null && path.length() > 0) {
+                src = new File(path);
+            } else if (cwd != null) {
+                src = cwd;
+            }
+            pathView.setText("нужен доступ к флешке — нажмите Allow");
+            UsbBridge.requestAccess(BrowserActivity.this, src);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,6 +114,10 @@ public class BrowserActivity extends Activity {
         setContentView(R.layout.activity_browser);
         stage = findViewById(R.id.stage);
         applyCenterPadding();
+        TextView heading = findViewById(R.id.title);
+        if (heading != null) {
+            heading.setText(appVersionLabel());
+        }
         pathView = findViewById(R.id.path);
         empty = findViewById(R.id.empty);
         nowTitle = findViewById(R.id.now_title);
@@ -103,6 +133,7 @@ public class BrowserActivity extends Activity {
         btnShuffle = findViewById(R.id.btn_shuffle);
         btnRepeat = findViewById(R.id.btn_repeat);
         btnPlay = findViewById(R.id.btn_play);
+        nowSeek = findViewById(R.id.now_seek);
         namedPresets = findViewById(R.id.named_presets);
         eqBands = findViewById(R.id.eq_bands);
         vizModes = findViewById(R.id.viz_modes);
@@ -161,6 +192,21 @@ public class BrowserActivity extends Activity {
             @Override
             public void onClick(View v) {
                 refreshVolumes();
+            }
+        });
+        btnUsbAccess = findViewById(R.id.btn_usb_access);
+        btnUsbAccess.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                File src = cwd;
+                if (src == null && !rows.isEmpty() && rows.get(0).file != null) {
+                    src = rows.get(0).file;
+                }
+                if (!UsbBridge.requestAccess(BrowserActivity.this, src)) {
+                    pathView.setText("ГУ не показала окно доступа. Закройте штатный плеер и нажмите ещё раз.");
+                } else {
+                    pathView.setText("в окне ГУ нажмите Allow / Разрешить");
+                }
             }
         });
         btnSort.setOnClickListener(new View.OnClickListener() {
@@ -225,6 +271,25 @@ public class BrowserActivity extends Activity {
                 open(rows.get(position));
             }
         });
+        nowSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                seekingNow = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                seekingNow = false;
+                Intent intent = new Intent(BrowserActivity.this, PlayerService.class);
+                intent.setAction(PlayerService.ACTION_SEEK);
+                intent.putExtra(PlayerService.EXTRA_MS, seekBar.getProgress());
+                PlayerService.send(BrowserActivity.this, intent);
+            }
+        });
         bindFxBar(eqBass, "bass");
         bindFxBar(eqMids, "mids");
         bindFxBar(eqHighs, "highs");
@@ -263,6 +328,38 @@ public class BrowserActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        refreshVolumes();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        UsbBridge.saveResult(this, requestCode, resultCode, data);
+        labelUsbAccess();
+        if (requestCode == UsbBridge.REQUEST && resultCode == RESULT_OK) {
+            pathView.setText("доступ к флешке получен — откройте файл ещё раз");
+            refreshVolumes();
+        }
+    }
+
+    private void labelUsbAccess() {
+        if (btnUsbAccess == null) {
+            return;
+        }
+        File probe = cwd;
+        if (probe == null && !rows.isEmpty()) {
+            probe = rows.get(0).file;
+        }
+        if (UsbBridge.hasTree(this, probe)) {
+            btnUsbAccess.setText("флешка разрешена");
+        } else {
+            btnUsbAccess.setText(R.string.usb_access);
+        }
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         handleViewIntent(intent);
@@ -273,6 +370,9 @@ public class BrowserActivity extends Activity {
         super.onResume();
         registerReceiver(status, new IntentFilter(PlayerService.ACTION_STATUS));
         registerReceiver(volumes, volumeFilter());
+        registerReceiver(needUsb, new IntentFilter(UsbBridge.ACTION_NEED_ACCESS));
+        labelUsbAccess();
+        handler.post(tick);
         refreshNow();
         if (tab == 3) {
             attachViz();
@@ -282,12 +382,17 @@ public class BrowserActivity extends Activity {
 
     @Override
     protected void onPause() {
+        handler.removeCallbacks(tick);
         try {
             unregisterReceiver(status);
         } catch (Exception ignored) {
         }
         try {
             unregisterReceiver(volumes);
+        } catch (Exception ignored) {
+        }
+        try {
+            unregisterReceiver(needUsb);
         } catch (Exception ignored) {
         }
         viz.release();
@@ -515,21 +620,22 @@ public class BrowserActivity extends Activity {
         }
         if (entry.video) {
             ArrayList<String> paths = queue(true);
-            int start = Math.max(0, paths.indexOf(entry.file.getAbsolutePath()));
+            int start = Math.max(0, paths.indexOf(UsbMedia.playableFile(entry.file).getAbsolutePath()));
             if (paths.isEmpty()) {
-                paths.add(entry.file.getAbsolutePath());
+                paths.add(UsbMedia.playableFile(entry.file).getAbsolutePath());
                 start = 0;
             }
             VideoActivity.start(this, paths, start);
             return;
         }
         ArrayList<String> paths = queue(false);
-        int start = Math.max(0, paths.indexOf(entry.file.getAbsolutePath()));
+        int start = Math.max(0, paths.indexOf(UsbMedia.playableFile(entry.file).getAbsolutePath()));
         if (paths.isEmpty()) {
-            paths.add(entry.file.getAbsolutePath());
+            paths.add(UsbMedia.playableFile(entry.file).getAbsolutePath());
             start = 0;
         }
         PlayerService.play(this, paths, start);
+        startActivity(new Intent(this, NowPlayingActivity.class));
         refreshNow();
     }
 
@@ -541,9 +647,9 @@ public class BrowserActivity extends Activity {
                 continue;
             }
             if (video && e.video) {
-                paths.add(e.file.getAbsolutePath());
+                paths.add(UsbMedia.playableFile(e.file).getAbsolutePath());
             } else if (!video && e.audio) {
-                paths.add(e.file.getAbsolutePath());
+                paths.add(UsbMedia.playableFile(e.file).getAbsolutePath());
             }
         }
         return paths;
@@ -557,9 +663,9 @@ public class BrowserActivity extends Activity {
             if (cwd == null && !flatScan) {
                 empty.setText(R.string.empty);
             } else if (tab == 1) {
-                empty.setText("В этой папке нет видео.");
+                empty.setText("В этой папке нет видео.\n" + UsbMedia.describe(cwd));
             } else {
-                empty.setText("В этой папке нет музыки.");
+                empty.setText("В этой папке нет музыки.\n" + UsbMedia.describe(cwd));
             }
         }
         adapter.notifyDataSetChanged();
@@ -578,9 +684,20 @@ public class BrowserActivity extends Activity {
         int rep = PlayerService.repeat();
         btnRepeat.setText(rep == 2 ? "①" : (rep == 1 ? "∞" : "—"));
         attachViz();
+        refreshNowProgress();
         if (tab == 2) {
             eqCurve.capture(PlayerService.equalizer());
         }
+    }
+
+    private void refreshNowProgress() {
+        if (nowSeek == null || seekingNow) {
+            return;
+        }
+        int dur = Math.max(0, PlayerService.duration());
+        int pos = Math.max(0, PlayerService.position());
+        nowSeek.setMax(dur > 0 ? dur : 1);
+        nowSeek.setProgress(dur > 0 ? pos : 0);
     }
 
     private void attachViz() {
@@ -778,6 +895,10 @@ public class BrowserActivity extends Activity {
         } else {
             glFog.onPause();
         }
+    }
+
+    private String appVersionLabel() {
+        return getString(R.string.app_name);
     }
 
     private class Adapter extends BaseAdapter {

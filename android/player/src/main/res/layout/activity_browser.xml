@@ -152,6 +152,17 @@
                     android:textSize="26sp"
                     android:maxLines="2" />
 
+                <Button
+                    android:id="@+id/btn_usb_access"
+                    android:layout_width="match_parent"
+                    android:layout_height="72dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@color/accent"
+                    android:text="@string/usb_access"
+                    android:textColor="@color/bg_solid"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
                 <ListView
                     android:id="@+id/list"
                     android:layout_width="match_parent"
@@ -334,6 +345,16 @@
                 </HorizontalScrollView>
             </FrameLayout>
         </FrameLayout>
+
+        <SeekBar
+            android:id="@+id/now_seek"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:minHeight="40dp"
+            android:maxHeight="40dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
 
         <LinearLayout
             android:id="@+id/nowbar"

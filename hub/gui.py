@@ -18,12 +18,14 @@ from hub.catalog import CATALOG, package_from_row, package_label
 from hub.bundle import PACKAGE_SUFFIXES
 from hub.installer import PROCESS_STAGES, classify_install_step, install_apk
 from hub.journal import Journal
-from hub.overlay import install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
-from hub.player import install_player, player_apk, start_player
-from hub.aichat import aichat_apk, install_aichat, start_aichat
+from hub.overlay import PACKAGE as OVERLAY_PACKAGE, install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
+from hub.player import PACKAGE as PLAYER_PACKAGE, install_player, player_apk, start_player
+from hub.aichat import PACKAGE as AICHAT_PACKAGE, aichat_apk, install_aichat, start_aichat
 from hub.paths import bundled_apps, captures_dir
 from hub.signer import certificate_info, ensure_keystore
 from hub.usb import list_usb_apks, removable_roots
+from hub.version import VERSION
+from hub.hu_info import installed_version
 
 BG = "#0B1220"
 PANEL = "#121A2B"
@@ -75,7 +77,7 @@ def _bind_theme(root: tk.Tk) -> None:
 class HubApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
-        self.root.title("Changan Hub — Lamore 2023")
+        self.root.title(f"Changan Hub {VERSION} — Lamore 2023")
         self.root.geometry("1180x760")
         self.root.minsize(960, 640)
         _bind_theme(self.root)
@@ -100,6 +102,9 @@ class HubApp:
         self.recorder: Recorder | None = None
         self.record_status = tk.StringVar(value="Запись не идёт")
         self.last_capture = tk.StringVar(value="Файлов ещё нет")
+        self.overlay_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
+        self.player_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
+        self.chat_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
         self._stopping_record = False
         self._worker = threading.Thread(target=self._job_loop, daemon=True, name="hub-worker")
         self._worker.start()
@@ -138,6 +143,13 @@ class HubApp:
         ).pack(anchor="w", padx=20, pady=(24, 2))
         tk.Label(
             nav,
+            text=f"версия {VERSION}",
+            bg=PANEL,
+            fg=ACCENT,
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        tk.Label(
+            nav,
             text="разработано в ИТ-Мастерской",
             bg=PANEL,
             fg=ACCENT,
@@ -151,13 +163,9 @@ class HubApp:
 
         pages = [
             ("connect", "Подключение"),
-            ("install", "Установка APK"),
-            ("overlay", "Правая панель"),
-            ("player", "Плеер"),
-            ("aichat", "Чат ИИ"),
-            ("demo", "Демо"),
+            ("ours", "Наши приложения"),
+            ("install", "Сторонние APK"),
             ("apps", "Приложения ГУ"),
-            ("catalog", "Каталог"),
             ("tools", "Сервис"),
         ]
         for key, label in pages:
@@ -232,7 +240,7 @@ class HubApp:
         ttk.Button(log_top, text="Очистить экран", command=self.clear_log_view).pack(side=tk.RIGHT, padx=4)
         self.log_widget = tk.Text(
             log_frame,
-            height=7,
+            height=4,
             bg="#0A101C",
             fg=TEXT,
             insertbackground=TEXT,
@@ -246,10 +254,12 @@ class HubApp:
         self.stack.pack(fill=tk.BOTH, expand=True, padx=20)
         self.pages: dict[str, ttk.Frame] = {}
         self.pages["connect"] = self._page_connect()
+        ours = self._page_ours()
+        self.pages["ours"] = ours
+        self.pages["overlay"] = ours
+        self.pages["player"] = ours
+        self.pages["aichat"] = ours
         self.pages["install"] = self._page_install()
-        self.pages["overlay"] = self._page_overlay()
-        self.pages["player"] = self._page_player()
-        self.pages["aichat"] = self._page_aichat()
         self.pages["demo"] = self._page_demo()
         self.pages["apps"] = self._page_apps()
         self.pages["catalog"] = self._page_catalog()
@@ -259,6 +269,53 @@ class HubApp:
         self.show("connect", "Подключение")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(500, self._tick_record)
+
+    def _scrollable_inner(self, page: ttk.Frame) -> ttk.Frame:
+        """Page body that fits the leftover stack (loader + log stay on screen)."""
+        holder = ttk.Frame(page)
+        holder.pack(fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(holder, bg=BG, highlightthickness=0, borderwidth=0)
+        scroll = ttk.Scrollbar(holder, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def sync_region(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all") or (0, 0, 0, 0))
+
+        def sync_width(event: tk.Event) -> None:
+            canvas.itemconfigure(window, width=max(event.width, 1))
+
+        inner.bind("<Configure>", sync_region)
+        canvas.bind("<Configure>", sync_width)
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        page._hub_canvas = canvas  # type: ignore[attr-defined]
+        return inner
+
+    def _wire_mousewheel(self, canvas: tk.Canvas, inner: tk.Widget) -> None:
+        def wheel(event: tk.Event, view=canvas) -> str:
+            delta = int(getattr(event, "delta", 0) or 0)
+            if delta:
+                units = int(-delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1)
+                view.yview_scroll(units, "units")
+            elif int(getattr(event, "num", 0) or 0) == 4:
+                view.yview_scroll(-1, "units")
+            elif int(getattr(event, "num", 0) or 0) == 5:
+                view.yview_scroll(1, "units")
+            return "break"
+
+        def bind_tree(widget: tk.Widget) -> None:
+            widget.bind("<MouseWheel>", wheel)
+            widget.bind("<Button-4>", wheel)
+            widget.bind("<Button-5>", wheel)
+            for child in widget.winfo_children():
+                bind_tree(child)
+
+        bind_tree(inner)
+        canvas.bind("<MouseWheel>", wheel)
+        canvas.bind("<Button-4>", wheel)
+        canvas.bind("<Button-5>", wheel)
 
     def _card(self, parent: tk.Widget, title: str, body: str) -> tk.Frame:
         card = tk.Frame(parent, bg=CARD, padx=16, pady=14)
@@ -292,27 +349,74 @@ class HubApp:
         self.info_box.pack(fill=tk.X, pady=16)
         return page
 
+    def _page_ours(self) -> ttk.Frame:
+        page = ttk.Frame(self.stack)
+        inner = self._scrollable_inner(page)
+        ttk.Label(inner, text="Три приложения этой сборки", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            inner,
+            text="Одна зелёная кнопка ставит пакет на ГУ. «Открыть» только запускает уже стоящее. "
+            "Новая папка Hub не обновляет старый id — поэтому панель, плеер и чат ставятся новым именем. "
+            "Флешка с музыкой и APK — в USB магнитолы, не в ноутбуке. "
+            "Список прокручивается колёсиком и полосой справа.",
+            style="Muted.TLabel",
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 10))
+
+        def card(title: str, bundled: str, status: tk.StringVar, install, open_fn) -> ttk.Button:
+            box = tk.Frame(inner, bg=CARD, padx=16, pady=12)
+            box.pack(fill=tk.X, pady=6)
+            tk.Label(box, text=title, bg=CARD, fg=ACCENT, font=FONT_H).pack(anchor="w")
+            tk.Label(box, text=bundled, bg=CARD, fg=MUTED, font=FONT).pack(anchor="w", pady=(2, 0))
+            tk.Label(box, textvariable=status, bg=CARD, fg=TEXT, font=FONT).pack(anchor="w", pady=(2, 8))
+            row = tk.Frame(box, bg=CARD)
+            row.pack(anchor="w")
+            btn = ttk.Button(row, text="Поставить эту версию", style="Accent.TButton", command=install)
+            btn.pack(side=tk.LEFT)
+            ttk.Button(row, text="Открыть", command=open_fn).pack(side=tk.LEFT, padx=8)
+            return btn
+
+        self.overlay_install_btn = card(
+            "QuickBar — правая колонка",
+            f"в ZIP: 1.3.16 · {OVERLAY_PACKAGE}",
+            self.overlay_hu_ver,
+            self.deploy_overlay,
+            self.resume_overlay,
+        )
+        self.player_install_btn = card(
+            "Lamore Player — музыка и видео",
+            f"в ZIP: 1.1.9 · {PLAYER_PACKAGE}",
+            self.player_hu_ver,
+            self.deploy_player,
+            self.resume_player,
+        )
+        self.chat_install_btn = card(
+            "AI Chat — DeepSeek / YandexGPT",
+            f"в ZIP: 1.0.6 · {AICHAT_PACKAGE}",
+            self.chat_hu_ver,
+            self.deploy_aichat,
+            self.resume_aichat,
+        )
+        ttk.Label(
+            inner,
+            text="Отключить старую колонку — «Приложения ГУ». Скриншот и запись экрана — «Сервис».",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(8, 0))
+        self._wire_mousewheel(page._hub_canvas, inner)  # type: ignore[attr-defined]
+        return page
+
     def _page_install(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
-        ttk.Label(page, text="Установка приложений", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(page, text="Сторонние APK с диска", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             page,
-            text="APK и XAPK/APKM: Hub переподпишет под Changan и поставит через push + pm "
-            "(для XAPK — сессия install-create/write/commit, не adb install-multiple). "
-            "Белое окно 提示 «is not auth, install failed!» — отказ белого списка при установке. "
-            "Окно 提示 «is auth app, not allow delete!» — Feiyu не даёт удалять уже авторизованный пакет. "
-            "Hub при несовпадении подписи у обычных APK пробует короткий pm uninstall --user 0. "
-            "Панель QuickBar — пакет com.changanhub.quickstash; старые "
-            "quickbar/quickkeep/quickrise Hub только отключает, не удаляет. "
-            "Если новая папка Hub не обновляет колонку (другая подпись) — "
-            "«Установить и запустить» ставит новый id, не ломая старый. "
-            "Свежий Chrome (SDK 29) на Feiyu Android 9 не встанет — Браузер Лайт уже на ГУ. "
-            "Скрытие и сортировка — колонка справа из «Правая панель», не раздел «Плеер». "
-            "В штатном меню Feiyu сторонних иконок нет — это нормально: открывайте из QuickBar "
-            "справа или из «Приложения ГУ». "
-            "adb install на Feiyu зависает — Hub его не вызывает. "
-            "«Открыть флешку» — APK/XAPK с USB; Hub сам переподпишет под белый список ГУ.",
+            text="Яндекс, Кинопоиск, HUD — отсюда. QuickBar / плеер / чат ставьте в «Наши приложения», "
+            "иначе легко нажать не ту кнопку. Hub переподпишет выбранный файл под белый список ГУ. "
+            "Кабель ADB должен быть в магнитоле. Флешка в ноутбуке (диск D:) на ГУ не видна.",
             style="Muted.TLabel",
+            wraplength=720,
+            justify="left",
         ).pack(anchor="w", pady=(6, 8))
         row = ttk.Frame(page)
         row.pack(fill=tk.X, pady=(0, 8))
@@ -356,8 +460,10 @@ class HubApp:
         ).pack(anchor="w")
         body = (
             "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
-            "Старые quickbar/quickkeep/quickrise не удаляются и новых кнопок в них нет. "
-            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.quickstash. "
+            "Старые quickbar/quickkeep/quickrise/quickstash/quickload не удаляются и новых кнопок в них нет. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.qb1_3_16. "
+            "APK с флешки в колонке: сверху USB или Память ГУ. Серый ключ подписывает v1+v2 тем же серийником Feiyu, что и Hub; "
+            "зелёная кнопка ставит (если подписи ещё нет — сначала подписывает). "
             "Плеер — отдельный раздел."
         )
         ttk.Label(
@@ -392,8 +498,8 @@ class HubApp:
                 "Заставки: спектр, волна, частицы, круг, OpenGL-туман под ритм. "
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
-                "Пакет: com.changanhub.playrise. Старый lamoreplayer Feiyu не удаляет — "
-                "Hub ставит новый id, как QuickBar → quickstash. Без Google Play и без Compose. "
+                "Пакет: com.changanhub.pl1_1_9. Старые pl1_1_8 / pl1_1_7 / playload / playrise / lamoreplayer Feiyu не удаляет — "
+                "Hub ставит новый id, как QuickBar → qb1_3_16. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -424,7 +530,7 @@ class HubApp:
                 "Микрофона на Feiyu нет: голосовой помощник машины — iFlytek, "
                 "это не Android SpeechRecognizer. Пишите Яндекс-клавиатурой. "
                 "Русские вкладки — из приложения; язык системы ГУ может остаться китайским. "
-                "Пакет: com.changanhub.chatrise (старый aichat Feiyu не удаляет). "
+                "Пакет: com.changanhub.ch1_0_6 (старые ch1_0_5 / chatload / chatrise / aichat Feiyu не удаляет). "
                 "Макет: docs\\aichat-layout.html."
             ),
             style="Muted.TLabel",
@@ -482,7 +588,8 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Рабочая панель: QuickBar · com.changanhub.quickstash. "
+                "Рабочая панель: QuickBar 1.3.16 · com.changanhub.qb1_3_16. "
+                "Плеер: 1.1.9 · com.changanhub.pl1_1_9. Чат: 1.0.6 · com.changanhub.ch1_0_6. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
                 "«Запустить выбранное» на них поднимает колонку справа. "
@@ -511,18 +618,14 @@ class HubApp:
 
     def _page_catalog(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
-        ttk.Label(page, text="Что имеет смысл поставить", style="Title.TLabel").pack(anchor="w", pady=(0, 8))
-        canvas = tk.Canvas(page, bg=BG, highlightthickness=0)
-        scroll = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
-        inner = ttk.Frame(canvas)
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        inner = self._scrollable_inner(page)
+        ttk.Label(inner, text="Что имеет смысл поставить", style="Title.TLabel").pack(
+            anchor="w", pady=(0, 8)
+        )
         for app in CATALOG:
             card = self._card(inner, app.name, f"{app.summary}\n{app.notes} {app.url or ''}".strip())
             card.pack(fill=tk.X, pady=6)
+        self._wire_mousewheel(page._hub_canvas, inner)  # type: ignore[attr-defined]
         return page
 
     def _page_tools(self) -> ttk.Frame:
@@ -752,9 +855,32 @@ class HubApp:
                 self._ui(lambda: self.progress_bar.stop())
 
     def _hu_ready(self, adb: Adb) -> bool:
-        # Never call adb.connected() here: devices -l was the last line in the
-        # user's log before install hung, and it blocks the worker with no loader.
-        return bool(adb.serial)
+        if not adb.serial:
+            return False
+        state = adb.raw(["get-state"], timeout=8)
+        blob = f"{state.stdout or ''} {state.stderr or ''}".lower()
+        if "not found" in blob or "offline" in blob or "unauthorized" in blob:
+            return False
+        return "device" in blob
+
+    def _assert_install(self, lines: list[str], title: str) -> None:
+        joined = "\n".join(lines)
+        low = joined.lower()
+        if "device not found" in low or "гу отвалилась" in low or "не удалось скопировать" in low:
+            raise AdbError(
+                "ГУ пропала из ADB. Кабель ноутбук→магнитола, USB → ADB. "
+                "Пока флешка в компьютере (диск D:), установка на ГУ не идёт."
+            )
+        if "не установлен" in low:
+            raise AdbError(f"{title} не встал. Смотрите журнал.")
+
+    def _refresh_ours_versions(self, adb: Adb) -> None:
+        overlay = installed_version(adb, OVERLAY_PACKAGE) or "нет"
+        player = installed_version(adb, PLAYER_PACKAGE) or "нет"
+        chat = installed_version(adb, AICHAT_PACKAGE) or "нет"
+        self._ui(lambda: self.overlay_hu_ver.set(f"на ГУ: {overlay}"))
+        self._ui(lambda: self.player_hu_ver.set(f"на ГУ: {player}"))
+        self._ui(lambda: self.chat_hu_ver.set(f"на ГУ: {chat}"))
 
     def refresh_connection(self) -> None:
         def go() -> None:
@@ -819,6 +945,7 @@ class HubApp:
         )
         self._ui(lambda t=pretty: self.info_box.configure(text=t))
         self.journal.write("INFO", "connect", f"индикатор зелёный, serial={adb.serial}")
+        self._refresh_ours_versions(adb)
 
     def refresh_apk_list(self) -> None:
         self.apk_list.delete(0, tk.END)
@@ -826,7 +953,13 @@ class HubApp:
         files: list[Path] = []
         for suffix in PACKAGE_SUFFIXES:
             files.extend(folder.glob(f"*{suffix}"))
+        OUR_APKS = ("quickbar", "player", "aichat")
         files = sorted({item.resolve() for item in files}, key=lambda p: p.name.lower())
+        files = [
+            item
+            for item in files
+            if not any(token in item.name.lower() for token in OUR_APKS)
+        ]
         if not files:
             self.apk_list.insert(tk.END, f"(пусто) положите APK/XAPK в {folder}")
             return
@@ -963,6 +1096,8 @@ class HubApp:
             lines = install_overlay(adb, progress=progress)
             for line in lines:
                 self.journal.write("INFO", "overlay", line)
+            self._assert_install(lines, "QuickBar")
+            self._refresh_ours_versions(adb)
             joined = "\n".join(lines).lower()
             if "not auth" in joined or "-118" in joined:
                 self._ui(
@@ -988,6 +1123,8 @@ class HubApp:
             lines = install_player(adb, progress=progress)
             for line in lines:
                 self.journal.write("INFO", "player", line)
+            self._assert_install(lines, "Плеер")
+            self._refresh_ours_versions(adb)
             joined = "\n".join(lines).lower()
             if "not auth" in joined or "-118" in joined:
                 self._ui(
@@ -1026,6 +1163,8 @@ class HubApp:
             lines = install_aichat(adb, progress=progress)
             for line in lines:
                 self.journal.write("INFO", "aichat", line)
+            self._assert_install(lines, "Чат")
+            self._refresh_ours_versions(adb)
             joined = "\n".join(lines).lower()
             if "not auth" in joined or "-118" in joined:
                 self._ui(
@@ -1107,7 +1246,7 @@ class HubApp:
                 leftovers = ", ".join(p for p in LEGACY_PACKAGES if p in pkgs)
                 self.log(
                     f"На ГУ только старые панели ({leftovers}). Скрытия и сортировки в них нет. "
-                    f"Установите заново из «Правая панель» — пакет {PACKAGE}."
+                    f"Установите заново из «Наши приложения» — пакет {PACKAGE}."
                 )
             else:
                 self.log(

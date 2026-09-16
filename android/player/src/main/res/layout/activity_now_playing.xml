@@ -6,6 +6,17 @@
     android:orientation="vertical"
     android:padding="20dp">
 
+        <Button
+            android:id="@+id/btn_back"
+            android:layout_width="wrap_content"
+            android:layout_height="96dp"
+            android:minWidth="280dp"
+            android:layout_gravity="start"
+            android:background="@color/accent"
+            android:text="← К списку"
+            android:textColor="@color/bg_solid"
+            android:textSize="32sp" />
+
         <ImageView
             android:id="@+id/cover"
             android:layout_width="120dp"
@@ -64,8 +75,12 @@
         <SeekBar
             android:id="@+id/seek"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" />
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:maxHeight="48dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
 
         <TextView
             android:id="@+id/time"
