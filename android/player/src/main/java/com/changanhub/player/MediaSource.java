@@ -9,8 +9,11 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
+import android.system.Os;
+import android.system.OsConstants;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -153,9 +156,17 @@ public final class MediaSource {
 
     public static File copyToCache(Context context, File src) throws IOException {
         File playable = UsbMedia.playableFile(src);
-        InputStream in = openReadableStream(playable);
+        InputStream in = openReadableStream(playable != null ? playable : src);
         if (in == null) {
-            throw new IOException("флешка не отдаёт байты: " + (src == null ? "" : src.getAbsolutePath()));
+            File named = UsbMedia.findNamed(src);
+            if (named != null) {
+                in = openReadableStream(named);
+            }
+        }
+        if (in == null) {
+            throw new IOException("флешка не отдаёт байты: "
+                    + (src == null ? "" : src.getAbsolutePath())
+                    + triedHint(src, playable));
         }
         try {
             return writeCache(context, in, playable != null ? playable.getName() : "media.bin",
@@ -238,7 +249,7 @@ public final class MediaSource {
                 nz++;
             }
         }
-        if (nz < 8) {
+        if (nz < 4) {
             return false;
         }
         if (head[0] == 'I' && head[1] == 'D' && head[2] == '3') {
@@ -270,51 +281,149 @@ public final class MediaSource {
     }
 
     private static boolean hasMediaHeader(File file) {
-        FileInputStream in = null;
-        try {
-            in = new FileInputStream(file);
-            byte[] head = new byte[64];
-            int n = in.read(head);
-            return looksLikeMedia(head, n);
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (Exception ignored) {
-                }
-            }
-        }
+        Peek peek = peekFile(file);
+        return peek != null && usableHead(file, peek.head, peek.n);
     }
 
     private static InputStream openReadableStream(File file) {
-        File[] cands = UsbMedia.rankedPathCandidates(file);
+        InputStream in = openFromCandidates(UsbMedia.expandKernelCandidates(file));
+        if (in != null) {
+            return in;
+        }
+        File named = UsbMedia.findNamed(file);
+        if (named == null) {
+            return null;
+        }
+        return openFromCandidates(new File[] { named });
+    }
+
+    private static InputStream openFromCandidates(File[] cands) {
+        if (cands == null) {
+            return null;
+        }
         for (int i = 0; i < cands.length; i++) {
             File cand = cands[i];
             if (cand == null || UsbMedia.looksLikeDirectory(cand)) {
                 continue;
             }
-            FileInputStream in = null;
-            try {
-                in = new FileInputStream(cand);
-                byte[] head = new byte[64];
-                int n = in.read(head);
-                in.close();
-                in = null;
-                if (looksLikeMedia(head, n)) {
-                    return new FileInputStream(cand);
-                }
-            } catch (Exception ignored) {
-                if (in != null) {
-                    try {
-                        in.close();
-                    } catch (Exception ignoredClose) {
-                    }
-                }
+            Peek peek = peekFile(cand);
+            if (peek == null || !usableHead(cand, peek.head, peek.n)) {
+                continue;
+            }
+            InputStream in = openAny(cand);
+            if (in != null) {
+                return in;
             }
         }
         return null;
+    }
+
+    private static String triedHint(File src, File playable) {
+        File probe = playable != null ? playable : src;
+        File[] cands = UsbMedia.expandKernelCandidates(probe);
+        StringBuilder sb = new StringBuilder();
+        int shown = 0;
+        for (int i = 0; i < cands.length && shown < 2; i++) {
+            File cand = cands[i];
+            if (cand == null || UsbMedia.looksLikeDirectory(cand)) {
+                continue;
+            }
+            if (UsbMedia.fuseRank(cand) > 4) {
+                continue;
+            }
+            sb.append(shown == 0 ? " · нет " : " / ");
+            sb.append(cand.getAbsolutePath());
+            shown++;
+        }
+        return sb.toString();
+    }
+
+    private static final class Peek {
+        final byte[] head;
+        final int n;
+
+        Peek(byte[] head, int n) {
+            this.head = head;
+            this.n = n;
+        }
+    }
+
+    private static Peek peekFile(File file) {
+        InputStream in = openAny(file);
+        if (in == null) {
+            return null;
+        }
+        try {
+            byte[] head = new byte[64];
+            int n = in.read(head);
+            return new Peek(head, n);
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try {
+                in.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static boolean usableHead(File cand, byte[] head, int n) {
+        if (looksLikeMedia(head, n)) {
+            return true;
+        }
+        if (head == null || n < 1) {
+            return false;
+        }
+        int nz = 0;
+        for (int i = 0; i < n; i++) {
+            if (head[i] != 0) {
+                nz++;
+            }
+        }
+        if (nz == 0) {
+            return false;
+        }
+        return UsbMedia.fuseRank(cand) <= 4 && nz >= 1;
+    }
+
+    private static InputStream openAny(File file) {
+        if (file == null) {
+            return null;
+        }
+        InputStream os = openOs(file);
+        if (os != null) {
+            return os;
+        }
+        try {
+            return new FileInputStream(file);
+        } catch (Exception ignored) {
+        }
+        try {
+            ParcelFileDescriptor pfd = ParcelFileDescriptor.open(
+                    file, ParcelFileDescriptor.MODE_READ_ONLY);
+            return new ParcelFileDescriptor.AutoCloseInputStream(pfd);
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static InputStream openOs(File file) {
+        FileDescriptor fd = null;
+        try {
+            fd = Os.open(file.getAbsolutePath(), OsConstants.O_RDONLY, 0);
+            ParcelFileDescriptor pfd = ParcelFileDescriptor.dup(fd);
+            Os.close(fd);
+            fd = null;
+            return new ParcelFileDescriptor.AutoCloseInputStream(pfd);
+        } catch (Exception e) {
+            if (fd != null) {
+                try {
+                    Os.close(fd);
+                } catch (Exception ignored) {
+                }
+            }
+            return null;
+        }
     }
 
     private static File copyUriToCache(Context context, Uri uri, String name) throws IOException {

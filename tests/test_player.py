@@ -12,10 +12,10 @@ def test_player_sources_and_formats() -> None:
     for ext in ("mp3", "flac", "wav", "ogg", "m4a", "opus", "wma", "mp4", "mkv", "webm", "avi", "mov", "ts", "m2ts"):
         assert f'"{ext}"' in src
     mf = (root / "android/player/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-    assert 'package="com.changanhub.pl1_1_7"' in mf
+    assert 'package="com.changanhub.pl1_1_8"' in mf
     assert "APP_MUSIC" not in mf
-    assert 'android:versionName="1.1.7"' in mf
-    assert 'android:versionCode="10"' in mf
+    assert 'android:versionName="1.1.8"' in mf
+    assert 'android:versionCode="11"' in mf
     assert 'android:minSdkVersion="28"' in mf
     assert 'android:targetSdkVersion="28"' in mf
     assert "RECORD_AUDIO" in mf
@@ -61,9 +61,9 @@ def test_player_sources_and_formats() -> None:
     )
     assert "GLSurfaceView" in fog
     build = (root / "scripts/build_player.py").read_text(encoding="utf-8")
-    assert '"1.1.7"' in build
+    assert '"1.1.8"' in build
     assert '"28"' in build
-    assert PACKAGE == "com.changanhub.pl1_1_7"
+    assert PACKAGE == "com.changanhub.pl1_1_8"
     assert "effectiveShape" in eq
     assert "applyEffectiveBands" in eq
     assert "private void applyTone" not in eq
@@ -102,6 +102,13 @@ def test_player_sources_and_formats() -> None:
     assert "rankedPathCandidates" in usb
     assert "fuseRank" in usb
     assert "FileInputStream" in usb
+    assert "kernelVolumeRoots" in usb
+    assert "kernelVolumeSharingNames" in usb
+    assert "KERNEL_VOL_GUESSES" in usb
+    assert "volumeRelative" in usb
+    assert "findNamed" in usb
+    assert "expandKernelCandidates" in usb
+    assert "usb0" in usb
     src_open = (root / "android/player/src/main/java/com/changanhub/player/MediaSource.java").read_text(
         encoding="utf-8"
     )
@@ -116,6 +123,9 @@ def test_player_sources_and_formats() -> None:
     assert "isUsbFile" in src_open
     assert "findStoreUri" in src_open
     assert "флешка не отдала музыку" in src_open
+    assert "Os.open" in src_open
+    assert "openOs" in src_open
+    assert "expandKernelCandidates" in src_open
     video = (root / "android/player/src/main/java/com/changanhub/player/VideoActivity.java").read_text(
         encoding="utf-8"
     )
@@ -151,7 +161,7 @@ def test_player_sources_and_formats() -> None:
     assert "К списку" in xml_video
     assert 'android:id="@+id/now_seek"' in xml
     mock = (root / "docs/player-layout.html").read_text(encoding="utf-8")
-    assert "Lamore Player 1.1.7" in mock
+    assert "Lamore Player 1.1.8" in mock
     assert "К списку" in mock
     assert mock.count("← К списку") >= 2
     assert "Флешки" in mock
@@ -164,7 +174,7 @@ def test_hub_installs_player() -> None:
     assert "deploy_player" in src
     assert '"ours", "Наши приложения"' in src
     assert any(app.id == "player" for app in CATALOG)
-    row = package_label("com.changanhub.pl1_1_7")
+    row = package_label("com.changanhub.pl1_1_8")
     assert "Lamore Player" in row
     leftover = package_label("com.changanhub.lamoreplayer")
     assert "старый" in leftover.lower()
@@ -180,12 +190,15 @@ def test_hub_installs_player() -> None:
     assert "старый" in leftover_copy.lower()
     leftover_hevc = package_label("com.changanhub.pl1_1_6")
     assert "старый" in leftover_hevc.lower()
+    leftover_uuid = package_label("com.changanhub.pl1_1_7")
+    assert "старый" in leftover_uuid.lower()
     assert "install_player" in Path("hub/player.py").read_text(encoding="utf-8")
     player_src = Path("hub/player.py").read_text(encoding="utf-8")
     assert "LEGACY_PACKAGES" in player_src
     assert "com.changanhub.lamoreplayer" in player_src
     assert "com.changanhub.playrise" in player_src
     assert "com.changanhub.playload" in player_src
+    assert "com.changanhub.pl1_1_7" in player_src
     assert "com.changanhub.pl1_1_6" in player_src
     assert "com.changanhub.pl1_1_5" in player_src
     assert "com.changanhub.pl1_1_4" in player_src
@@ -204,7 +217,7 @@ def test_bundled_player_apk() -> None:
     assert has_v2_block(data)
     with ZipFile(apk) as zf:
         mf = zf.read("AndroidManifest.xml")
-        assert "com.changanhub.pl1_1_7".encode("utf-16-le") in mf
+        assert "com.changanhub.pl1_1_8".encode("utf-16-le") in mf
         certs = pkcs7.load_der_pkcs7_certificates(zf.read("META-INF/CERT.RSA"))
         assert certs[0].serial_number == CHANGAN_SERIAL
 
@@ -212,5 +225,5 @@ def test_bundled_player_apk() -> None:
 def test_apk_package_name_player(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "Player.apk") == "com.changanhub.pl1_1_7"
-    assert apk_package_name(tmp_path / "LamorePlayer.apk") == "com.changanhub.pl1_1_7"
+    assert apk_package_name(tmp_path / "Player.apk") == "com.changanhub.pl1_1_8"
+    assert apk_package_name(tmp_path / "LamorePlayer.apk") == "com.changanhub.pl1_1_8"

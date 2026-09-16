@@ -10,8 +10,9 @@ from hub.paths import bundled_apps
 
 # New applicationId: Feiyu refuses pm install -r when the Hub folder minted a
 # new RSA key (UPDATE_INCOMPATIBLE) and refuses pm uninstall (auth dialog).
-PACKAGE = "com.changanhub.pl1_1_7"
+PACKAGE = "com.changanhub.pl1_1_8"
 LEGACY_PACKAGES = (
+    "com.changanhub.pl1_1_7",
     "com.changanhub.pl1_1_6",
     "com.changanhub.pl1_1_5",
     "com.changanhub.pl1_1_4",

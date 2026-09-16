@@ -466,42 +466,206 @@ public final class UsbMedia {
         return file.list() != null;
     }
 
+    /**
+     * Kernel USB folder names on Feiyu often are {@code usb0}/{@code UDISK},
+     * not the FUSE UUID {@code A678-ED41}. Guess those names when {@code list()}
+     * on {@code /mnt/media_rw} is empty or denied.
+     */
+    private static final String[] KERNEL_VOL_GUESSES = {
+            "usb0", "usb1", "usb2", "usb3",
+            "udisk", "UDISK", "UDISK0", "UDISK1", "udisk0", "udisk1",
+            "USB_DISK0", "USB_DISK1", "USB_DISK2",
+            "usbdisk", "usbdisk1", "usbotg", "otg",
+            "usbhost0", "usbhost1", "sda", "sda1", "sdb1"
+    };
+
     static File bestReadable(File dir) {
         if (dir == null) {
             return null;
         }
         String name = dir.getName();
-        File[] candidates = {
-                dir,
+        File[] kernelNamed = {
                 new File("/mnt/media_rw", name),
-                new File("/storage", name),
                 new File("/mnt/usb_storage", name),
                 new File("/mnt/usbhost", name),
                 new File("/mnt/udisk", name),
                 new File("/storage/usb0", name),
+                new File("/storage/usbotg", name),
+                new File("/storage/udisk", name),
         };
-        File emptyOk = null;
-        File anyDir = looksLikeDirectory(dir) ? dir : null;
+        File listed = firstListed(kernelNamed);
+        if (listed != null) {
+            return listed;
+        }
+        File overlap = kernelVolumeSharingNames(dir);
+        if (overlap != null) {
+            return overlap;
+        }
+        if (looksLikeDirectory(dir)) {
+            String[] names = dir.list();
+            if (names != null && names.length > 0) {
+                return dir;
+            }
+        }
+        File emptyOk = firstDir(kernelNamed);
+        File anyDir = looksLikeDirectory(dir) ? dir : emptyOk;
+        return emptyOk != null ? emptyOk : anyDir;
+    }
+
+    private static File firstListed(File[] candidates) {
         for (int i = 0; i < candidates.length; i++) {
             File c = candidates[i];
             if (c == null || !looksLikeDirectory(c)) {
                 continue;
             }
-            if (anyDir == null) {
-                anyDir = c;
-            }
             String[] names = c.list();
-            if (names == null) {
-                continue;
-            }
-            if (names.length > 0) {
+            if (names != null && names.length > 0) {
                 return c;
             }
-            if (emptyOk == null) {
-                emptyOk = c;
+        }
+        return null;
+    }
+
+    private static File firstDir(File[] candidates) {
+        for (int i = 0; i < candidates.length; i++) {
+            File c = candidates[i];
+            if (c != null && looksLikeDirectory(c)) {
+                return c;
             }
         }
-        return emptyOk != null ? emptyOk : anyDir;
+        return null;
+    }
+
+    /**
+     * FUSE {@code /storage/UUID} and kernel {@code /mnt/media_rw/usb0} list the
+     * same song names. Prefer the kernel folder so copy/open does not remap UUID.
+     */
+    static File kernelVolumeSharingNames(File dir) {
+        if (dir == null) {
+            return null;
+        }
+        String[] want = dir.list();
+        if (want == null || want.length == 0) {
+            return null;
+        }
+        Set<String> names = new LinkedHashSet<>();
+        int cap = Math.min(want.length, 24);
+        for (int i = 0; i < cap; i++) {
+            String n = want[i];
+            if (n == null || n.length() == 0 || n.startsWith(".")) {
+                continue;
+            }
+            if ("Android".equals(n) || "LOST.DIR".equals(n)
+                    || "System Volume Information".equalsIgnoreCase(n)) {
+                continue;
+            }
+            names.add(n);
+        }
+        if (names.isEmpty()) {
+            return null;
+        }
+        String self = canon(dir);
+        File[] roots = kernelVolumeRoots();
+        File best = null;
+        int bestHits = 0;
+        for (int i = 0; i < roots.length; i++) {
+            File root = roots[i];
+            if (root == null) {
+                continue;
+            }
+            if (self.equals(canon(root))) {
+                continue;
+            }
+            String[] have = root.list();
+            if (have == null || have.length == 0) {
+                continue;
+            }
+            int hits = 0;
+            int check = Math.min(have.length, 40);
+            for (int j = 0; j < check; j++) {
+                if (names.contains(have[j])) {
+                    hits++;
+                }
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = root;
+            }
+        }
+        return bestHits > 0 ? best : null;
+    }
+
+    static File[] kernelVolumeRoots() {
+        List<File> found = new ArrayList<>();
+        addWithChildren(found, new File("/mnt/media_rw"));
+        addWithChildren(found, new File("/mnt/usb_storage"));
+        addIfDir(found, new File("/mnt/usbhost"));
+        addIfDir(found, new File("/mnt/udisk"));
+        addIfDir(found, new File("/mnt/usb"));
+        addIfDir(found, new File("/storage/usb0"));
+        addIfDir(found, new File("/storage/usbotg"));
+        addIfDir(found, new File("/storage/udisk"));
+        addIfDir(found, new File("/storage/usbdisk"));
+        String[] bases = {"/mnt/media_rw", "/mnt/usb_storage", "/mnt/usbhost"};
+        for (int b = 0; b < bases.length; b++) {
+            for (int g = 0; g < KERNEL_VOL_GUESSES.length; g++) {
+                addIfDir(found, new File(bases[b], KERNEL_VOL_GUESSES[g]));
+            }
+        }
+        addFromProcMounts(found);
+        List<File> unique = uniqueExisting(found);
+        List<File> out = new ArrayList<>();
+        for (int i = 0; i < unique.size(); i++) {
+            File dir = unique.get(i);
+            if (isFuseUuidPath(dir.getAbsolutePath())) {
+                continue;
+            }
+            out.add(dir);
+        }
+        return out.toArray(new File[0]);
+    }
+
+    static boolean isFuseUuidPath(String path) {
+        if (path == null || path.contains("/mnt/")) {
+            return false;
+        }
+        return path.contains("/storage/") && volumeName(path) != null;
+    }
+
+    static String volumeRelative(File file) {
+        if (file == null) {
+            return "";
+        }
+        String path = file.getAbsolutePath().replace('\\', '/');
+        String uuid = volumeName(path);
+        if (uuid != null) {
+            String needle = "/" + uuid;
+            int idx = path.indexOf(needle);
+            if (idx >= 0) {
+                String rest = path.substring(idx + needle.length());
+                if (rest.startsWith("/")) {
+                    rest = rest.substring(1);
+                }
+                return rest;
+            }
+        }
+        String[] prefixes = {
+                "/mnt/media_rw/", "/mnt/usb_storage/", "/mnt/usbhost/", "/mnt/udisk/",
+                "/mnt/usb/", "/storage/usb0/", "/storage/usbotg/", "/storage/udisk/",
+                "/storage/usbdisk/", "/storage/usb/", "/storage/"
+        };
+        for (int i = 0; i < prefixes.length; i++) {
+            if (!path.startsWith(prefixes[i])) {
+                continue;
+            }
+            String rest = path.substring(prefixes[i].length());
+            int slash = rest.indexOf('/');
+            if (slash >= 0) {
+                return rest.substring(slash + 1);
+            }
+            return rest;
+        }
+        return file.getName() == null ? "" : file.getName();
     }
 
     private static File pickRicher(File a, File b) {
@@ -597,6 +761,7 @@ public final class UsbMedia {
         }
         String path = file.getAbsolutePath();
         String uuid = volumeName(path);
+        String rel = volumeRelative(file);
         if (uuid != null) {
             String needle = "/" + uuid;
             int idx = path.indexOf(needle);
@@ -608,7 +773,152 @@ public final class UsbMedia {
                 addCandidate(out, seen, new File("/mnt/usbhost/" + uuid + rest));
             }
         }
+        File[] kernels = kernelVolumeRoots();
+        for (int i = 0; i < kernels.length; i++) {
+            if (rel != null && rel.length() > 0) {
+                addCandidate(out, seen, new File(kernels[i], rel));
+            }
+            addCandidate(out, seen, new File(kernels[i], file.getName()));
+        }
         return out.toArray(new File[0]);
+    }
+
+    /**
+     * Slow path for copy: guess kernel folder names and search by filename.
+     * Not used while building the playlist.
+     */
+    static File[] expandKernelCandidates(File file) {
+        java.util.LinkedHashSet<String> seen = new LinkedHashSet<>();
+        java.util.ArrayList<File> out = new ArrayList<>();
+        File[] cheap = rankedPathCandidates(file);
+        for (int i = 0; i < cheap.length; i++) {
+            addCandidate(out, seen, cheap[i]);
+        }
+        if (file == null) {
+            return out.toArray(new File[0]);
+        }
+        String rel = volumeRelative(file);
+        String name = file.getName();
+        String uuid = volumeName(file.getAbsolutePath());
+        String[] bases = {
+                "/mnt/media_rw", "/mnt/usb_storage", "/mnt/usbhost", "/mnt/udisk"
+        };
+        for (int b = 0; b < bases.length; b++) {
+            if (rel.length() > 0) {
+                addCandidate(out, seen, new File(bases[b], rel));
+            }
+            addCandidate(out, seen, new File(bases[b], name));
+            if (uuid != null) {
+                addCandidate(out, seen, new File(bases[b] + "/" + uuid, rel));
+                addCandidate(out, seen, new File(bases[b] + "/" + uuid, name));
+            }
+            for (int g = 0; g < KERNEL_VOL_GUESSES.length; g++) {
+                File vol = new File(bases[b], KERNEL_VOL_GUESSES[g]);
+                if (rel.length() > 0) {
+                    addCandidate(out, seen, new File(vol, rel));
+                }
+                addCandidate(out, seen, new File(vol, name));
+            }
+        }
+        File[] raw = out.toArray(new File[0]);
+        java.util.Arrays.sort(raw, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                return Integer.compare(fuseRank(a), fuseRank(b));
+            }
+        });
+        return raw;
+    }
+
+    static File findNamed(File file) {
+        if (file == null || looksLikeDirectory(file)) {
+            return null;
+        }
+        String name = file.getName();
+        if (name == null || name.length() == 0) {
+            return null;
+        }
+        String rel = volumeRelative(file);
+        File[] roots = kernelVolumeRoots();
+        for (int i = 0; i < roots.length; i++) {
+            if (rel.length() > 0) {
+                File withRel = new File(roots[i], rel);
+                if (hasNonZeroBytes(withRel)) {
+                    return withRel;
+                }
+            }
+            File direct = new File(roots[i], name);
+            if (hasNonZeroBytes(direct)) {
+                return direct;
+            }
+        }
+        for (int i = 0; i < roots.length; i++) {
+            File found = walkFind(roots[i], name, 0);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static File walkFind(File dir, String name, int depth) {
+        if (dir == null || depth > 4) {
+            return null;
+        }
+        File[] files = kids(dir);
+        if (files == null) {
+            return null;
+        }
+        for (int i = 0; i < files.length; i++) {
+            File child = files[i];
+            String childName = child.getName();
+            if (childName.startsWith(".")) {
+                continue;
+            }
+            if (looksLikeDirectory(child)) {
+                if ("Android".equals(childName) || "LOST.DIR".equals(childName)
+                        || "System Volume Information".equalsIgnoreCase(childName)) {
+                    continue;
+                }
+                File found = walkFind(child, name, depth + 1);
+                if (found != null) {
+                    return found;
+                }
+            } else if (name.equals(childName) && hasNonZeroBytes(child)) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    static boolean hasNonZeroBytes(File file) {
+        if (file == null || looksLikeDirectory(file)) {
+            return false;
+        }
+        FileInputStream in = null;
+        try {
+            in = new FileInputStream(file);
+            byte[] buf = new byte[64];
+            int n = in.read(buf);
+            if (n < 1) {
+                return false;
+            }
+            for (int i = 0; i < n; i++) {
+                if (buf[i] != 0) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     /**

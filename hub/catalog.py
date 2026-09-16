@@ -33,12 +33,12 @@ CATALOG: list[CatalogApp] = [
     ),
     CatalogApp(
         id="player",
-        name="Lamore Player 1.1.7",
+        name="Lamore Player 1.1.8",
         summary="Музыка и видео с флешки ГУ: вкладки, EQ, визуализации, субтитры.",
-        package="com.changanhub.pl1_1_7",
+        package="com.changanhub.pl1_1_8",
         kind="media",
         source="bundled",
-        notes="Ставится из «Наши приложения». Пакет com.changanhub.pl1_1_7. USB: сначала /mnt/media_rw, копия в кэш только если заголовок файла настоящий (не пустышка FUSE). «← К списку» на видео и на музыке. MP3 не путают с HEVC. HEVC с телефона ГУ часто не играет — нужен MP4 H.264.",
+        notes="Ставится из «Наши приложения». Пакет com.changanhub.pl1_1_8. USB: ядро /mnt/media_rw (часто usb0, не UUID FUSE), поиск файла по имени, Os.open. Копия в кэш только с настоящими байтами. «← К списку» на видео и на музыке. HEVC с телефона ГУ часто не играет — нужен MP4 H.264.",
     ),
     CatalogApp(
         id="aichat",
@@ -148,6 +148,7 @@ _EXTRA_LABELS = {
     "com.changanhub.quickload": "QuickBar (старая, без версии в имени пакета)",
     "com.changanhub.qb1_3_15": "QuickBar (старая, флешка видна без файлов)",
     "com.changanhub.playload": "Lamore Player (старый пакет)",
+    "com.changanhub.pl1_1_7": "Lamore Player (старый, UUID FUSE без байтов)",
     "com.changanhub.pl1_1_6": "Lamore Player (старый, FUSE пустышка как HEVC)",
     "com.changanhub.pl1_1_5": "Lamore Player (старый, музыка -38 / видео без копии)",
     "com.changanhub.pl1_1_4": "Lamore Player (старый, флешка видна без звука)",
