@@ -7,11 +7,12 @@ from pathlib import Path
 from hub.adb import Adb
 from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
+from hub.windowed import enable_freeform
 
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.qb1_3_16"
+PACKAGE = "com.changanhub.qb1_3_17"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
@@ -21,6 +22,7 @@ LEGACY_PACKAGES = (
     "com.changanhub.quickstash",
     "com.changanhub.quickload",
     "com.changanhub.qb1_3_15",
+    "com.changanhub.qb1_3_16",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
@@ -262,6 +264,7 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         f"out={enabled.stdout.strip()!r} err={enabled.stderr.strip()!r}"
     )
     log += grant_overlay(adb, progress=progress)
+    log += enable_freeform(adb, progress=progress)
     log += enable_accessibility(adb, progress=progress)
     # BootActivity is Theme.NoDisplay and finishes immediately — clears FLAG_STOPPED
     # so ACC/BOOT broadcasts will be delivered later. Do not start MainActivity.

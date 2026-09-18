@@ -14,7 +14,7 @@
 | Проблема | Как Hub это закрывает |
 |---|---|
 | Нет developer-сертификата Changan | Локальный ключ с серийником `0xddb66eefd98476f3`. Именно его проверяет `CertificateManager` Feiyu/Wutong, заводской ключ не нужен |
-| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: `pm uninstall --user 0` до 45 с. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.qb1_3_16` |
+| `adb install` на ГУ закрыт | Файл пушится в `/data/local/tmp`, ставится `pm install -r -t -g`. Обычные APK при несовпадении подписи: `pm uninstall --user 0` до 45 с. Окно 提示 «is not auth» — отказ белого списка; 提示 «not allow delete» — Feiyu не снимает auth-пакет. Панель QuickBar **не удаляется** — ставится новым id `com.changanhub.qb1_3_17` |
 | Приложения не видны в лаунчере | Сбрасывается кэш `com.iflytek.autofly.launcher` |
 | Нужен быстрый доступ поверх всего | QuickBar — правый док на 13.2″ вертикальном экране |
 | USB-A в USB-A Windows не видит машину | Пошаговый мастер + перезапуск adb server + подсказки по драйверу |
@@ -23,11 +23,11 @@
 
 Прямая ссылка на ZIP этой ветки:
 
-https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/lamore-player-0bfc.zip
+https://github.com/pulya-na-vullet/changan/archive/refs/heads/cursor/hub-wifi-news-windowed-ad6a.zip
 
 Зеркало без промежуточной страницы:
 
-https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/lamore-player-0bfc
+https://codeload.github.com/pulya-na-vullet/changan/zip/refs/heads/cursor/hub-wifi-news-windowed-ad6a
 
 Распакуйте архив и запустите `app.py`.
 
@@ -72,7 +72,7 @@ python -m hub record --seconds 30
 
 ## Правая панель (QuickBar)
 
-Приложение `com.changanhub.qb1_3_16` держит поверх всех Activity узкую колонку
+Приложение `com.changanhub.qb1_3_17` держит поверх всех Activity узкую колонку
 справа:
 
 - тап — запуск;
@@ -83,7 +83,8 @@ python -m hub record --seconds 30
 - **флешка / память ГУ** — APK с USB-разъёма или из хранилища самого ГУ (переключатель USB / Память ГУ). Кнопка ключа **подписывает** файл так же, как Hub (v1+v2, серийник белого списка Feiyu). Зелёная кнопка ставит: если подписи ещё нет — сначала подписывает. Уже подписанные Hub/панелью APK ставит как есть, без новой пары ключей;
 - свёрнуто — **два отдельных окна** справа: меню у верхних 20% и 3 недавних у нижних 20%; **между ними ≥20% экрана без оверлея**, чтобы Яндекс.Навигатор получал нажатия;
 - клавиатура — панель сворачивается в **одну кнопку** на 20% ниже верхнего края; тап разворачивает снова;
-- кнопки панели — иконки (обновление, USB, порядок списка, установка);
+- сторонние приложения — кнопка «окно»: freeform с полями **10% от краёв** (2ГИС всегда так). Если Feiyu игнорирует launchBounds, приложение всё равно откроется на весь экран — это ограничение ГУ;
+- тап по «Wi-Fi ГУ Changan» поднимает плавающую кнопку и **второй экран**: системные настройки Wi-Fi в том же окне 10%;
 - высота иконок **×3** (удобно на 13.2″);
 - автозапуск после ACC off→on: Feiyu часто **не шлёт** `BOOT_COMPLETED` и
   force-stop ставит пакет в FLAG_STOPPED. Панель поднимает служба спец.
@@ -177,11 +178,11 @@ Java — из Android Studio `jbr`, даже если `java` нет в PATH. И�
 **提示** `xx is auth app, not allow delete!` — Feiyu **не удаляет** такой пакет
 (`pm uninstall` на обычных APK ждёт до 45 с; на auth-пакетах Feiyu показывает
 提示 `not allow delete` и пакет остаётся). Панель QuickBar поэтому
-ставится новым id `com.changanhub.qb1_3_16`; старые `quickbar` / `quickdock` /
-`quicklane` / `quickkeep` / `quickrise` / `quickstash` / `quickload` / `qb1_3_15` остаются на ГУ, Hub их отключает (`pm disable-user` +
+ставится новым id `com.changanhub.qb1_3_17`; старые `quickbar` / `quickdock` /
+`quicklane` / `quickkeep` / `quickrise` / `quickstash` / `quickload` / `qb1_3_15` / `qb1_3_16` остаются на ГУ, Hub их отключает (`pm disable-user` +
 снимает overlay). Ярлыки старых плагинов **не содержат** скрытие и сортировку —
 это колонка справа у новой панели. Кнопка «Удалить с ГУ» тоже только отключает
-панель — после этого «Установить и запустить» ставит `qb1_3_16`. Сброс ГУ до
+панель — после этого «Установить и запустить» ставит `qb1_3_17`. Сброс ГУ до
 заводских — единственный полный uninstall.
 
 **Нельзя:** ставить это на чужую машину, отключать Vecentek целиком, шить
@@ -209,8 +210,28 @@ Shell-пароль, если adbd спросит вручную: `adb36987`.
 
 В Hub есть список того, что обычно ставят на экспортную английскую ГУ:
 файловый менеджер, VLC, Organic Maps, NewPipe, Firefox, плюс слоты под
-Яндекс Навигатор / Музыку / Telegram — их APK вы скачиваете сами и бросаете
-в `apps/`. Сторонние магазины и проприетарные пакеты мы не зеркалируем.
+Яндекс Навигатор / Музыку / Telegram / 2ГИС — их APK вы скачиваете сами и бросаете
+в `apps/`. **Wi-Fi кнопка** (`changan_wifi`) и **Новости** (`changan_news`) ставятся
+из «Наши приложения»; исходники тех репозиториев Hub не копирует. Сторонние магазины
+и проприетарные пакеты мы не зеркалируем.
+
+## Wi-Fi кнопка и Новости
+
+Готовый APK кнопки лежит в `apps/WifiButton.apk` (пакет `com.lamore.wifibutton`,
+версия 1.4). Hub подписывает его серийником Feiyu, выдаёт «поверх окон» и
+запускает плавающую кнопку. Сразу после этого открываются системные настройки
+Wi-Fi **в окне с полями 10%** — второй экран, карта остаётся видна по краям,
+если ГУ умеет freeform.
+
+Новости (`ru.changan.news`) сами рисуют поля 10% внутри Activity — так вы
+обкатали на ГУ. Если `apps/ChanganNews.apk` нет в ZIP, положите
+`ChanganNews-1.5-release.apk` из https://github.com/pulya-na-vullet/changan_news
+(в том репозитории сейчас README без APK).
+
+2ГИС и другие «чужие» APK нельзя править изнутри. QuickBar просит Android
+freeform + `launchBounds` 10%. Hub включает
+`enable_freeform_support` и `force_resizable_activities`. Если Feiyu это
+игнорирует, 2ГИС останется на весь экран.
 
 ## Сборка QuickBar.apk с нуля
 
