@@ -28,6 +28,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.os.IBinder;
 import android.os.Handler;
 import android.os.Looper;
@@ -90,6 +91,7 @@ public class OverlayService extends Service {
             "com.changanhub.quickstash",
             "com.changanhub.quickload",
             "com.changanhub.qb1_3_15",
+            "com.changanhub.qb1_3_16",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -126,6 +128,17 @@ public class OverlayService extends Service {
     private static final String KEY_APK_SOURCE = "apk_source";
     /** Hidden ActivityOptions.setLaunchWindowingMode(FREEFORM). */
     private static final int WINDOWING_MODE_FREEFORM = 5;
+    /** Inset from each screen edge for freeform / 2GIS-style windows. */
+    private static final int WINDOW_INSET_PERCENT = 10;
+    private static final String WIFI_BUTTON = "com.lamore.wifibutton";
+    private static final String WIFI_SERVICE = "com.lamore.wifibutton.FloatingService";
+    /** Always open these in a 10% inset window, even if the global toggle is off. */
+    private static final String[] INSET_PACKAGES = {
+            "ru.dublgis.dgismobile",
+            "ru.dublgis.2gis",
+            "ru.changan.news",
+            WIFI_BUTTON,
+    };
     private static final int WATCHDOG_REQ = 7;
     private static final long WATCHDOG_MS = 20_000L;
     private static final int[] BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120};
@@ -2014,6 +2027,11 @@ public class OverlayService extends Service {
 
     private void launch(String pkg) {
         try {
+            if (WIFI_BUTTON.equals(pkg)) {
+                launchWifiSecondVision();
+                rememberLaunch(pkg);
+                return;
+            }
             Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
             if (intent == null) {
                 intent = launchIntentFallback(pkg);
@@ -2022,7 +2040,7 @@ public class OverlayService extends Service {
                 return;
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (windowed && !isSystemPackage(pkg) && !getPackageName().equals(pkg)) {
+            if (shouldLaunchWindowed(pkg)) {
                 startWindowed(intent);
             } else {
                 startActivity(intent);
@@ -2033,7 +2051,54 @@ public class OverlayService extends Service {
     }
 
     /**
-     * Ask Android for a freeform window inset from the HU chrome and the dock.
+     * Floating Wi-Fi button stays as an overlay; system Wi-Fi settings open in
+     * a 10% inset window so the map remains visible around the panel.
+     */
+    private void launchWifiSecondVision() {
+        try {
+            Intent svc = new Intent();
+            svc.setClassName(WIFI_BUTTON, WIFI_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
+        } catch (Exception ignoredService) {
+            // FloatingService is not exported; Hub starts it over ADB after install.
+        }
+        Intent wifi = new Intent(Settings.ACTION_WIFI_SETTINGS);
+        wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startWindowed(wifi);
+    }
+
+    private boolean shouldLaunchWindowed(String pkg) {
+        if (pkg == null || getPackageName().equals(pkg)) {
+            return false;
+        }
+        if (isInsetPackage(pkg)) {
+            return true;
+        }
+        return windowed && !isSystemPackage(pkg);
+    }
+
+    private boolean isInsetPackage(String pkg) {
+        if (pkg == null) {
+            return false;
+        }
+        String lower = pkg.toLowerCase(Locale.US);
+        if (lower.contains("dublgis") || lower.contains("2gis")) {
+            return true;
+        }
+        for (int i = 0; i < INSET_PACKAGES.length; i++) {
+            if (INSET_PACKAGES[i].equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Ask Android for a freeform window inset 10% from each screen edge.
      * Feiyu often ignores launchBounds; then the app still opens fullscreen.
      */
     private void startWindowed(Intent intent) {
@@ -2061,10 +2126,12 @@ public class OverlayService extends Service {
     private Rect windowBounds() {
         int w = displayWidth();
         int h = displayHeight();
-        int left = Math.max(dp(24), w * 8 / 100);
-        int top = Math.max(dp(24), h * 8 / 100);
-        int right = w - Math.max(dp(COLLAPSED_W_DP + 8), w * 10 / 100);
-        int bottom = h - Math.max(dp(72), h * 12 / 100);
+        int insetX = Math.max(dp(24), w * WINDOW_INSET_PERCENT / 100);
+        int insetY = Math.max(dp(24), h * WINDOW_INSET_PERCENT / 100);
+        int left = insetX;
+        int top = insetY;
+        int right = w - Math.max(insetX, dp(COLLAPSED_W_DP + 8));
+        int bottom = h - insetY;
         if (right - left < dp(280)) {
             right = Math.min(w - dp(8), left + dp(280));
         }
