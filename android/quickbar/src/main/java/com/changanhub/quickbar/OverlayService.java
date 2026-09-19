@@ -26,6 +26,7 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -92,6 +93,7 @@ public class OverlayService extends Service {
             "com.changanhub.quickload",
             "com.changanhub.qb1_3_15",
             "com.changanhub.qb1_3_16",
+            "com.changanhub.qb1_3_17",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -156,6 +158,10 @@ public class OverlayService extends Service {
     private LinearLayout tools;
     private EditText search;
     private TextView titleView;
+    private View wifiStrip;
+    private ImageView wifiIcon;
+    private TextView wifiStateView;
+    private BroadcastReceiver wifiReceiver;
     private TextView usbStatus;
     private boolean collapsed;
     private boolean stashed;
@@ -372,6 +378,7 @@ public class OverlayService extends Service {
         handler.removeCallbacks(attachWatch);
         handler.removeCallbacks(imeWatch);
         unregisterLifeReceiver();
+        unregisterWifiReceiver();
         detachOverlay();
         super.onDestroy();
         scheduleWatchdog(getApplicationContext());
@@ -403,6 +410,32 @@ public class OverlayService extends Service {
         filter.addAction("com.incall.intent.action.ACC_ON");
         filter.addAction("android.intent.action.ACC_ON");
         registerReceiver(lifeReceiver, filter);
+        registerWifiReceiver();
+    }
+
+    private void registerWifiReceiver() {
+        if (wifiReceiver != null) {
+            return;
+        }
+        wifiReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                refreshWifiStrip();
+            }
+        };
+        IntentFilter filter = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
+        registerReceiver(wifiReceiver, filter);
+    }
+
+    private void unregisterWifiReceiver() {
+        if (wifiReceiver == null) {
+            return;
+        }
+        try {
+            unregisterReceiver(wifiReceiver);
+        } catch (Exception ignored) {
+        }
+        wifiReceiver = null;
     }
 
     private void unregisterLifeReceiver() {
@@ -1005,8 +1038,9 @@ public class OverlayService extends Service {
         titleView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.bottomMargin = dp(8);
+        titleLp.bottomMargin = dp(4);
         panel.addView(titleView, titleLp);
+        panel.addView(buildWifiStrip());
 
         tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -1152,6 +1186,12 @@ public class OverlayService extends Service {
             titleView.setVisibility(chrome);
             titleView.setText(reorderMode ? "Порядок списка" : panelTitle());
         }
+        if (wifiStrip != null) {
+            wifiStrip.setVisibility(chrome);
+            if (!collapsed) {
+                refreshWifiStrip();
+            }
+        }
         if (tools != null) {
             tools.setVisibility(chrome);
         }
@@ -1179,6 +1219,114 @@ public class OverlayService extends Service {
             root.setPadding(dp(6), dp(8), dp(6), dp(8));
         }
         root.setBackground(panelBackground(false));
+    }
+
+    private View buildWifiStrip() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(6), dp(6), dp(6), dp(6));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#3328E07A"));
+        bg.setCornerRadius(dp(12));
+        row.setBackground(bg);
+
+        wifiIcon = new ImageView(this);
+        wifiIcon.setImageResource(R.drawable.ic_wifi);
+        int icon = dp(40);
+        wifiIcon.setLayoutParams(new LinearLayout.LayoutParams(icon, icon));
+        row.addView(wifiIcon);
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        text.setPadding(dp(8), 0, dp(4), 0);
+        TextView name = new TextView(this);
+        name.setText("Wi-Fi");
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(textSp(13));
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        wifiStateView = new TextView(this);
+        wifiStateView.setTextSize(textSp(11));
+        text.addView(name);
+        text.addView(wifiStateView);
+        row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        ImageView gear = new ImageView(this);
+        gear.setImageResource(R.drawable.ic_settings);
+        gear.setColorFilter(Color.WHITE);
+        int g = dp(40);
+        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(g, g);
+        gear.setLayoutParams(gp);
+        gear.setPadding(dp(6), dp(6), dp(6), dp(6));
+        gear.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openWifiSettings();
+            }
+        });
+        row.addView(gear);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleWifi();
+            }
+        });
+        row.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                openWifiSettings();
+                return true;
+            }
+        });
+        wifiStrip = row;
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        row.setLayoutParams(lp);
+        refreshWifiStrip();
+        return row;
+    }
+
+    private void refreshWifiStrip() {
+        if (wifiIcon == null || wifiStateView == null) {
+            return;
+        }
+        boolean on = WifiController.isOn(this);
+        int color = Color.parseColor(on ? "#3DDC97" : "#9AA7B8");
+        wifiIcon.setColorFilter(color);
+        wifiStateView.setText(on ? "Вкл" : "Выкл");
+        wifiStateView.setTextColor(color);
+    }
+
+    private void toggleWifi() {
+        if (wifiStateView == null) {
+            return;
+        }
+        final boolean want = !WifiController.isOn(this);
+        wifiStateView.setText(want ? "включаю…" : "выключаю…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final boolean ok = WifiController.setEnabled(OverlayService.this, want);
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        refreshWifiStrip();
+                        if (!ok && WifiController.isOn(OverlayService.this) != want) {
+                            openWifiSettings();
+                        }
+                    }
+                });
+            }
+        }, "qb-wifi").start();
+    }
+
+    private void openWifiSettings() {
+        try {
+            startWindowed(WifiController.settingsIntent(this));
+        } catch (Exception ignored) {
+        }
     }
 
     private ImageView toolIcon(int drawable, View.OnClickListener click) {

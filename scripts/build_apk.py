@@ -106,9 +106,9 @@ def main() -> None:
             "--custom-package",
             "com.changanhub.quickbar",
             "--version-code",
-            "21",
+            "22",
             "--version-name",
-            "1.3.17",
+            "1.3.18",
             "--auto-add-overlay",
             str(res_zip),
         ]
