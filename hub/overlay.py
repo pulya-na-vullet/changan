@@ -7,11 +7,12 @@ from pathlib import Path
 from hub.adb import Adb
 from hub.installer import Progress, install_apk
 from hub.paths import bundled_apps
+from hub.windowed import enable_freeform
 
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.qb1_3_16"
+PACKAGE = "com.changanhub.qb1_3_18"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
@@ -21,6 +22,8 @@ LEGACY_PACKAGES = (
     "com.changanhub.quickstash",
     "com.changanhub.quickload",
     "com.changanhub.qb1_3_15",
+    "com.changanhub.qb1_3_16",
+    "com.changanhub.qb1_3_17",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
@@ -49,6 +52,9 @@ PERSIST_SHELL = (
     f"appops set {PACKAGE} GET_USAGE_STATS allow",
     f"pm grant {PACKAGE} android.permission.READ_EXTERNAL_STORAGE",
     f"pm grant {PACKAGE} android.permission.WRITE_EXTERNAL_STORAGE",
+    f"pm grant {PACKAGE} android.permission.ACCESS_WIFI_STATE",
+    f"pm grant {PACKAGE} android.permission.CHANGE_WIFI_STATE",
+    f"pm grant {PACKAGE} android.permission.ACCESS_NETWORK_STATE",
     f"appops set {PACKAGE} READ_EXTERNAL_STORAGE allow",
     f"appops set {PACKAGE} WRITE_EXTERNAL_STORAGE allow",
     "settings put secure install_non_market_apps 1",
@@ -262,6 +268,7 @@ def start_overlay(adb: Adb, progress: Progress | None = None) -> list[str]:
         f"out={enabled.stdout.strip()!r} err={enabled.stderr.strip()!r}"
     )
     log += grant_overlay(adb, progress=progress)
+    log += enable_freeform(adb, progress=progress)
     log += enable_accessibility(adb, progress=progress)
     # BootActivity is Theme.NoDisplay and finishes immediately — clears FLAG_STOPPED
     # so ACC/BOOT broadcasts will be delivered later. Do not start MainActivity.

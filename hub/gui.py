@@ -21,6 +21,8 @@ from hub.journal import Journal
 from hub.overlay import PACKAGE as OVERLAY_PACKAGE, install_overlay, overlay_apk, remove_overlay, start_overlay, stop_overlay
 from hub.player import PACKAGE as PLAYER_PACKAGE, install_player, player_apk, start_player
 from hub.aichat import PACKAGE as AICHAT_PACKAGE, aichat_apk, install_aichat, start_aichat
+from hub.wifi import PACKAGE as WIFI_PACKAGE, install_wifi, start_wifi, wifi_apk
+from hub.news import PACKAGE as NEWS_PACKAGE, install_news, news_apk, start_news
 from hub.paths import bundled_apps, captures_dir
 from hub.signer import certificate_info, ensure_keystore
 from hub.usb import list_usb_apks, removable_roots
@@ -105,6 +107,8 @@ class HubApp:
         self.overlay_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
         self.player_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
         self.chat_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
+        self.wifi_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
+        self.news_hu_ver = tk.StringVar(value="на ГУ: не проверяли")
         self._stopping_record = False
         self._worker = threading.Thread(target=self._job_loop, daemon=True, name="hub-worker")
         self._worker.start()
@@ -259,6 +263,8 @@ class HubApp:
         self.pages["overlay"] = ours
         self.pages["player"] = ours
         self.pages["aichat"] = ours
+        self.pages["wifi"] = ours
+        self.pages["news"] = ours
         self.pages["install"] = self._page_install()
         self.pages["demo"] = self._page_demo()
         self.pages["apps"] = self._page_apps()
@@ -352,11 +358,12 @@ class HubApp:
     def _page_ours(self) -> ttk.Frame:
         page = ttk.Frame(self.stack)
         inner = self._scrollable_inner(page)
-        ttk.Label(inner, text="Три приложения этой сборки", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(inner, text="Приложения этой сборки", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             inner,
             text="Одна зелёная кнопка ставит пакет на ГУ. «Открыть» только запускает уже стоящее. "
             "Новая папка Hub не обновляет старый id — поэтому панель, плеер и чат ставятся новым именем. "
+            "Wi-Fi кнопка и Новости — готовые APK из ваших репозиториев, исходники Hub не копирует. "
             "Флешка с музыкой и APK — в USB магнитолы, не в ноутбуке. "
             "Список прокручивается колёсиком и полосой справа.",
             style="Muted.TLabel",
@@ -379,7 +386,7 @@ class HubApp:
 
         self.overlay_install_btn = card(
             "QuickBar — правая колонка",
-            f"в ZIP: 1.3.16 · {OVERLAY_PACKAGE}",
+            f"в ZIP: 1.3.18 · {OVERLAY_PACKAGE}",
             self.overlay_hu_ver,
             self.deploy_overlay,
             self.resume_overlay,
@@ -397,6 +404,20 @@ class HubApp:
             self.chat_hu_ver,
             self.deploy_aichat,
             self.resume_aichat,
+        )
+        self.wifi_install_btn = card(
+            "Wi-Fi кнопка — вкл/выкл поверх карты",
+            f"{'в ZIP: 1.4' if wifi_apk().exists() else 'нет APK в apps/'} · {WIFI_PACKAGE}",
+            self.wifi_hu_ver,
+            self.deploy_wifi,
+            self.resume_wifi,
+        )
+        self.news_install_btn = card(
+            "Новости — ленты в окне 10%",
+            f"{'APK в apps/' if news_apk().exists() else 'положите ChanganNews.apk в apps/'} · {NEWS_PACKAGE}",
+            self.news_hu_ver,
+            self.deploy_news,
+            self.resume_news,
         )
         ttk.Label(
             inner,
@@ -461,7 +482,7 @@ class HubApp:
         body = (
             "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
             "Старые quickbar/quickkeep/quickrise/quickstash/quickload не удаляются и новых кнопок в них нет. "
-            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.qb1_3_16. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.qb1_3_18. "
             "APK с флешки в колонке: сверху USB или Память ГУ. Серый ключ подписывает v1+v2 тем же серийником Feiyu, что и Hub; "
             "зелёная кнопка ставит (если подписи ещё нет — сначала подписывает). "
             "Плеер — отдельный раздел."
@@ -499,7 +520,7 @@ class HubApp:
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
                 "Пакет: com.changanhub.pl1_1_9. Старые pl1_1_8 / pl1_1_7 / playload / playrise / lamoreplayer Feiyu не удаляет — "
-                "Hub ставит новый id, как QuickBar → qb1_3_16. Без Google Play и без Compose. "
+                "Hub ставит новый id, как QuickBar → qb1_3_18. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -588,7 +609,7 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Рабочая панель: QuickBar 1.3.16 · com.changanhub.qb1_3_16. "
+                "Рабочая панель: QuickBar 1.3.18 · com.changanhub.qb1_3_18. "
                 "Плеер: 1.1.9 · com.changanhub.pl1_1_9. Чат: 1.0.6 · com.changanhub.ch1_0_6. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "
@@ -878,9 +899,13 @@ class HubApp:
         overlay = installed_version(adb, OVERLAY_PACKAGE) or "нет"
         player = installed_version(adb, PLAYER_PACKAGE) or "нет"
         chat = installed_version(adb, AICHAT_PACKAGE) or "нет"
+        wifi = installed_version(adb, WIFI_PACKAGE) or "нет"
+        news = installed_version(adb, NEWS_PACKAGE) or "нет"
         self._ui(lambda: self.overlay_hu_ver.set(f"на ГУ: {overlay}"))
         self._ui(lambda: self.player_hu_ver.set(f"на ГУ: {player}"))
         self._ui(lambda: self.chat_hu_ver.set(f"на ГУ: {chat}"))
+        self._ui(lambda: self.wifi_hu_ver.set(f"на ГУ: {wifi}"))
+        self._ui(lambda: self.news_hu_ver.set(f"на ГУ: {news}"))
 
     def refresh_connection(self) -> None:
         def go() -> None:
@@ -1190,6 +1215,86 @@ class HubApp:
                 self.journal.write("INFO", "aichat", line)
 
         self._work("Запуск AI Chat", go)
+
+    def deploy_wifi(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial установка Wi-Fi кнопки не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            lines = install_wifi(adb, progress=progress)
+            for line in lines:
+                self.journal.write("INFO", "wifi", line)
+            self._assert_install(lines, "Wi-Fi кнопка")
+            self._refresh_ours_versions(adb)
+            joined = "\n".join(lines).lower()
+            if "not auth" in joined or "-118" in joined:
+                self._ui(
+                    lambda: messagebox.showerror(
+                        "ГУ отказала в установке",
+                        "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
+                    )
+                )
+
+        self._work("Wi-Fi кнопка", go)
+
+    def resume_wifi(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ Wi-Fi кнопку не открою.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in start_wifi(adb, progress=progress, second_vision=True):
+                self.journal.write("INFO", "wifi", line)
+
+        self._work("Запуск Wi-Fi", go)
+
+    def deploy_news(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без serial установка новостей не стартует.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            lines = install_news(adb, progress=progress)
+            for line in lines:
+                self.journal.write("INFO", "news", line)
+            self._assert_install(lines, "Новости")
+            self._refresh_ours_versions(adb)
+            joined = "\n".join(lines).lower()
+            if "not auth" in joined or "-118" in joined:
+                self._ui(
+                    lambda: messagebox.showerror(
+                        "ГУ отказала в установке",
+                        "Окно 提示 «is not auth, install failed!» — белый список Feiyu (код -118).\n"
+                        "Пришлите logs\\hub.log и data\\probe\\ (VecentekApp.apk, boot-ext.vdex, whitelist.json, publicKey.cert).",
+                    )
+                )
+
+        self._work("Новости", go)
+
+    def resume_news(self) -> None:
+        def go() -> None:
+            adb = self._need_adb()
+            if not adb or not self._hu_ready(adb):
+                raise AdbError("Сначала нажмите «Подключить». Без ГУ новости не открою.")
+
+            def progress(message: str, percent: int) -> None:
+                self._show_progress(message, percent)
+
+            for line in start_news(adb, progress=progress):
+                self.journal.write("INFO", "news", line)
+
+        self._work("Запуск новостей", go)
 
     def resume_overlay(self) -> None:
         def go() -> None:

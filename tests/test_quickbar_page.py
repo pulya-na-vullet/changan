@@ -48,6 +48,8 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "height: 340px" in capture
     assert "i-window" in capture
     assert 'id="windowTool"' in capture
+    assert 'id="wifiStrip"' in capture
+    assert "i-wifi" in capture
     assert "подписать белым списком ГУ" in capture or "подписать белым списком" in capture
     assert "Память ГУ" in capture
     assert "нужна подпись ГУ" in capture

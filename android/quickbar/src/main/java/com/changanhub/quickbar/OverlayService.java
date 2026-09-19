@@ -26,8 +26,10 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.os.IBinder;
 import android.os.Handler;
 import android.os.Looper;
@@ -90,6 +92,8 @@ public class OverlayService extends Service {
             "com.changanhub.quickstash",
             "com.changanhub.quickload",
             "com.changanhub.qb1_3_15",
+            "com.changanhub.qb1_3_16",
+            "com.changanhub.qb1_3_17",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -126,6 +130,17 @@ public class OverlayService extends Service {
     private static final String KEY_APK_SOURCE = "apk_source";
     /** Hidden ActivityOptions.setLaunchWindowingMode(FREEFORM). */
     private static final int WINDOWING_MODE_FREEFORM = 5;
+    /** Inset from each screen edge for freeform / 2GIS-style windows. */
+    private static final int WINDOW_INSET_PERCENT = 10;
+    private static final String WIFI_BUTTON = "com.lamore.wifibutton";
+    private static final String WIFI_SERVICE = "com.lamore.wifibutton.FloatingService";
+    /** Always open these in a 10% inset window, even if the global toggle is off. */
+    private static final String[] INSET_PACKAGES = {
+            "ru.dublgis.dgismobile",
+            "ru.dublgis.2gis",
+            "ru.changan.news",
+            WIFI_BUTTON,
+    };
     private static final int WATCHDOG_REQ = 7;
     private static final long WATCHDOG_MS = 20_000L;
     private static final int[] BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120};
@@ -143,6 +158,10 @@ public class OverlayService extends Service {
     private LinearLayout tools;
     private EditText search;
     private TextView titleView;
+    private View wifiStrip;
+    private ImageView wifiIcon;
+    private TextView wifiStateView;
+    private BroadcastReceiver wifiReceiver;
     private TextView usbStatus;
     private boolean collapsed;
     private boolean stashed;
@@ -359,6 +378,7 @@ public class OverlayService extends Service {
         handler.removeCallbacks(attachWatch);
         handler.removeCallbacks(imeWatch);
         unregisterLifeReceiver();
+        unregisterWifiReceiver();
         detachOverlay();
         super.onDestroy();
         scheduleWatchdog(getApplicationContext());
@@ -390,6 +410,32 @@ public class OverlayService extends Service {
         filter.addAction("com.incall.intent.action.ACC_ON");
         filter.addAction("android.intent.action.ACC_ON");
         registerReceiver(lifeReceiver, filter);
+        registerWifiReceiver();
+    }
+
+    private void registerWifiReceiver() {
+        if (wifiReceiver != null) {
+            return;
+        }
+        wifiReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                refreshWifiStrip();
+            }
+        };
+        IntentFilter filter = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
+        registerReceiver(wifiReceiver, filter);
+    }
+
+    private void unregisterWifiReceiver() {
+        if (wifiReceiver == null) {
+            return;
+        }
+        try {
+            unregisterReceiver(wifiReceiver);
+        } catch (Exception ignored) {
+        }
+        wifiReceiver = null;
     }
 
     private void unregisterLifeReceiver() {
@@ -992,8 +1038,9 @@ public class OverlayService extends Service {
         titleView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.bottomMargin = dp(8);
+        titleLp.bottomMargin = dp(4);
         panel.addView(titleView, titleLp);
+        panel.addView(buildWifiStrip());
 
         tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -1139,6 +1186,12 @@ public class OverlayService extends Service {
             titleView.setVisibility(chrome);
             titleView.setText(reorderMode ? "Порядок списка" : panelTitle());
         }
+        if (wifiStrip != null) {
+            wifiStrip.setVisibility(chrome);
+            if (!collapsed) {
+                refreshWifiStrip();
+            }
+        }
         if (tools != null) {
             tools.setVisibility(chrome);
         }
@@ -1166,6 +1219,114 @@ public class OverlayService extends Service {
             root.setPadding(dp(6), dp(8), dp(6), dp(8));
         }
         root.setBackground(panelBackground(false));
+    }
+
+    private View buildWifiStrip() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(6), dp(6), dp(6), dp(6));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#3328E07A"));
+        bg.setCornerRadius(dp(12));
+        row.setBackground(bg);
+
+        wifiIcon = new ImageView(this);
+        wifiIcon.setImageResource(R.drawable.ic_wifi);
+        int icon = dp(40);
+        wifiIcon.setLayoutParams(new LinearLayout.LayoutParams(icon, icon));
+        row.addView(wifiIcon);
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        text.setPadding(dp(8), 0, dp(4), 0);
+        TextView name = new TextView(this);
+        name.setText("Wi-Fi");
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(textSp(13));
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        wifiStateView = new TextView(this);
+        wifiStateView.setTextSize(textSp(11));
+        text.addView(name);
+        text.addView(wifiStateView);
+        row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        ImageView gear = new ImageView(this);
+        gear.setImageResource(R.drawable.ic_settings);
+        gear.setColorFilter(Color.WHITE);
+        int g = dp(40);
+        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(g, g);
+        gear.setLayoutParams(gp);
+        gear.setPadding(dp(6), dp(6), dp(6), dp(6));
+        gear.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openWifiSettings();
+            }
+        });
+        row.addView(gear);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleWifi();
+            }
+        });
+        row.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                openWifiSettings();
+                return true;
+            }
+        });
+        wifiStrip = row;
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        row.setLayoutParams(lp);
+        refreshWifiStrip();
+        return row;
+    }
+
+    private void refreshWifiStrip() {
+        if (wifiIcon == null || wifiStateView == null) {
+            return;
+        }
+        boolean on = WifiController.isOn(this);
+        int color = Color.parseColor(on ? "#3DDC97" : "#9AA7B8");
+        wifiIcon.setColorFilter(color);
+        wifiStateView.setText(on ? "Вкл" : "Выкл");
+        wifiStateView.setTextColor(color);
+    }
+
+    private void toggleWifi() {
+        if (wifiStateView == null) {
+            return;
+        }
+        final boolean want = !WifiController.isOn(this);
+        wifiStateView.setText(want ? "включаю…" : "выключаю…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final boolean ok = WifiController.setEnabled(OverlayService.this, want);
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        refreshWifiStrip();
+                        if (!ok && WifiController.isOn(OverlayService.this) != want) {
+                            openWifiSettings();
+                        }
+                    }
+                });
+            }
+        }, "qb-wifi").start();
+    }
+
+    private void openWifiSettings() {
+        try {
+            startWindowed(WifiController.settingsIntent(this));
+        } catch (Exception ignored) {
+        }
     }
 
     private ImageView toolIcon(int drawable, View.OnClickListener click) {
@@ -2014,6 +2175,11 @@ public class OverlayService extends Service {
 
     private void launch(String pkg) {
         try {
+            if (WIFI_BUTTON.equals(pkg)) {
+                launchWifiSecondVision();
+                rememberLaunch(pkg);
+                return;
+            }
             Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
             if (intent == null) {
                 intent = launchIntentFallback(pkg);
@@ -2022,7 +2188,7 @@ public class OverlayService extends Service {
                 return;
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (windowed && !isSystemPackage(pkg) && !getPackageName().equals(pkg)) {
+            if (shouldLaunchWindowed(pkg)) {
                 startWindowed(intent);
             } else {
                 startActivity(intent);
@@ -2033,7 +2199,54 @@ public class OverlayService extends Service {
     }
 
     /**
-     * Ask Android for a freeform window inset from the HU chrome and the dock.
+     * Floating Wi-Fi button stays as an overlay; system Wi-Fi settings open in
+     * a 10% inset window so the map remains visible around the panel.
+     */
+    private void launchWifiSecondVision() {
+        try {
+            Intent svc = new Intent();
+            svc.setClassName(WIFI_BUTTON, WIFI_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
+        } catch (Exception ignoredService) {
+            // FloatingService is not exported; Hub starts it over ADB after install.
+        }
+        Intent wifi = new Intent(Settings.ACTION_WIFI_SETTINGS);
+        wifi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startWindowed(wifi);
+    }
+
+    private boolean shouldLaunchWindowed(String pkg) {
+        if (pkg == null || getPackageName().equals(pkg)) {
+            return false;
+        }
+        if (isInsetPackage(pkg)) {
+            return true;
+        }
+        return windowed && !isSystemPackage(pkg);
+    }
+
+    private boolean isInsetPackage(String pkg) {
+        if (pkg == null) {
+            return false;
+        }
+        String lower = pkg.toLowerCase(Locale.US);
+        if (lower.contains("dublgis") || lower.contains("2gis")) {
+            return true;
+        }
+        for (int i = 0; i < INSET_PACKAGES.length; i++) {
+            if (INSET_PACKAGES[i].equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Ask Android for a freeform window inset 10% from each screen edge.
      * Feiyu often ignores launchBounds; then the app still opens fullscreen.
      */
     private void startWindowed(Intent intent) {
@@ -2061,10 +2274,12 @@ public class OverlayService extends Service {
     private Rect windowBounds() {
         int w = displayWidth();
         int h = displayHeight();
-        int left = Math.max(dp(24), w * 8 / 100);
-        int top = Math.max(dp(24), h * 8 / 100);
-        int right = w - Math.max(dp(COLLAPSED_W_DP + 8), w * 10 / 100);
-        int bottom = h - Math.max(dp(72), h * 12 / 100);
+        int insetX = Math.max(dp(24), w * WINDOW_INSET_PERCENT / 100);
+        int insetY = Math.max(dp(24), h * WINDOW_INSET_PERCENT / 100);
+        int left = insetX;
+        int top = insetY;
+        int right = w - Math.max(insetX, dp(COLLAPSED_W_DP + 8));
+        int bottom = h - insetY;
         if (right - left < dp(280)) {
             right = Math.min(w - dp(8), left + dp(280));
         }

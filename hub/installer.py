@@ -22,6 +22,8 @@ from hub.bundle import (
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.qb1_3_18",
+    "com.changanhub.qb1_3_17",
     "com.changanhub.qb1_3_16",
     "com.changanhub.qb1_3_15",
     "com.changanhub.quickload",
@@ -316,7 +318,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
-                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.qb1_3_16.",
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.qb1_3_18.",
                 72,
             )
             if conflict:
@@ -360,7 +362,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.qb1_3_16 не появится.",
+            "в списке com.changanhub.qb1_3_18 не появится.",
             100,
         )
         return report
@@ -1797,8 +1799,15 @@ def apk_package_name(apk: Path) -> str | None:
         return bundle_package_name(apk)
 
     stem = apk.name.lower()
-    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload", "qb1_3_15", "qb1_3_16")):
-        return "com.changanhub.qb1_3_16"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload", "qb1_3_15", "qb1_3_16", "qb1_3_17", "qb1_3_18")):
+        return "com.changanhub.qb1_3_18"
+    if any(token in stem for token in ("wifibutton", "wifi-button", "lamore.wifibutton")):
+        return "com.lamore.wifibutton"
+    if any(token in stem for token in ("changannews", "changan-news")) or stem in {
+        "news.apk",
+        "changannews.apk",
+    }:
+        return "ru.changan.news"
     if any(token in stem for token in ("player", "lamoreplayer", "playrise", "playload", "pl1_1_3", "pl1_1_4", "pl1_1_5", "pl1_1_6", "pl1_1_7", "pl1_1_8", "pl1_1_9")):
         return "com.changanhub.pl1_1_9"
     if any(token in stem for token in ("aichat", "ai-chat", "lamorechat", "chatrise", "chatload", "ch1_0_5", "ch1_0_6")):
