@@ -94,6 +94,7 @@ public class OverlayService extends Service {
             "com.changanhub.qb1_3_15",
             "com.changanhub.qb1_3_16",
             "com.changanhub.qb1_3_17",
+            "com.changanhub.qb1_3_18",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -176,6 +177,12 @@ public class OverlayService extends Service {
     private View usbToggle;
     private View reorderToggle;
     private View windowedToggle;
+    private View killToggle;
+    /** KillAPK-style list of running apps with a per-app close button. */
+    private boolean killMode;
+    private Set<String> runningPkgs;
+    private boolean scanningRunning;
+    private String killingPkg;
     /** Non-system apps launch in a freeform-sized window when the HU allows it. */
     private boolean windowed;
     /** {@link UsbStorage#ID_USB} / a usb:path / {@link UsbStorage#ID_MEMORY}. */
@@ -1067,6 +1074,7 @@ public class OverlayService extends Service {
                 usbMode = !usbMode;
                 if (usbMode) {
                     reorderMode = false;
+                    killMode = false;
                     wide = true;
                     persist();
                     applySize();
@@ -1083,6 +1091,7 @@ public class OverlayService extends Service {
                 pendingHidePkg = null;
                 if (reorderMode) {
                     usbMode = false;
+                    killMode = false;
                 }
                 refreshChrome();
                 renderApps();
@@ -1098,6 +1107,22 @@ public class OverlayService extends Service {
             }
         });
         tools.addView(windowedToggle);
+        killToggle = toolIcon(R.drawable.ic_kill, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                killMode = !killMode;
+                pendingHidePkg = null;
+                if (killMode) {
+                    usbMode = false;
+                    reorderMode = false;
+                    runningPkgs = null;
+                    scanRunning();
+                }
+                refreshChrome();
+                renderApps();
+            }
+        });
+        tools.addView(killToggle);
         panel.addView(tools);
 
         usbStatus = new TextView(this);
@@ -1184,7 +1209,7 @@ public class OverlayService extends Service {
         int chrome = collapsed ? View.GONE : View.VISIBLE;
         if (titleView != null) {
             titleView.setVisibility(chrome);
-            titleView.setText(reorderMode ? "Порядок списка" : panelTitle());
+            titleView.setText(killMode ? "Закрыть приложения" : (reorderMode ? "Порядок списка" : panelTitle()));
         }
         if (wifiStrip != null) {
             wifiStrip.setVisibility(chrome);
@@ -1197,7 +1222,7 @@ public class OverlayService extends Service {
         }
         if (search != null) {
             search.setVisibility(collapsed ? View.GONE : View.VISIBLE);
-            search.setHint(usbMode ? "apk" : "поиск");
+            search.setHint(usbMode ? "apk" : (killMode ? "закрыть" : "поиск"));
         }
         if (usbToggle instanceof ImageView) {
             ((ImageView) usbToggle).setImageResource(usbMode ? R.drawable.ic_apps : R.drawable.ic_usb);
@@ -1212,6 +1237,11 @@ public class OverlayService extends Service {
             ((ImageView) windowedToggle).setColorFilter(
                     windowed ? Color.parseColor("#3DDC97") : Color.WHITE);
             windowedToggle.setVisibility(usbMode || collapsed ? View.GONE : chrome);
+        }
+        if (killToggle instanceof ImageView) {
+            ((ImageView) killToggle).setColorFilter(
+                    killMode ? Color.parseColor("#FF6B6B") : Color.WHITE);
+            killToggle.setVisibility(usbMode || collapsed ? View.GONE : chrome);
         }
         if (collapsed) {
             root.setPadding(dp(2), dp(4), dp(2), dp(4));
@@ -1664,6 +1694,10 @@ public class OverlayService extends Service {
             renderUsb();
             return;
         }
+        if (killMode) {
+            renderKill();
+            return;
+        }
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         Set<String> fav = favorites();
         Set<String> hideSet = hidden();
@@ -1736,6 +1770,212 @@ public class OverlayService extends Service {
             empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
             appList.addView(empty);
         }
+    }
+
+    private void scanRunning() {
+        if (scanningRunning) {
+            return;
+        }
+        scanningRunning = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final Set<String> live = AppKiller.runningPackages(
+                        OverlayService.this, getPackageName());
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        runningPkgs = live;
+                        scanningRunning = false;
+                        if (killMode && !collapsed) {
+                            renderApps();
+                        }
+                    }
+                });
+            }
+        }, "qb-kill-scan").start();
+    }
+
+    private void renderKill() {
+        if (runningPkgs == null) {
+            TextView wait = new TextView(this);
+            wait.setText("ищу запущенные…");
+            wait.setTextColor(Color.parseColor("#9AA7B8"));
+            wait.setTextSize(textSp(14));
+            wait.setGravity(Gravity.CENTER);
+            wait.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
+            appList.addView(wait);
+            scanRunning();
+            return;
+        }
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        List<AppItem> live = new ArrayList<AppItem>();
+        int userCount = 0;
+        for (int i = 0; i < apps.size(); i++) {
+            AppItem item = apps.get(i);
+            if (!runningPkgs.contains(item.pkg)) {
+                continue;
+            }
+            if (AppKiller.isProtected(item.pkg, getPackageName())) {
+                continue;
+            }
+            if (q.length() > 0 && !item.label.toLowerCase(Locale.ROOT).contains(q)
+                    && !item.pkg.toLowerCase(Locale.ROOT).contains(q)) {
+                continue;
+            }
+            live.add(item);
+            if (!item.system) {
+                userCount++;
+            }
+        }
+        TextView hint = new TextView(this);
+        hint.setText("Как KillAPK: крестик закрывает одно приложение. Системные службы ГУ не трогаю.");
+        hint.setTextColor(Color.parseColor("#9AA7B8"));
+        hint.setTextSize(textSp(11));
+        hint.setPadding(dp(4), 0, dp(4), dp(8));
+        appList.addView(hint);
+        if (userCount > 0) {
+            LinearLayout all = new LinearLayout(this);
+            all.setOrientation(LinearLayout.HORIZONTAL);
+            all.setGravity(Gravity.CENTER_VERTICAL);
+            all.setPadding(dp(4), dp(8), dp(4), dp(8));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.parseColor("#33FF6B6B"));
+            bg.setCornerRadius(dp(12));
+            all.setBackground(bg);
+            TextView allName = new TextView(this);
+            allName.setText("Закрыть сторонние · " + userCount);
+            allName.setTextColor(Color.WHITE);
+            allName.setTextSize(textSp(13));
+            allName.setTypeface(Typeface.DEFAULT_BOLD);
+            all.addView(allName, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            all.addView(actionIcon(R.drawable.ic_kill, Color.parseColor("#FF6B6B"), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    killAllUser();
+                }
+            }));
+            appList.addView(all);
+        }
+        if (live.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("нет запущенных приложений");
+            empty.setTextColor(Color.parseColor("#9AA7B8"));
+            empty.setTextSize(textSp(14));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(12 * HEIGHT_SCALE), 0, dp(12 * HEIGHT_SCALE));
+            appList.addView(empty);
+            return;
+        }
+        for (int i = 0; i < live.size(); i++) {
+            appList.addView(killRow(live.get(i)));
+        }
+    }
+
+    private View killRow(final AppItem item) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(ROW_PAD_V_DP), dp(4), dp(ROW_PAD_V_DP));
+        row.setMinimumHeight(dp(ICON_DP + ROW_PAD_V_DP));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#22FF6B6B"));
+        bg.setCornerRadius(dp(12));
+        row.setBackground(bg);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageDrawable(item.icon);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(ICON_DP), dp(ICON_DP)));
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(10), 0, 0, 0);
+        TextView name = new TextView(this);
+        name.setText(item.label);
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(textSp(14));
+        name.setMaxLines(2);
+        TextView mark = new TextView(this);
+        boolean busy = item.pkg.equals(killingPkg);
+        mark.setText(busy ? "закрываю…" : (item.system ? "системное · крестик закроет" : "запущено · крестик закроет"));
+        mark.setTextColor(Color.parseColor(busy ? "#FF6B6B" : "#9AA7B8"));
+        mark.setTextSize(textSp(10));
+        textCol.addView(name);
+        textCol.addView(mark);
+        row.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        View.OnClickListener kill = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                killApp(item.pkg);
+            }
+        };
+        row.addView(actionIcon(R.drawable.ic_close, Color.parseColor("#FF6B6B"), kill));
+        row.setOnClickListener(kill);
+        return row;
+    }
+
+    private void killApp(final String pkg) {
+        if (pkg == null || AppKiller.isProtected(pkg, getPackageName())) {
+            return;
+        }
+        killingPkg = pkg;
+        renderApps();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                AppKiller.forceStop(OverlayService.this, pkg);
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (runningPkgs != null) {
+                            runningPkgs.remove(pkg);
+                        }
+                        killingPkg = null;
+                        scanRunning();
+                        renderApps();
+                    }
+                });
+            }
+        }, "qb-kill").start();
+    }
+
+    private void killAllUser() {
+        if (runningPkgs == null) {
+            return;
+        }
+        final List<String> targets = new ArrayList<String>();
+        for (int i = 0; i < apps.size(); i++) {
+            AppItem item = apps.get(i);
+            if (!item.system && runningPkgs.contains(item.pkg)
+                    && !AppKiller.isProtected(item.pkg, getPackageName())) {
+                targets.add(item.pkg);
+            }
+        }
+        if (targets.isEmpty()) {
+            return;
+        }
+        killingPkg = targets.get(0);
+        renderApps();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                for (int i = 0; i < targets.size(); i++) {
+                    AppKiller.forceStop(OverlayService.this, targets.get(i));
+                }
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (runningPkgs != null) {
+                            runningPkgs.removeAll(targets);
+                        }
+                        killingPkg = null;
+                        scanRunning();
+                        renderApps();
+                    }
+                });
+            }
+        }, "qb-kill-all").start();
     }
 
     private View collapseZone(int icon, View.OnClickListener click) {

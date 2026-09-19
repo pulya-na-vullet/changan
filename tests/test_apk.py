@@ -19,8 +19,8 @@ def test_bundled_quickbar_apk() -> None:
         assert "AndroidManifest.xml" in names
         assert "META-INF/CERT.RSA" in names
         mf = zf.read("AndroidManifest.xml")
-        assert "com.changanhub.qb1_3_18".encode("utf-16-le") in mf
-        assert "1.3.18".encode("utf-16-le") in mf
+        assert "com.changanhub.qb1_3_19".encode("utf-16-le") in mf
+        assert "1.3.19".encode("utf-16-le") in mf
         assert "res/drawable/ic_sign.xml" in names
         dex = zf.read("classes.dex")
         assert b"HuSigner" in dex

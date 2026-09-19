@@ -41,6 +41,7 @@ def test_quickbar_landing_page_and_photos() -> None:
         "collapsed",
         "peek",
         "stash",
+        "kill",
     ):
         assert f'state === "{state}"' in capture or f'data-state="{state}"' in capture or state == "list"
     assert "width: 160px" in capture
@@ -50,6 +51,8 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert 'id="windowTool"' in capture
     assert 'id="wifiStrip"' in capture
     assert "i-wifi" in capture
+    assert 'id="killTool"' in capture
+    assert "i-kill" in capture
     assert "подписать белым списком ГУ" in capture or "подписать белым списком" in capture
     assert "Память ГУ" in capture
     assert "нужна подпись ГУ" in capture

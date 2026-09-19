@@ -12,7 +12,7 @@ from hub.windowed import enable_freeform
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.qb1_3_18"
+PACKAGE = "com.changanhub.qb1_3_19"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
@@ -24,6 +24,7 @@ LEGACY_PACKAGES = (
     "com.changanhub.qb1_3_15",
     "com.changanhub.qb1_3_16",
     "com.changanhub.qb1_3_17",
+    "com.changanhub.qb1_3_18",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a
@@ -55,6 +56,7 @@ PERSIST_SHELL = (
     f"pm grant {PACKAGE} android.permission.ACCESS_WIFI_STATE",
     f"pm grant {PACKAGE} android.permission.CHANGE_WIFI_STATE",
     f"pm grant {PACKAGE} android.permission.ACCESS_NETWORK_STATE",
+    f"pm grant {PACKAGE} android.permission.KILL_BACKGROUND_PROCESSES",
     f"appops set {PACKAGE} READ_EXTERNAL_STORAGE allow",
     f"appops set {PACKAGE} WRITE_EXTERNAL_STORAGE allow",
     "settings put secure install_non_market_apps 1",

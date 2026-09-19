@@ -24,12 +24,12 @@ class CatalogApp:
 CATALOG: list[CatalogApp] = [
     CatalogApp(
         id="quickbar",
-        name="QuickBar 1.3.18 (правая панель)",
+        name="QuickBar 1.3.19 (правая панель)",
         summary="Всегда поверх всех окон, справа, быстрый запуск установленных приложений.",
-        package="com.changanhub.qb1_3_18",
+        package="com.changanhub.qb1_3_19",
         kind="dock",
         source="bundled",
-        notes="Ставится из «Наши приложения». В списке ГУ: QuickBar 1.3.18 · com.changanhub.qb1_3_18. Под названием — Wi-Fi вкл/выкл (как changan_wifi): тап переключает, шестерёнка открывает настройки в окне 10%. Скрытие, сортировка и свайп «спрятать от дилера» — в зелёной колонке справа. USB или память ГУ: ключ подписывает APK v1+v2 серийником Feiyu (как Hub), зелёная кнопка ставит. Сторонние приложения — кнопка «окно» (freeform 10% от краёв, если ГУ умеет). 2ГИС всегда в этом окне. Старые quickbar / … / qb1_3_17 Feiyu не удаляет (auth) — это не новая панель.",
+        notes="Ставится из «Наши приложения». В списке ГУ: QuickBar 1.3.19 · com.changanhub.qb1_3_19. Под названием — Wi-Fi. Красный крестик в шапке — режим KillAPK: список запущенных, выборочно закрыть (force-stop / su). Скрытие, сортировка и свайп «спрятать от дилера» — в зелёной колонке справа. USB или память ГУ: ключ подписывает APK v1+v2 серийником Feiyu (как Hub), зелёная кнопка ставит. Сторонние приложения — кнопка «окно» (freeform 10% от краёв, если ГУ умеет). 2ГИС всегда в этом окне. Старые quickbar / … / qb1_3_18 Feiyu не удаляет (auth) — это не новая панель.",
     ),
     CatalogApp(
         id="player",
@@ -175,6 +175,7 @@ _EXTRA_LABELS = {
     "com.changanhub.quickrise": "QuickBar (старая, без свайпа спрятать)",
     "com.changanhub.quickstash": "QuickBar (старая, без подписи с флешки)",
     "com.changanhub.quickload": "QuickBar (старая, без версии в имени пакета)",
+    "com.changanhub.qb1_3_18": "QuickBar (старая, без закрытия запущенных)",
     "com.changanhub.qb1_3_17": "QuickBar (старая, без Wi-Fi в панели)",
     "com.changanhub.qb1_3_16": "QuickBar (старая, без окна 10% / Wi-Fi второго экрана)",
     "com.changanhub.qb1_3_15": "QuickBar (старая, флешка видна без файлов)",
