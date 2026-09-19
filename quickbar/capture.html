@@ -63,6 +63,7 @@
     .row { display: flex; align-items: center; padding: 24px 4px; min-height: 168px; box-sizing: border-box; border-radius: 12px; }
     .row.fav { background: #3328e07a; }
     .row.hid { background: #22ff6b6b; }
+    .row.killall { background: rgba(255,107,107,.2); }
     .row.apk { background: #2228e07a; min-height: auto; padding: 10px 4px; }
     .appico { width: 144px; height: 144px; border-radius: 28px; flex: 0 0 144px;
       display: grid; place-items: center; font-size: 54px; font-weight: 700; color: #fff; }
@@ -234,7 +235,7 @@
     document.getElementById("windowTool").classList.remove("active");
     document.getElementById("search").placeholder = "закрыть";
     list.insertAdjacentHTML("beforeend", '<div class="hint">Как KillAPK: крестик закрывает одно приложение. Системные службы ГУ не трогаю.</div>');
-    list.insertAdjacentHTML("beforeend", '<div class="row hid"><div class="txt"><div class="name">Закрыть сторонние · 2</div><div class="mark">все пользовательские из списка</div></div><div class="btn no"><svg><use href="#i-kill"/></svg></div></div>');
+    list.insertAdjacentHTML("beforeend", '<div class="row killall"><div class="txt"><div class="name">Закрыть сторонние · 2</div><div class="mark">все пользовательские из списка</div></div><div class="btn no"><svg><use href="#i-kill"/></svg></div></div>');
     apps.slice(0, 2).forEach(function (a) {
       a.mark = "запущено · крестик закроет";
       list.insertAdjacentHTML("beforeend", row(a, "", '<div class="act"><div class="btn no"><svg><use href="#i-close"/></svg></div></div>'));
