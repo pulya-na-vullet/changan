@@ -55,6 +55,10 @@
     .search::placeholder { color: #9aa7b8; }
     .list { flex: 1; overflow: hidden; }
     .hint { color: #9aa7b8; font-size: 22px; padding: 0 4px 8px; }
+    .perm { background: rgba(255,176,32,.2); border-radius: 12px; padding: 10px 8px; margin-bottom: 8px; }
+    .perm .name { color: #ffb020; font-size: 26px; font-weight: 700; }
+    .perm .go { margin-top: 8px; background: #ffb020; color: #0b1220; font: 700 24px/1.2 "Noto Sans", sans-serif;
+      text-align: center; border-radius: 10px; padding: 10px 8px; }
     .src { display: flex; gap: 6px; padding: 2px 2px 8px; }
     .srcbtn { flex: 1; text-align: center; font: 700 22px/1.2 "Noto Sans", sans-serif;
       padding: 14px 6px; border-radius: 12px; background: #31405c; color: #fff; }
@@ -234,7 +238,7 @@
     document.getElementById("killTool").classList.add("active");
     document.getElementById("windowTool").classList.remove("active");
     document.getElementById("search").placeholder = "закрыть";
-    list.insertAdjacentHTML("beforeend", '<div class="hint">Нужно системное разрешение — как KillAPK, один раз включите спец. возможности QuickBar.</div>');
+    list.insertAdjacentHTML("beforeend", '<div class="perm"><div class="name">Нужно системное разрешение</div><div class="mark" style="color:#fff;font-size:22px;margin-top:6px">Как KillAPK: в первый раз включите спец. возможности QuickBar. Колонка спрячется — в списке служб включите её.</div><div class="go">Открыть настройки</div></div>');
     list.insertAdjacentHTML("beforeend", '<div class="hint">Крестик открывает системное «Остановить» и нажимает его сам. Службы ГУ не трогаю.</div>');
     list.insertAdjacentHTML("beforeend", '<div class="row killall"><div class="txt"><div class="name">Закрыть сторонние · 2</div><div class="mark">все пользовательские из списка</div></div><div class="btn no"><svg><use href="#i-kill"/></svg></div></div>');
     apps.slice(0, 2).forEach(function (a) {
