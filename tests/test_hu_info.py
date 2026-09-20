@@ -9,7 +9,7 @@ def test_parse_version_name() -> None:
 
 
 def test_hub_version() -> None:
-    assert VERSION == "1.5.1"
+    assert VERSION == "1.5.3"
     src = open("hub/gui.py", encoding="utf-8").read()
     assert "VERSION" in src
     assert '"ours", "Наши приложения"' in src

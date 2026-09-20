@@ -20,8 +20,11 @@ from hub.bundle import (
     parse_install_session,
 )
 from hub.signer import CHANGAN_SERIAL, apk_certificate_serials, ensure_keystore, sign_apk_with_method
+from hub.apk_zip import open_apk_zip
 
 OVERLAY_PACKAGES = (
+    "com.changanhub.qb1_3_20",
+    "com.changanhub.qb1_3_19",
     "com.changanhub.qb1_3_18",
     "com.changanhub.qb1_3_17",
     "com.changanhub.qb1_3_16",
@@ -318,7 +321,7 @@ def install_apk(
             step(
                 f"Подпись не совпадает со стоящим {conflict}. Feiyu не даёт удалить "
                 "auth-приложение (提示 not allow delete) — pm uninstall не вызываю. "
-                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.qb1_3_18.",
+                "Старую панель отключаю. Рабочая QuickBar — com.changanhub.qb1_3_20.",
                 72,
             )
             if conflict:
@@ -362,7 +365,7 @@ def install_apk(
     if "no_certificates" in blob or "smimecapability" in blob:
         step(
             "ГУ отвергла подпись APK (NO_CERTIFICATES). Пакет не установлен — "
-            "в списке com.changanhub.qb1_3_18 не появится.",
+            "в списке com.changanhub.qb1_3_20 не появится.",
             100,
         )
         return report
@@ -1495,7 +1498,7 @@ def embedded_serial_groups(apk: Path) -> tuple[list[int], list[int]]:
     except OSError:
         return high, low
     try:
-        with zipfile.ZipFile(apk) as zf:
+        with open_apk_zip(apk) as zf:
             merge(high, extract_hex_serials(whole))
             for name in zf.namelist():
                 lower = name.lower()
@@ -1799,8 +1802,8 @@ def apk_package_name(apk: Path) -> str | None:
         return bundle_package_name(apk)
 
     stem = apk.name.lower()
-    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload", "qb1_3_15", "qb1_3_16", "qb1_3_17", "qb1_3_18")):
-        return "com.changanhub.qb1_3_18"
+    if any(token in stem for token in ("quickbar", "quickdock", "quicklane", "quickkeep", "quickrise", "quickstash", "quickload", "qb1_3_15", "qb1_3_16", "qb1_3_17", "qb1_3_18", "qb1_3_19", "qb1_3_20")):
+        return "com.changanhub.qb1_3_20"
     if any(token in stem for token in ("wifibutton", "wifi-button", "lamore.wifibutton")):
         return "com.lamore.wifibutton"
     if any(token in stem for token in ("changannews", "changan-news")) or stem in {
@@ -1814,7 +1817,8 @@ def apk_package_name(apk: Path) -> str | None:
         return "com.changanhub.ch1_0_6"
     raw = b""
     try:
-        raw = zipfile.ZipFile(apk).read("AndroidManifest.xml")
+        with open_apk_zip(apk) as zf:
+            raw = zf.read("AndroidManifest.xml")
     except Exception:
         pass
     for item in CATALOG:

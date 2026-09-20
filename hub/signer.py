@@ -32,6 +32,7 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 from cryptography.x509.oid import NameOID
 
 from hub.apk_v2 import attach_v2, has_v2_block
+from hub.apk_zip import open_apk_zip
 from hub.paths import app_data
 
 CHANGAN_SERIAL = 0xDDB66EEFD98476F3
@@ -504,7 +505,7 @@ def _sign_python(src: Path, dst: Path, keystore: Keystore) -> None:
     key = load_key(keystore.private_key)
     cert = load_certificate(keystore.certificate)
     entries: list[tuple[zipfile.ZipInfo, bytes]] = []
-    with zipfile.ZipFile(src, "r") as zin:
+    with open_apk_zip(src) as zin:
         for info in zin.infolist():
             name = info.filename
             upper = name.upper()
@@ -585,7 +586,7 @@ def apk_certificate_serials(apk: Path) -> list[int]:
 
     serials: list[int] = []
     data = Path(apk).read_bytes()
-    with zipfile.ZipFile(apk) as zf:
+    with open_apk_zip(apk) as zf:
         for name in zf.namelist():
             upper = name.upper()
             if not (upper.startswith("META-INF/") and upper.endswith((".RSA", ".DSA", ".EC"))):

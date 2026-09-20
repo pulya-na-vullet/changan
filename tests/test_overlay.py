@@ -65,10 +65,12 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert f"pm disable-user --user 0 com.changanhub.qb1_3_15" in joined
     assert f"pm disable-user --user 0 com.changanhub.qb1_3_16" in joined
     assert f"pm disable-user --user 0 com.changanhub.qb1_3_17" in joined
+    assert f"pm disable-user --user 0 com.changanhub.qb1_3_18" in joined
+    assert f"pm disable-user --user 0 com.changanhub.qb1_3_19" in joined
     assert f"appops set {LEGACY_PACKAGE} SYSTEM_ALERT_WINDOW ignore" in joined
     assert "pm uninstall" not in joined
     assert f"pm disable {LEGACY_PACKAGE}" not in joined
-    assert PACKAGE == "com.changanhub.qb1_3_18"
+    assert PACKAGE == "com.changanhub.qb1_3_20"
     assert "com.changanhub.quickdock" in LEGACY_PACKAGES
     assert "com.changanhub.quicklane" in LEGACY_PACKAGES
     assert "com.changanhub.quickkeep" in LEGACY_PACKAGES
@@ -78,6 +80,8 @@ def test_start_overlay_kicks_service_not_activity() -> None:
     assert "com.changanhub.qb1_3_15" in LEGACY_PACKAGES
     assert "com.changanhub.qb1_3_16" in LEGACY_PACKAGES
     assert "com.changanhub.qb1_3_17" in LEGACY_PACKAGES
+    assert "com.changanhub.qb1_3_18" in LEGACY_PACKAGES
+    assert "com.changanhub.qb1_3_19" in LEGACY_PACKAGES
 
 
 def test_remove_overlay_disables_instead_of_uninstall() -> None:
@@ -264,15 +268,15 @@ def test_manifest_survives_acc_cycle() -> None:
     mf = Path("android/quickbar/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     assert "WatchdogReceiver" in mf
     assert "KeepAliveJob" in mf
-    assert 'android:versionName="1.3.18"' in mf
-    assert 'android:versionCode="22"' in mf
+    assert 'android:versionName="1.3.20"' in mf
+    assert 'android:versionCode="24"' in mf
     assert "ACTION_BOOT_IPO" in mf
     assert "stopWithTask" in mf
     assert "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in mf
     assert "BOOT_COMPLETED" in mf
     assert "ACTION_POWER_CONNECTED" in mf
     assert "directBootAware" in mf
-    assert 'package="com.changanhub.qb1_3_18"' in mf
+    assert 'package="com.changanhub.qb1_3_20"' in mf
     assert "CHANGE_WIFI_STATE" in mf
     assert "ACCESS_WIFI_STATE" in mf
     assert "android:persistent" not in mf
@@ -313,6 +317,7 @@ def test_manifest_survives_acc_cycle() -> None:
     assert "com.changanhub.quickstash" in overlay
     assert "com.changanhub.quickload" in overlay
     assert "com.changanhub.qb1_3_15" in overlay
+    assert "com.changanhub.qb1_3_19" in overlay
     assert "getInstalledApplications" in overlay
     assert "launchIntentFallback" in overlay
     assert "BOOT_RETRY_SEC = {1, 2, 5, 10, 30, 60, 120}" in overlay
@@ -328,8 +333,9 @@ def test_manifest_survives_acc_cycle() -> None:
     ).read_text(encoding="utf-8")
     assert "resumeAfterSleep" in access
     assert "startTrampoline" in access
-    assert "ACTION_RESUME" in overlay
+    assert "ACTION_RESUME.equals(action)" in overlay
     assert "reattachOverlay" in overlay
+    assert "overlayPausedUntil" in overlay
     assert "lastReattachElapsed < 8_000L" in overlay
     assert "pokeOverlay" in overlay
     assert "getWindowVisibleDisplayFrame" not in overlay
@@ -466,18 +472,20 @@ def test_quickbar_icons_exist() -> None:
         "ic_window.xml",
         "ic_wifi.xml",
         "ic_settings.xml",
+        "ic_kill.xml",
     ):
         assert (res / name).is_file(), name
     assert not (res / "logo_itm.xml").exists()
     assert not (res / "ic_grid.xml").exists()
     app_name = Path("android/quickbar/src/main/res/values/strings.xml").read_text(encoding="utf-8")
-    assert ">QuickBar 1.3.18<" in app_name
+    assert ">QuickBar 1.3.20<" in app_name
     assert "IT-m" not in app_name
     joined = "\n".join(PERSIST_SHELL)
     assert "REQUEST_INSTALL_PACKAGES" in joined
     assert "GET_USAGE_STATS" in joined
     assert "CHANGE_WIFI_STATE" in joined
     assert "ACCESS_WIFI_STATE" in joined
+    assert "KILL_BACKGROUND_PROCESSES" in joined
 
 
 # Keep in sync with OverlayService VERTICAL_MARGIN / collapsedRecentY / overlayTop.
@@ -589,6 +597,41 @@ def test_windowed_launch_skips_system_apps() -> None:
     assert "setWifiEnabled" in wifi
     assert "svc wifi" in wifi
     assert "ACTION_WIFI_SETTINGS" in wifi
+    killer = Path("android/quickbar/src/main/java/com/changanhub/quickbar/AppKiller.java").read_text(
+        encoding="utf-8"
+    )
+    assert 'new String[] {"su"' not in killer
+    assert "Runtime.getRuntime().exec" not in killer
+    assert "dumpsys" not in killer
+    assert "am force-stop" not in killer
+    assert "KeepAliveAccessibility.forceStop" in killer
+    assert "killBackgroundProcesses" in killer
+    assert "openKillPermissionSettings" in killer
+    assert "ACTION_ACCESSIBILITY_SETTINGS" in killer
+    assert "isProtected" in killer
+    access = Path(
+        "android/quickbar/src/main/java/com/changanhub/quickbar/KeepAliveAccessibility.java"
+    ).read_text(encoding="utf-8")
+    assert "ACTION_APPLICATION_DETAILS_SETTINGS" in access
+    assert "принудител" in access
+    assert "强行停止" in access
+    assert "Force stop" in access.lower() or "force stop" in access
+    xml = Path("android/quickbar/src/main/res/xml/keep_alive_accessibility.xml").read_text(
+        encoding="utf-8"
+    )
+    assert 'android:canRetrieveWindowContent="true"' in xml
+    assert "flagRetrieveInteractiveWindows" in xml
+    overlay_src = Path(
+        "android/quickbar/src/main/java/com/changanhub/quickbar/OverlayService.java"
+    ).read_text(encoding="utf-8")
+    assert "killMode" in overlay_src
+    assert "renderKill" in overlay_src
+    assert "killAllUser" in overlay_src
+    assert "Закрыть приложения" in overlay_src
+    assert "requestKillPermission" in overlay_src
+    assert "coverForSystemUi" in overlay_src
+    assert "Нужно системное разрешение" in overlay_src
+    assert "ic_kill" in overlay_src
 
 
 def test_accessibility_dedupes_and_skips_huge_lists() -> None:

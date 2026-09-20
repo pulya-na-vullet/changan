@@ -47,6 +47,7 @@
     .tool { width: 48px; height: 48px; display: grid; place-items: center; padding: 8px; box-sizing: border-box; }
     .tool svg { width: 32px; height: 32px; fill: #fff; }
     .tool.active svg { fill: #3ddc97; }
+    #killTool.active svg { fill: #ff6b6b; }
     .search {
       margin: 8px 0; background: #3328e07a; color: #fff; border: 0; border-radius: 4px;
       font-size: 26px; padding: 24px 8px; width: 100%; box-sizing: border-box;
@@ -54,6 +55,10 @@
     .search::placeholder { color: #9aa7b8; }
     .list { flex: 1; overflow: hidden; }
     .hint { color: #9aa7b8; font-size: 22px; padding: 0 4px 8px; }
+    .perm { background: rgba(255,176,32,.2); border-radius: 12px; padding: 10px 8px; margin-bottom: 8px; }
+    .perm .name { color: #ffb020; font-size: 26px; font-weight: 700; }
+    .perm .go { margin-top: 8px; background: #ffb020; color: #0b1220; font: 700 24px/1.2 "Noto Sans", sans-serif;
+      text-align: center; border-radius: 10px; padding: 10px 8px; }
     .src { display: flex; gap: 6px; padding: 2px 2px 8px; }
     .srcbtn { flex: 1; text-align: center; font: 700 22px/1.2 "Noto Sans", sans-serif;
       padding: 14px 6px; border-radius: 12px; background: #31405c; color: #fff; }
@@ -62,6 +67,7 @@
     .row { display: flex; align-items: center; padding: 24px 4px; min-height: 168px; box-sizing: border-box; border-radius: 12px; }
     .row.fav { background: #3328e07a; }
     .row.hid { background: #22ff6b6b; }
+    .row.killall { background: rgba(255,107,107,.2); }
     .row.apk { background: #2228e07a; min-height: auto; padding: 10px 4px; }
     .appico { width: 144px; height: 144px; border-radius: 28px; flex: 0 0 144px;
       display: grid; place-items: center; font-size: 54px; font-weight: 700; color: #fff; }
@@ -102,7 +108,8 @@
     body[data-state="peek"] .chip.peek { display: flex; }
     body[data-state="peek"] .ime { display: block; }
     body[data-state="usb"] #reorderTool,
-    body[data-state="usb"] #windowTool { display: none; }
+    body[data-state="usb"] #windowTool,
+    body[data-state="usb"] #killTool { display: none; }
   </style>
 </head>
 <body data-state="list">
@@ -113,6 +120,7 @@
   <symbol id="i-apps" viewBox="0 0 24 24"><path d="M4,4h7v7H4z"/><path d="M13,4h7v7h-7z"/><path d="M4,13h7v7H4z"/><path d="M13,13h7v7h-7z"/></symbol>
   <symbol id="i-reorder" viewBox="0 0 24 24"><path d="M12,4l6,7H6zM12,20l-6,-7h12z"/></symbol>
   <symbol id="i-window" viewBox="0 0 24 24"><path d="M3,4h18v3H3z"/><path d="M3,7h2v13H3z"/><path d="M19,7h2v13h-2z"/><path d="M5,18h14v2H5z"/></symbol>
+  <symbol id="i-kill" viewBox="0 0 24 24"><path d="M12,2a10,10 0 1 0 0.01,0zM9,7.6L12,10.6 15,7.6 16.4,9 13.4,12 16.4,15 15,16.4 12,13.4 9,16.4 7.6,15 10.6,12 7.6,9z" fill-rule="evenodd"/></symbol>
   <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M1,9l2,2c4.97,-4.97 13.03,-4.97 18,0l2,-2C16.93,2.93 7.07,2.93 1,9zM5,13l2,2c2.76,-2.76 7.24,-2.76 10,0l2,-2C15.14,9.14 8.87,9.14 5,13zM9,17l3,3 3,-3C13.65,15.64 10.36,15.64 9,17z"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12,8.4a3.6,3.6 0 1 1 0,7.2 3.6,3.6 0 0 1 0,-7.2zM19.1,12.9L21,11.3 19.1,8 16.7,9 15.1,7.1 14.7,4.6h-3.8L10.5,7.1 8.9,9 6.5,8 4.6,11.3 6.6,12.9 6.6,14.1 4.6,15.7 6.5,19 8.9,18 10.5,19.9 10.9,22.4h3.8l0.4,-2.5L16.7,18 19.1,19 21,15.7 19.1,14.1z"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.1,3.5L3.5,2.1 21.9,20.5 20.5,21.9 16.7,18.1C15.3,18.7 13.7,19 12,19 7,19 2.7,15.9 1,11.5c0.6,-1.5 1.5,-2.9 2.7,-4.1L2.1,3.5zM6.1,7.5C4.9,8.5 4,9.9 3.4,11.5 4.9,14.7 8.2,17 12,17c1.2,0 2.3,-0.2 3.4,-0.6L13.6,14.6C13.1,14.9 12.6,15 12,15c-1.9,0 -3.5,-1.6 -3.5,-3.5 0,-0.6 0.1,-1.1 0.4,-1.6L6.1,7.5zM12,5c5,0 9.3,3.1 11,7.5 -0.4,1.1 -1,2.1 -1.7,3L19.7,14c0.6,-0.8 1.1,-1.6 1.4,-2.5C19.6,8.3 16.1,6.5 12,6.5c-0.7,0 -1.4,0.1 -2,0.2L8.4,5.1C9.5,5 10.8,5 12,5zM12,8.5c0.4,0 0.8,0.1 1.2,0.2L9.7,12.2C9.6,11.8 9.5,11.4 9.5,11 9.5,9.6 10.6,8.5 12,8.5z"/></symbol>
@@ -129,7 +137,7 @@
   <div class="route"></div>
   <div class="arrow"></div>
   <aside class="panel" id="panel">
-    <div class="title" id="title">QuickBar 1.3.18</div>
+    <div class="title" id="title">QuickBar 1.3.20</div>
     <div class="wifi" id="wifiStrip">
       <svg><use href="#i-wifi"/></svg>
       <div class="txt"><div class="name">Wi-Fi</div><div class="st">Вкл</div></div>
@@ -141,6 +149,7 @@
       <div class="tool" id="usbTool"><svg><use href="#i-usb"/></svg></div>
       <div class="tool" id="reorderTool"><svg><use href="#i-reorder"/></svg></div>
       <div class="tool active" id="windowTool"><svg><use href="#i-window"/></svg></div>
+      <div class="tool" id="killTool"><svg><use href="#i-kill"/></svg></div>
     </div>
     <input class="search" id="search" placeholder="поиск" readonly>
     <div class="list" id="list"></div>
@@ -224,6 +233,18 @@
       list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">ru.yandex.yandexnavi-30.7.3.apk</div><div class="mark">/mnt/media_rw/ABCD · 345 МБ · нужна подпись ГУ</div></div><div class="btn up"><svg><use href="#i-sign"/></svg></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
       list.insertAdjacentHTML("beforeend", '<div class="row apk"><div class="txt"><div class="name">ru.kinopoisk-7.103.0.apk</div><div class="mark">/mnt/media_rw/ABCD · 71 МБ · нужна подпись ГУ</div></div><div class="btn up"><svg><use href="#i-sign"/></svg></div><div class="btn inst"><svg><use href="#i-install"/></svg></div></div>');
     }
+  } else if (state === "kill") {
+    document.getElementById("title").textContent = "Закрыть приложения";
+    document.getElementById("killTool").classList.add("active");
+    document.getElementById("windowTool").classList.remove("active");
+    document.getElementById("search").placeholder = "закрыть";
+    list.insertAdjacentHTML("beforeend", '<div class="perm"><div class="name">Нужно системное разрешение</div><div class="mark" style="color:#fff;font-size:22px;margin-top:6px">Как KillAPK: в первый раз включите спец. возможности QuickBar. Колонка спрячется — в списке служб включите её.</div><div class="go">Открыть настройки</div></div>');
+    list.insertAdjacentHTML("beforeend", '<div class="hint">Крестик открывает системное «Остановить» и нажимает его сам. Службы ГУ не трогаю.</div>');
+    list.insertAdjacentHTML("beforeend", '<div class="row killall"><div class="txt"><div class="name">Закрыть сторонние · 2</div><div class="mark">все пользовательские из списка</div></div><div class="btn no"><svg><use href="#i-kill"/></svg></div></div>');
+    apps.slice(0, 2).forEach(function (a) {
+      a.mark = "запущено · крестик закроет";
+      list.insertAdjacentHTML("beforeend", row(a, "", '<div class="act"><div class="btn no"><svg><use href="#i-close"/></svg></div></div>'));
+    });
   } else if (state === "search") {
     document.getElementById("search").value = "яндекс";
     list.insertAdjacentHTML("beforeend", row(apps[0], "fav", '<div class="act">' + eye() + "</div>"));
