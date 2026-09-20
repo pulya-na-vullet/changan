@@ -95,6 +95,7 @@ public class OverlayService extends Service {
             "com.changanhub.qb1_3_16",
             "com.changanhub.qb1_3_17",
             "com.changanhub.qb1_3_18",
+            "com.changanhub.qb1_3_19",
     };
     public static final String LEGACY_PACKAGE = LEGACY_PACKAGES[0];
 
@@ -344,6 +345,9 @@ public class OverlayService extends Service {
             return START_STICKY;
         }
         if (ACTION_RESUME.equals(action)) {
+            if (SystemClock.elapsedRealtime() < overlayPausedUntil) {
+                return START_STICKY;
+            }
             reattachOverlay();
             suppressLegacy();
             return START_STICKY;
@@ -1116,6 +1120,10 @@ public class OverlayService extends Service {
                     usbMode = false;
                     reorderMode = false;
                     runningPkgs = null;
+                    if (AppKiller.needsKillPermission(OverlayService.this)) {
+                        requestKillPermission();
+                        return;
+                    }
                     scanRunning();
                 }
                 refreshChrome();
@@ -1828,8 +1836,27 @@ public class OverlayService extends Service {
                 userCount++;
             }
         }
+        if (AppKiller.needsKillPermission(this)) {
+            appList.addView(permissionRow(
+                    "Как KillAPK: в первый раз включите спец. возможности QuickBar. Колонка спрячется — в списке служб включите её.",
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            requestKillPermission();
+                        }
+                    }));
+        } else if (!AppKiller.hasUsageAccess(this)) {
+            appList.addView(permissionRow(
+                    "Нужен доступ к данным об использовании — иначе список запущенных будет неполным.",
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            requestKillPermission();
+                        }
+                    }));
+        }
         TextView hint = new TextView(this);
-        hint.setText("Как KillAPK: крестик закрывает одно приложение. Системные службы ГУ не трогаю.");
+        hint.setText("Крестик открывает системное «Остановить» и нажимает его сам. Службы ГУ не трогаю.");
         hint.setTextColor(Color.parseColor("#9AA7B8"));
         hint.setTextSize(textSp(11));
         hint.setPadding(dp(4), 0, dp(4), dp(8));
@@ -1915,20 +1942,83 @@ public class OverlayService extends Service {
         return row;
     }
 
+    private View permissionRow(String text, View.OnClickListener click) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(8), dp(10), dp(8), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#33FFB020"));
+        bg.setCornerRadius(dp(12));
+        row.setBackground(bg);
+        TextView title = new TextView(this);
+        title.setText("Нужно системное разрешение");
+        title.setTextColor(Color.parseColor("#FFB020"));
+        title.setTextSize(textSp(13));
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView body = new TextView(this);
+        body.setText(text);
+        body.setTextColor(Color.WHITE);
+        body.setTextSize(textSp(11));
+        body.setPadding(0, dp(4), 0, dp(8));
+        TextView go = new TextView(this);
+        go.setText("Открыть настройки");
+        go.setTextColor(Color.parseColor("#0B1220"));
+        go.setTextSize(textSp(13));
+        go.setTypeface(Typeface.DEFAULT_BOLD);
+        go.setGravity(Gravity.CENTER);
+        GradientDrawable goBg = new GradientDrawable();
+        goBg.setColor(Color.parseColor("#FFB020"));
+        goBg.setCornerRadius(dp(10));
+        go.setBackground(goBg);
+        go.setPadding(dp(8), dp(8), dp(8), dp(8));
+        row.addView(title);
+        row.addView(body);
+        row.addView(go);
+        row.setOnClickListener(click);
+        go.setOnClickListener(click);
+        return row;
+    }
+
+    private void requestKillPermission() {
+        coverForSystemUi(90_000L);
+        AppKiller.openKillPermissionSettings(this);
+    }
+
+    private void coverForSystemUi(long ms) {
+        overlayPausedUntil = SystemClock.elapsedRealtime() + ms;
+        detachOverlay();
+    }
+
+    private void uncoverAfterSystemUi() {
+        overlayPausedUntil = 0L;
+        if (!hasOverlay()) {
+            reattachOverlay();
+        }
+        if (killMode && !collapsed) {
+            renderApps();
+        }
+    }
+
     private void killApp(final String pkg) {
         if (pkg == null || AppKiller.isProtected(pkg, getPackageName())) {
             return;
         }
+        if (AppKiller.needsKillPermission(this)) {
+            requestKillPermission();
+            return;
+        }
         killingPkg = pkg;
         renderApps();
+        coverForSystemUi(20_000L);
         new Thread(new Runnable() {
             @Override
             public void run() {
-                AppKiller.forceStop(OverlayService.this, pkg);
+                final boolean ok = AppKiller.forceStop(OverlayService.this, pkg);
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
-                        if (runningPkgs != null) {
+                        uncoverAfterSystemUi();
+                        if (ok && runningPkgs != null) {
                             runningPkgs.remove(pkg);
                         }
                         killingPkg = null;
@@ -1944,6 +2034,10 @@ public class OverlayService extends Service {
         if (runningPkgs == null) {
             return;
         }
+        if (AppKiller.needsKillPermission(this)) {
+            requestKillPermission();
+            return;
+        }
         final List<String> targets = new ArrayList<String>();
         for (int i = 0; i < apps.size(); i++) {
             AppItem item = apps.get(i);
@@ -1957,17 +2051,22 @@ public class OverlayService extends Service {
         }
         killingPkg = targets.get(0);
         renderApps();
+        coverForSystemUi(20_000L * Math.max(1, targets.size()));
         new Thread(new Runnable() {
             @Override
             public void run() {
+                final ArrayList<String> stopped = new ArrayList<String>();
                 for (int i = 0; i < targets.size(); i++) {
-                    AppKiller.forceStop(OverlayService.this, targets.get(i));
+                    if (AppKiller.forceStop(OverlayService.this, targets.get(i))) {
+                        stopped.add(targets.get(i));
+                    }
                 }
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
+                        uncoverAfterSystemUi();
                         if (runningPkgs != null) {
-                            runningPkgs.removeAll(targets);
+                            runningPkgs.removeAll(stopped);
                         }
                         killingPkg = null;
                         scanRunning();

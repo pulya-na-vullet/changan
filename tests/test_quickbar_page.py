@@ -53,6 +53,7 @@ def test_quickbar_landing_page_and_photos() -> None:
     assert "i-wifi" in capture
     assert 'id="killTool"' in capture
     assert "i-kill" in capture
+    assert "спец. возможности" in capture
     assert "подписать белым списком ГУ" in capture or "подписать белым списком" in capture
     assert "Память ГУ" in capture
     assert "нужна подпись ГУ" in capture

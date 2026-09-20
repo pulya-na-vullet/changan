@@ -12,7 +12,7 @@ from hub.windowed import enable_freeform
 # New applicationId: Feiyu forbids deleting already-installed auth packages
 # (提示 «is auth app, not allow delete!»). Older ids stay on the HU; this id
 # is a first install so a new signature (and hide/reorder UI) can land.
-PACKAGE = "com.changanhub.qb1_3_19"
+PACKAGE = "com.changanhub.qb1_3_20"
 LEGACY_PACKAGES = (
     "com.changanhub.quickbar",
     "com.changanhub.quickdock",
@@ -25,6 +25,7 @@ LEGACY_PACKAGES = (
     "com.changanhub.qb1_3_16",
     "com.changanhub.qb1_3_17",
     "com.changanhub.qb1_3_18",
+    "com.changanhub.qb1_3_19",
 )
 LEGACY_PACKAGE = LEGACY_PACKAGES[0]
 # Windows CreateProcess (~32k). Feiyu duplicates accessibility services; a

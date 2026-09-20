@@ -1,32 +1,28 @@
 package com.changanhub.quickbar;
 
 import android.app.ActivityManager;
+import android.app.AppOpsManager;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Process;
+import android.provider.Settings;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * KillAPK-style closer for the Feiyu HU: list what is running, then force-stop
- * one package at a time. Normal apps cannot call {@code forceStopPackage};
- * Android 9 still allows {@link ActivityManager#killBackgroundProcesses}, then
- * {@code su -c am force-stop} / {@code sh -c am force-stop} like Wi-Fi.
+ * KillAPK-style closer: list running apps, then force-stop through the
+ * accessibility service (system App Info → Force Stop). No {@code su}:
+ * Feiyu's su binary flashes a 提示 / password toast and does not stop the app.
  */
 final class AppKiller {
-    private static final Pattern PKG = Pattern.compile(
-            "(?:cmp=|pkg=|processName=|ProcessRecord\\{[^ }]+ )([a-zA-Z][a-zA-Z0-9_]*+(?:\\.[a-zA-Z][a-zA-Z0-9_]*+)+)");
     private static final long RECENT_MS = 20L * 60L * 1000L;
 
     private AppKiller() {
@@ -74,13 +70,55 @@ final class AppKiller {
         return false;
     }
 
+    static boolean hasUsageAccess(Context context) {
+        try {
+            AppOpsManager appOps = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
+            if (appOps == null) {
+                return false;
+            }
+            int mode = appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    context.getPackageName());
+            return mode == AppOpsManager.MODE_ALLOWED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static boolean needsKillPermission(Context context) {
+        return !KeepAliveAccessibility.isEnabled(context);
+    }
+
+    static void openKillPermissionSettings(Context context) {
+        Intent intent;
+        if (!KeepAliveAccessibility.isEnabled(context)) {
+            intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+        } else {
+            intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+            intent.setData(Uri.parse("package:" + context.getPackageName()));
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_NO_ANIMATION
+                | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        try {
+            context.startActivity(intent);
+        } catch (Exception e) {
+            Intent fallback = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                context.startActivity(fallback);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     static Set<String> runningPackages(Context context, String self) {
         LinkedHashSet<String> out = new LinkedHashSet<String>();
         addProcesses(context, out);
         addTasks(context, out);
         addRecentTasks(context, out);
         addUsage(context, out);
-        addDump(out);
         LinkedHashSet<String> filtered = new LinkedHashSet<String>();
         PackageManager pm = context.getPackageManager();
         for (String pkg : out) {
@@ -99,28 +137,13 @@ final class AppKiller {
         if (isProtected(pkg, context.getPackageName())) {
             return false;
         }
-        boolean ok = false;
+        boolean ok = KeepAliveAccessibility.forceStop(context, pkg, 12_000L);
         ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
         if (am != null) {
             try {
                 am.killBackgroundProcesses(pkg);
-                ok = true;
             } catch (Exception ignored) {
             }
-            try {
-                Method method = ActivityManager.class.getMethod("forceStopPackage", String.class);
-                method.invoke(am, pkg);
-                ok = true;
-            } catch (Exception ignored) {
-            }
-        }
-        String cmd = "am force-stop " + pkg;
-        if (exec(new String[] {"su", "-c", cmd}) || exec(new String[] {"sh", "-c", cmd})) {
-            return true;
-        }
-        String cmd2 = "cmd activity force-stop " + pkg;
-        if (exec(new String[] {"su", "-c", cmd2}) || exec(new String[] {"sh", "-c", cmd2})) {
-            return true;
         }
         return ok;
     }
@@ -217,21 +240,6 @@ final class AppKiller {
         }
     }
 
-    private static void addDump(Set<String> out) {
-        parseDump(out, execOut("dumpsys activity recents"));
-        parseDump(out, execOut("dumpsys activity activities"));
-    }
-
-    private static void parseDump(Set<String> out, String dump) {
-        if (dump == null || dump.length() == 0) {
-            return;
-        }
-        Matcher matcher = PKG.matcher(dump);
-        while (matcher.find()) {
-            addPkg(out, matcher.group(1));
-        }
-    }
-
     private static void addTask(Set<String> out, ComponentName a, ComponentName b) {
         if (a != null) {
             addPkg(out, a.getPackageName());
@@ -246,51 +254,5 @@ final class AppKiller {
             return;
         }
         out.add(pkg);
-    }
-
-    private static boolean exec(String[] argv) {
-        Process process = null;
-        try {
-            process = Runtime.getRuntime().exec(argv);
-            return process.waitFor() == 0;
-        } catch (Exception ignored) {
-            return false;
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
-        }
-    }
-
-    private static String execOut(String cmd) {
-        String viaSu = read(new String[] {"su", "-c", cmd});
-        if (viaSu != null && viaSu.length() > 0) {
-            return viaSu;
-        }
-        return read(new String[] {"sh", "-c", cmd});
-    }
-
-    private static String read(String[] argv) {
-        Process process = null;
-        try {
-            process = Runtime.getRuntime().exec(argv);
-            ByteArrayOutputStream buf = new ByteArrayOutputStream();
-            InputStream in = process.getInputStream();
-            byte[] chunk = new byte[4096];
-            int n;
-            int total = 0;
-            while ((n = in.read(chunk)) > 0 && total < 200000) {
-                buf.write(chunk, 0, n);
-                total += n;
-            }
-            process.waitFor();
-            return buf.toString("UTF-8");
-        } catch (Exception e) {
-            return "";
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
-        }
     }
 }

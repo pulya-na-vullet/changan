@@ -133,7 +133,7 @@
   <div class="route"></div>
   <div class="arrow"></div>
   <aside class="panel" id="panel">
-    <div class="title" id="title">QuickBar 1.3.19</div>
+    <div class="title" id="title">QuickBar 1.3.20</div>
     <div class="wifi" id="wifiStrip">
       <svg><use href="#i-wifi"/></svg>
       <div class="txt"><div class="name">Wi-Fi</div><div class="st">Вкл</div></div>
@@ -234,7 +234,8 @@
     document.getElementById("killTool").classList.add("active");
     document.getElementById("windowTool").classList.remove("active");
     document.getElementById("search").placeholder = "закрыть";
-    list.insertAdjacentHTML("beforeend", '<div class="hint">Как KillAPK: крестик закрывает одно приложение. Системные службы ГУ не трогаю.</div>');
+    list.insertAdjacentHTML("beforeend", '<div class="hint">Нужно системное разрешение — как KillAPK, один раз включите спец. возможности QuickBar.</div>');
+    list.insertAdjacentHTML("beforeend", '<div class="hint">Крестик открывает системное «Остановить» и нажимает его сам. Службы ГУ не трогаю.</div>');
     list.insertAdjacentHTML("beforeend", '<div class="row killall"><div class="txt"><div class="name">Закрыть сторонние · 2</div><div class="mark">все пользовательские из списка</div></div><div class="btn no"><svg><use href="#i-kill"/></svg></div></div>');
     apps.slice(0, 2).forEach(function (a) {
       a.mark = "запущено · крестик закроет";

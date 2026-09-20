@@ -386,7 +386,7 @@ class HubApp:
 
         self.overlay_install_btn = card(
             "QuickBar — правая колонка",
-            f"в ZIP: 1.3.19 · {OVERLAY_PACKAGE}",
+            f"в ZIP: 1.3.20 · {OVERLAY_PACKAGE}",
             self.overlay_hu_ver,
             self.deploy_overlay,
             self.resume_overlay,
@@ -482,7 +482,7 @@ class HubApp:
         body = (
             "Скрытие и сортировка — в зелёной колонке справа, не в ярлыке плагина. "
             "Старые quickbar/quickkeep/quickrise/quickstash/quickload не удаляются и новых кнопок в них нет. "
-            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.qb1_3_19. "
+            "«Установить и запустить» пишет автозапуск ACC. Рабочая — com.changanhub.qb1_3_20. "
             "APK с флешки в колонке: сверху USB или Память ГУ. Серый ключ подписывает v1+v2 тем же серийником Feiyu, что и Hub; "
             "зелёная кнопка ставит (если подписи ещё нет — сначала подписывает). "
             "Плеер — отдельный раздел."
@@ -520,7 +520,7 @@ class HubApp:
                 "Форматы, которые умеет декодер Feiyu: MP3, AAC, M4A, FLAC, WAV, OGG, OPUS, "
                 "MP4, MKV, WebM, MOV, TS; WMA/AVI/HEVC/DTS — только если чип их открывает. "
                 "Пакет: com.changanhub.pl1_1_9. Старые pl1_1_8 / pl1_1_7 / playload / playrise / lamoreplayer Feiyu не удаляет — "
-                "Hub ставит новый id, как QuickBar → qb1_3_19. Без Google Play и без Compose. "
+                "Hub ставит новый id, как QuickBar → qb1_3_20. Без Google Play и без Compose. "
                 "Макет экранов без установки на ГУ: docs\\player-layout.html в браузере ноутбука."
             ),
             style="Muted.TLabel",
@@ -609,7 +609,7 @@ class HubApp:
         ttk.Label(
             page,
             text=(
-                "Рабочая панель: QuickBar 1.3.19 · com.changanhub.qb1_3_19. "
+                "Рабочая панель: QuickBar 1.3.20 · com.changanhub.qb1_3_20. "
                 "Плеер: 1.1.9 · com.changanhub.pl1_1_9. Чат: 1.0.6 · com.changanhub.ch1_0_6. "
                 "Штатное меню Feiyu сторонние APK не показывает — список здесь полный. "
                 "Ярлыки старых quickbar/quickkeep/quickrise без нового свайпа. "

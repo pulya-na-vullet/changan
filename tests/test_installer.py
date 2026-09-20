@@ -209,12 +209,12 @@ def test_matching_signature_replaces_without_uninstall(tmp_path: Path) -> None:
 def test_apk_package_name_quickbar_is_new_id(tmp_path: Path) -> None:
     from hub.installer import apk_package_name
 
-    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.qb1_3_19"
-    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.qb1_3_19"
-    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.qb1_3_19"
-    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.qb1_3_19"
-    assert apk_package_name(tmp_path / "quickrise.apk") == "com.changanhub.qb1_3_19"
-    assert apk_package_name(tmp_path / "quickload.apk") == "com.changanhub.qb1_3_19"
+    assert apk_package_name(tmp_path / "QuickBar.apk") == "com.changanhub.qb1_3_20"
+    assert apk_package_name(tmp_path / "QuickBar-changan.apk") == "com.changanhub.qb1_3_20"
+    assert apk_package_name(tmp_path / "quicklane.apk") == "com.changanhub.qb1_3_20"
+    assert apk_package_name(tmp_path / "quickkeep.apk") == "com.changanhub.qb1_3_20"
+    assert apk_package_name(tmp_path / "quickrise.apk") == "com.changanhub.qb1_3_20"
+    assert apk_package_name(tmp_path / "quickload.apk") == "com.changanhub.qb1_3_20"
     assert apk_package_name(tmp_path / "WifiButton.apk") == "com.lamore.wifibutton"
     assert apk_package_name(tmp_path / "ChanganNews.apk") == "ru.changan.news"
 
@@ -452,7 +452,7 @@ def test_install_qb1_3_17_is_first_install_while_qb1_3_16_present(tmp_path: Path
     assert sum(1 for cmd in fake.shells if cmd.startswith("pm install")) == 1
 
 
-def test_install_qb1_3_19_is_first_install_while_qb1_3_18_present(tmp_path: Path) -> None:
+def test_install_qb1_3_20_is_first_install_while_qb1_3_19_present(tmp_path: Path) -> None:
     apk = tmp_path / "QuickBar.apk"
     with zipfile.ZipFile(apk, "w") as zf:
         zf.writestr("AndroidManifest.xml", b"mf")
@@ -464,19 +464,19 @@ def test_install_qb1_3_19_is_first_install_while_qb1_3_18_present(tmp_path: Path
         fake.shells.append(command)
         if command.startswith("pm install"):
             return CommandResult(True, "Success", "", 0, [])
-        if command.startswith("pm path com.changanhub.qb1_3_18"):
+        if command.startswith("pm path com.changanhub.qb1_3_19"):
             return CommandResult(
                 True,
-                "package:/data/app/com.changanhub.qb1_3_18-old/base.apk",
+                "package:/data/app/com.changanhub.qb1_3_19-old/base.apk",
                 "",
                 0,
                 [],
             )
-        if command.startswith("pm path com.changanhub.qb1_3_19"):
+        if command.startswith("pm path com.changanhub.qb1_3_20"):
             if any(item.startswith("pm install") for item in fake.shells):
                 return CommandResult(
                     True,
-                    "package:/data/app/com.changanhub.qb1_3_19-new/base.apk",
+                    "package:/data/app/com.changanhub.qb1_3_20-new/base.apk",
                     "",
                     0,
                     [],
@@ -486,7 +486,7 @@ def test_install_qb1_3_19_is_first_install_while_qb1_3_18_present(tmp_path: Path
 
     fake.shell = shell  # type: ignore[method-assign]
     with patch("hub.installer.sign_apk_with_method", return_value=(apk, "python-v1v2")):
-        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.qb1_3_19")
+        report = install_apk(fake, apk, already_signed=True, package="com.changanhub.qb1_3_20")
     assert report.ok
     assert report.method != "keep-existing"
     assert not any(cmd.startswith("pm uninstall") for cmd in fake.shells)
